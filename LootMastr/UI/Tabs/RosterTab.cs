@@ -61,6 +61,7 @@ public sealed class RosterTab : ITab
             return;
         }
 
+        DrawLegend();
         DrawGrid();
     }
 
@@ -163,6 +164,28 @@ public sealed class RosterTab : ITab
         Widgets.Coloured(Widgets.Muted, importer.Status);
     }
 
+    private static void DrawLegend()
+    {
+        Widgets.Coloured(Widgets.Wanted, "Raid");
+        ImGui.SameLine(0f, 4f);
+        ImGui.TextDisabled("needs a coffer");
+
+        ImGui.SameLine(0f, 12f);
+        Widgets.Coloured(Widgets.Augment, "Tome+");
+        ImGui.SameLine(0f, 4f);
+        ImGui.TextDisabled("needs an upgrade material");
+
+        ImGui.SameLine(0f, 12f);
+        Widgets.Coloured(Widgets.Done, "✓");
+        ImGui.SameLine(0f, 4f);
+        ImGui.TextDisabled("done");
+
+        ImGui.SameLine(0f, 12f);
+        Widgets.Coloured(Widgets.Muted, "Tome / Craft / —");
+        ImGui.SameLine(0f, 4f);
+        ImGui.TextDisabled("costs the raid nothing");
+    }
+
     private void DrawGrid()
     {
         // Player, BiS, Books and the reorder buttons, then one column per slot. Getting this count
@@ -181,7 +204,7 @@ public sealed class RosterTab : ITab
         ImGui.TableSetupColumn("##order", ImGuiTableColumnFlags.WidthFixed, 62f * ImGuiHelpers.GlobalScale);
 
         foreach (var slot in Slots.All)
-            ImGui.TableSetupColumn(slot.ShortLabel(), ImGuiTableColumnFlags.WidthFixed, 54f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn(slot.ShortLabel(), ImGuiTableColumnFlags.WidthFixed, 72f * ImGuiHelpers.GlobalScale);
 
         ImGui.TableSetupScrollFreeze(1, 1);
         ImGui.TableHeadersRow();
@@ -368,8 +391,12 @@ public sealed class RosterTab : ITab
         var satisfied = need.IsSatisfied;
         var label = need.Source.Label();
 
+        // Done pieces keep their label and gain a tick rather than being replaced by one: which
+        // source a finished slot came from is still the interesting part when reading a row, and
+        // the tick carries "done" on its own for anyone who cannot separate the green from the
+        // orange.
         if (need.Source.NeedsRaidResource() && satisfied)
-            label = "✓";
+            label = $"{label} ✓";
 
         using (ImRaii.PushColor(ImGuiCol.Text, Widgets.ColourFor(need.Source, satisfied)))
         {

@@ -13,6 +13,13 @@ public static class Widgets
     public static readonly Vector4 Muted = new(0.55f, 0.55f, 0.55f, 1f);
     public static readonly Vector4 Bad = new(0.90f, 0.35f, 0.35f, 1f);
 
+    /// <summary>
+    /// Tomestone upgrades, kept apart from raid drops. Blue against the orange rather than another
+    /// warm colour: the two have to be told apart at a glance in a dense grid, and orange and blue
+    /// stay distinct for the red-green colour blind, who are most of the people this would fail.
+    /// </summary>
+    public static readonly Vector4 Augment = new(0.40f, 0.68f, 0.95f, 1f);
+
     public static void Icon(uint iconId, float size = 20f)
     {
         var scaled = new Vector2(size * ImGuiHelpers.GlobalScale);
@@ -63,12 +70,15 @@ public static class Widgets
         ImGui.PopStyleColor();
     }
 
-    /// <summary>Colour a need cell by what it still costs the raid.</summary>
+    /// <summary>Colour a need cell by what it still costs the raid, and where that cost comes from.</summary>
     public static Vector4 ColourFor(GearSource source, bool satisfied)
     {
         if (!source.NeedsRaidResource())
             return Muted;
 
-        return satisfied ? Done : Wanted;
+        if (satisfied)
+            return Done;
+
+        return source == GearSource.TomeAugmented ? Augment : Wanted;
     }
 }
