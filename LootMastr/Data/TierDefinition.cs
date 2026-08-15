@@ -24,6 +24,13 @@ public sealed class TierDefinition
     public List<TierUpgrade> Upgrades { get; set; } = new();
 
     /// <summary>
+    /// How an augmented tomestone piece is spelled. Augmented gear sits at exactly the raid item
+    /// level, so without this a gear set imported before <see cref="Augments"/> has been discovered
+    /// would read every augmented piece as a raid drop. Editable because the wording is localised.
+    /// </summary>
+    public List<string> AugmentedNamePrefixes { get; set; } = ["Augmented ", "Aug. "];
+
+    /// <summary>
     /// The book exchange, discovered from <c>SpecialShop</c> rather than typed in — costs are the
     /// kind of detail that is wrong in half the guides and changes between tiers.
     /// </summary>
@@ -36,6 +43,26 @@ public sealed class TierDefinition
     public List<TierAugment> Augments { get; set; } = new();
 
     public TierEncounter? Encounter(int index) => Encounters.FirstOrDefault(e => e.Index == index);
+
+    /// <summary>
+    /// Whether an item's name marks it as augmented tomestone gear. This is the only thing that
+    /// separates an augmented piece from a raid piece before the upgrade trade has been discovered,
+    /// since both sit at the same item level.
+    /// </summary>
+    public bool IsAugmentedName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return false;
+
+        foreach (var prefix in AugmentedNamePrefixes)
+        {
+            if (!string.IsNullOrWhiteSpace(prefix) &&
+                name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 
     /// <summary>Which fight drops the coffer for this slot.</summary>
     public TierEncounter? EncounterForSlot(GearSlot slot)

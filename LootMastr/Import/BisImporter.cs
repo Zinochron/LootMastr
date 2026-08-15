@@ -125,6 +125,43 @@ public sealed class BisImporter : IDisposable
         config.Save();
     }
 
+    /// <summary>
+    /// Re-runs the classification over the item ids already stored, without going back to the
+    /// gear planner. Needed whenever the rules change under an existing roster — discovering the
+    /// tier's augmented set, or correcting how augmented gear is spelled, both make previously
+    /// imported sets readable in a way they were not before.
+    /// </summary>
+    public int Reclassify()
+    {
+        var changed = 0;
+
+        foreach (var member in config.Roster)
+        {
+            foreach (var slot in Slots.All)
+            {
+                var need = member.NeedFor(slot);
+                if (need.BisItemId == 0)
+                    continue;
+
+                var source = classifier.Classify(need.BisItemId);
+                if (source == need.Source)
+                    continue;
+
+                need.Source = source;
+                changed++;
+            }
+        }
+
+        Status = changed == 0
+                     ? "Nothing changed — every imported piece was already filed correctly."
+                     : $"Re-filed {changed} slot(s) from the imported sets.";
+
+        if (changed > 0)
+            config.Save();
+
+        return changed;
+    }
+
     public void Cancel()
     {
         Choosing = null;

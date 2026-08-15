@@ -262,9 +262,9 @@ public sealed class TierCatalog
     }
 
     /// <summary>
-    /// Fills in what can be worked out without asking. Upgrade materials are recognised by id.
-    /// A gear coffer is only assigned automatically when its book buys exactly one slot, which
-    /// happens for the weapon; the rest is a click each in the tier tab.
+    /// Fills in what can be worked out without asking: upgrade materials by id, and gear coffers
+    /// from the slot written in their own name. Guessing is kept to the slots that fight's book
+    /// actually buys, so a wrong read can only ever land on a plausible neighbour.
     /// </summary>
     private static void AutoAssign(TierDefinition tier, TierReward reward)
     {
@@ -279,8 +279,23 @@ public sealed class TierCatalog
         }
 
         var encounter = tier.Encounter(reward.Encounter);
-        if (encounter is { DropSlots.Count: 1 })
-            reward.Slot = encounter.DropSlots[0];
+        if (encounter == null)
+            return;
+
+        var candidates = encounter.DropSlots.Contains(GearSlot.Weapon)
+                             ? encounter.DropSlots.Append(GearSlot.OffHand).ToList()
+                             : encounter.DropSlots;
+
+        var named = Slots.SlotFromName(reward.ItemName, candidates);
+        if (named != null)
+        {
+            reward.Slot = named;
+            return;
+        }
+
+        // Nothing readable in the name, but if the book only buys one thing there is no ambiguity.
+        if (candidates.Count == 1)
+            reward.Slot = candidates[0];
     }
 
     /// <summary>

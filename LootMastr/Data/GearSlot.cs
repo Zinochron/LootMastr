@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace LootMastr.Data;
 
@@ -144,5 +145,53 @@ public static class Slots
         yield return GearSource.TomeAugmented;
         yield return GearSource.Tome;
         yield return GearSource.Crafted;
+    }
+
+    /// <summary>
+    /// Words a coffer's name carries for each slot. Gear coffers are named after what is in them —
+    /// "Grand Champion's Head Gear Coffer (IL 790)" — so the slot can simply be read off.
+    ///
+    /// Order matters and is not alphabetical: "earring" contains "ring", so the accessories are
+    /// tested before the ring and the first hit wins.
+    /// </summary>
+    private static readonly (GearSlot Slot, string[] Words)[] SlotWords =
+    [
+        (GearSlot.Earrings, ["earring", "ear cuff", "earclasp"]),
+        (GearSlot.Necklace, ["necklace", "neckband", "choker", "neck"]),
+        (GearSlot.Bracelets, ["bracelet", "wrist", "armillae", "bangle"]),
+        (GearSlot.Ring1, ["ring"]),
+        (GearSlot.Head, ["head"]),
+        (GearSlot.Body, ["chest", "body"]),
+        (GearSlot.Hands, ["hand", "glove"]),
+        (GearSlot.Legs, ["leg"]),
+        (GearSlot.Feet, ["foot", "feet", "boot"]),
+        (GearSlot.OffHand, ["shield", "off hand", "offhand"]),
+        (GearSlot.Weapon, ["weapon"]),
+    ];
+
+    /// <summary>
+    /// Reads the slot out of a coffer's name, restricted to the slots that are plausible for it —
+    /// so a bad read can only ever land on a neighbour the same book already buys, never somewhere
+    /// unrelated. Null when the name says nothing useful.
+    /// </summary>
+    public static GearSlot? SlotFromName(string name, IReadOnlyCollection<GearSlot> candidates)
+    {
+        if (string.IsNullOrWhiteSpace(name) || candidates.Count == 0)
+            return null;
+
+        foreach (var (slot, words) in SlotWords)
+        {
+            var coffer = CofferSlot(slot);
+            if (!candidates.Contains(coffer) && !candidates.Contains(slot))
+                continue;
+
+            foreach (var word in words)
+            {
+                if (name.Contains(word, StringComparison.OrdinalIgnoreCase))
+                    return coffer;
+            }
+        }
+
+        return null;
     }
 }

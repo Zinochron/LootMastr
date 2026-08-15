@@ -20,6 +20,9 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 
 - Need lists only contain slots that actually cost the raid something — plain tome and crafted
   pieces never compete for a drop.
+- `Augmented …` and `Aug. …` are read as tomestone gear, as a prefix only, and a raid piece is not.
+- A coffer's slot is read out of its name, never landing outside the slots that book buys — and
+  "Grand Champion's Earring Coffer" resolves to the earrings rather than to a ring.
 - Both ring slots are filled by the one ring coffer.
 - Books are spent the week they cover something, and books already held count.
 - A drop goes to whoever is furthest from done, with damage dealers winning an even tie.

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -40,6 +41,12 @@ public sealed class GearClassifier
         if (!items.TryGetItem(itemId, out var info) || info.Slot == null)
             return GearSource.None;
 
+        // Has to come before the item level check, not after: augmented gear is at exactly the raid
+        // item level, so the level says "raid" for both. The name is the only thing that separates
+        // them until the upgrade trade has been discovered.
+        if (tier.IsAugmentedName(info.Name))
+            return GearSource.TomeAugmented;
+
         if (info.ItemLevel == tier.RaidItemLevel || info.ItemLevel == tier.RaidWeaponItemLevel)
             return GearSource.Raid;
 
@@ -54,6 +61,7 @@ public sealed class GearClassifier
     /// <summary>The side whose material an augmented piece consumes, for filling in need lists.</summary>
     public GearSide? SideOfAugment(uint itemId) =>
         tiers.Tier.Augments.FirstOrDefault(a => a.AugmentedItemId == itemId)?.Side;
+
 
     private void EnsureSets(TierDefinition tier)
     {

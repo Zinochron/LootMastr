@@ -84,6 +84,18 @@ upgrade materials. Everything else is discovered from the game:
   level, so item level alone can never tell an imported BiS piece apart from a raid piece. The
   other cost on those entries is the plain tome piece, so one pass identifies both sets by id, in
   any client language.
+
+  Discovery has to have been run for that, though, and the first version quietly filed every
+  augmented piece as a raid drop until it was. `TierDefinition.IsAugmentedName` is the fallback:
+  augmented gear is spelled `Augmented …` or `Aug. …`, and the check runs **before** the item level
+  check, because the level says "raid" for both. The prefixes live in the tier json since the
+  wording is localised. `Roster → Re-file imports` re-runs the decision over ids already imported,
+  so discovering the tier afterwards does not mean fetching every gear set again.
+
+- **Which slot a coffer fills** is read out of its own name — coffers are named
+  `<Set> <Slot> Coffer (IL nnn)` — restricted to the slots that fight's book actually buys, so a
+  bad read can only land on a neighbour. `Slots.SlotFromName` holds the word list, and its order is
+  load-bearing: "earring" contains "ring", so accessories are tested before the ring.
 - **Which zone is which fight** is learned the first time a chest is seen there, and only when two
   or more of its drops match one fight's pool — one match could be a slot two fights share.
 

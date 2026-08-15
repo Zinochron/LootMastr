@@ -78,6 +78,14 @@ public sealed class RosterTab : ITab
                            "the job of everyone who already is. Nothing is ever removed.");
 
         ImGui.SameLine();
+        if (ImGui.Button("Re-file imports"))
+            importer.Reclassify();
+
+        Widgets.HelpMarker("Runs the raid / tome / augmented decision over the sets already imported, " +
+                           "without fetching them again. Worth pressing after discovering the tier or " +
+                           "correcting how augmented gear is spelled.");
+
+        ImGui.SameLine();
         ImGui.SetNextItemWidth(140f * ImGuiHelpers.GlobalScale);
         ImGui.InputTextWithHint("##newName", "Name", ref newName, 32);
 
@@ -157,7 +165,9 @@ public sealed class RosterTab : ITab
 
     private void DrawGrid()
     {
-        var columns = 3 + Slots.All.Length;
+        // Player, BiS, Books and the reorder buttons, then one column per slot. Getting this count
+        // wrong does not fail loudly — ImGui just drops the overflow, which ate the Ring 2 column.
+        var columns = 4 + Slots.All.Length;
         var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollX |
                     ImGuiTableFlags.SizingFixedFit;
 

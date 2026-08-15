@@ -116,6 +116,56 @@ var rules = new PriorityRules();
     Check("ticked off slots drop out", Plan(m, RaidRole.Dps, tier).Open.Count == 0);
 }
 
+// --- augmented tome gear is recognised by name --------------------------------------------------
+
+{
+    // Augmented pieces sit at the raid item level, so the name is the only signal before the
+    // upgrade trade has been discovered. Getting this wrong files every one of them as a raid drop.
+    Check("\"Augmented\" is tome gear", tier.IsAugmentedName("Augmented Bygone Brass Coat"));
+    Check("\"Aug.\" is tome gear", tier.IsAugmentedName("Aug. Bygone Brass Coat"));
+    Check("matching ignores case", tier.IsAugmentedName("augmented bygone brass coat"));
+
+    Check("a raid piece is not tome gear", !tier.IsAugmentedName("Grand Champion's Coat"));
+    Check("the plain tome piece is not augmented", !tier.IsAugmentedName("Bygone Brass Coat"));
+
+    // The prefix has to be a prefix, or "Augmentation Ring" and friends would be swept up too.
+    Check("the word has to start the name", !tier.IsAugmentedName("Ring of Augmented Power"));
+    Check("an empty name is not augmented", !tier.IsAugmentedName(""));
+}
+
+// --- the slot is read out of a coffer's name ------------------------------------------------------
+
+{
+    var accessories = new[] { GearSlot.Earrings, GearSlot.Necklace, GearSlot.Bracelets, GearSlot.Ring1 };
+    var armour = new[] { GearSlot.Head, GearSlot.Hands, GearSlot.Feet };
+    var weapons = new[] { GearSlot.Weapon, GearSlot.OffHand };
+
+    Check("head coffer reads as head",
+          Slots.SlotFromName("Grand Champion's Head Gear Coffer (IL 790)", armour) == GearSlot.Head);
+
+    Check("foot coffer reads as feet",
+          Slots.SlotFromName("Grand Champion's Foot Gear Coffer (IL 790)", armour) == GearSlot.Feet);
+
+    // "Earring" contains "ring": the ordering inside SlotWords is what stops this landing on Ring1.
+    Check("earring coffer does not read as a ring",
+          Slots.SlotFromName("Grand Champion's Earring Coffer (IL 790)", accessories) == GearSlot.Earrings);
+
+    Check("ring coffer reads as a ring",
+          Slots.SlotFromName("Grand Champion's Ring Coffer (IL 790)", accessories) == GearSlot.Ring1);
+
+    Check("shield coffer reads as the off hand",
+          Slots.SlotFromName("Grand Champion's Shield Coffer (IL 790)", weapons) == GearSlot.OffHand);
+
+    // A read is only ever allowed to land on a slot the same book already buys.
+    Check("a slot outside the candidates is never returned",
+          Slots.SlotFromName("Grand Champion's Head Gear Coffer (IL 790)", accessories) == null);
+
+    Check("an unreadable name gives nothing",
+          Slots.SlotFromName("Thundersteeped Twine", armour) == null);
+
+    Check("no candidates gives nothing", Slots.SlotFromName("Head Gear Coffer", []) == null);
+}
+
 // --- nobody needs it ---------------------------------------------------------------------------
 
 {
