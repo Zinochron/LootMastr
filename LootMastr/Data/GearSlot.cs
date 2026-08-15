@@ -56,10 +56,17 @@ public enum GearSource
 
 public static class Slots
 {
-    /// <summary>Every slot, in the order a gear set is normally read.</summary>
+    /// <summary>
+    /// Every slot that is tracked, in the order a gear set is normally read.
+    ///
+    /// <see cref="GearSlot.OffHand"/> is deliberately absent. Only one job carries a shield and it
+    /// always arrives with the weapon — same coffer, same eight books — so tracking it separately
+    /// would invent a piece of work that does not exist. The enum member stays for item data and
+    /// for configs written before this.
+    /// </summary>
     public static readonly GearSlot[] All =
     [
-        GearSlot.Weapon, GearSlot.OffHand,
+        GearSlot.Weapon,
         GearSlot.Head, GearSlot.Body, GearSlot.Hands, GearSlot.Legs, GearSlot.Feet,
         GearSlot.Earrings, GearSlot.Necklace, GearSlot.Bracelets, GearSlot.Ring1, GearSlot.Ring2,
     ];
@@ -75,9 +82,18 @@ public static class Slots
 
     /// <summary>
     /// The slot a coffer is filed under. Both ring slots share one coffer, and item data never
-    /// distinguishes the two, so <see cref="GearSlot.Ring1"/> stands in for either.
+    /// distinguishes the two, so <see cref="GearSlot.Ring1"/> stands in for either. A shield comes
+    /// out of the weapon coffer, so it files under the weapon.
+    ///
+    /// Note the asymmetry with rings, which is real rather than an oversight: two ring slots want
+    /// two separate coffers, while a weapon and a shield are one purchase.
     /// </summary>
-    public static GearSlot CofferSlot(GearSlot slot) => IsRing(slot) ? GearSlot.Ring1 : slot;
+    public static GearSlot CofferSlot(GearSlot slot) => slot switch
+    {
+        GearSlot.Ring2 => GearSlot.Ring1,
+        GearSlot.OffHand => GearSlot.Weapon,
+        _ => slot,
+    };
 
     public static string Label(this GearSlot slot) => slot switch
     {
@@ -165,8 +181,7 @@ public static class Slots
         (GearSlot.Hands, ["hand", "glove"]),
         (GearSlot.Legs, ["leg"]),
         (GearSlot.Feet, ["foot", "feet", "boot"]),
-        (GearSlot.OffHand, ["shield", "off hand", "offhand"]),
-        (GearSlot.Weapon, ["weapon"]),
+        (GearSlot.Weapon, ["weapon", "shield"]),
     ];
 
     /// <summary>

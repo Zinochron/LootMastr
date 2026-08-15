@@ -85,16 +85,10 @@
       "Upgrade": "Weapon"
     },
     {
-      "Label": "Weapon",
+      "Label": "Weapon (with shield)",
       "Encounter": 4,
       "Cost": 8,
       "Slots": [ "Weapon" ]
-    },
-    {
-      "Label": "Shield",
-      "Encounter": 4,
-      "Cost": 5,
-      "Slots": [ "OffHand" ]
     }
   ],
 

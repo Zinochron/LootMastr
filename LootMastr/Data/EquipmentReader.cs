@@ -89,6 +89,11 @@ public sealed class EquipmentReader
             if (!items.TryGetItem(itemId, out var info) || info.Slot == null)
                 continue;
 
+            // A shield is not tracked separately — it arrives with the weapon and would otherwise
+            // sit in the dictionary as a slot nothing ever reads.
+            if (info.Slot == GearSlot.OffHand)
+                continue;
+
             if (Slots.IsRing(info.Slot.Value))
             {
                 rings.Add(itemId);

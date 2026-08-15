@@ -150,11 +150,19 @@ are allowed to disagree; the ranking wins, because it is the one that plays the 
 
 The first version of the harness asserted the opposite and was wrong.
 
-## Shields do not drop
+## Shields are not a slot
 
-No fight drops a shield; it exists only in the weapon book exchange at five books. `PlayerPlan.From`
-therefore falls back from "which fight drops this slot" to "which book buys it", or a paladin's
-shield would silently disappear from the plan instead of showing up as work. Covered by the harness.
+Only one job carries a shield and it always arrives with the weapon — same coffer, same eight
+books. So `GearSlot.OffHand` is absent from `Slots.All` and `CofferSlot` files it under the weapon;
+a paladin owes one piece, not two. The enum member stays for item data and for configs written
+before this.
+
+Note the asymmetry with rings, which is real rather than an oversight: two ring slots want two
+separate coffers, while a weapon and a shield are one purchase. The harness pins down both halves,
+because collapsing the wrong one silently miscounts somebody's remaining work.
+
+`PlayerPlan.From` still falls back from "which fight drops this slot" to "which book buys it",
+which is what would carry a slot that is only ever bought.
 
 ## Target, given, actual
 
@@ -225,8 +233,7 @@ a per-item table would be thirty:
 | Accessory upgrade | 3 × T2 |
 | Body, legs | 6 × T3 |
 | Armour upgrade, weapon upgrade | 4 × T3 each |
-| Weapon | 8 × T4 |
-| Shield | 5 × T4 |
+| Weapon, shield included | 8 × T4 |
 
 The rules are what the arithmetic runs on, because a rule cannot be half missing the way a
 discovered table can. The `SpecialShop` walk is only consulted for anything no rule covers, and

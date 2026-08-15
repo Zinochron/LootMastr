@@ -65,8 +65,8 @@ static TierDefinition Tier()
     Rule("Body, legs", 3, 6, [GearSlot.Body, GearSlot.Legs]);
     Rule("Armour upgrade", 3, 4, [], GearSide.Left);
     Rule("Weapon upgrade", 3, 4, [], GearSide.Weapon);
-    Rule("Weapon", 4, 8, [GearSlot.Weapon]);
-    Rule("Shield", 4, 5, [GearSlot.OffHand]);
+    Rule("Weapon (with shield)", 4, 8, [GearSlot.Weapon]);
+    
 
     // The last fight's books trade one for one into any earlier fight's.
     tier.Conversions.Add(new TierTokenConversion { FromEncounter = 4, ToEncounters = [1, 2, 3], Ratio = 1 });
@@ -164,7 +164,7 @@ var rules = new PriorityRules();
 {
     var accessories = new[] { GearSlot.Earrings, GearSlot.Necklace, GearSlot.Bracelets, GearSlot.Ring1 };
     var armour = new[] { GearSlot.Head, GearSlot.Hands, GearSlot.Feet };
-    var weapons = new[] { GearSlot.Weapon, GearSlot.OffHand };
+    var weapons = new[] { GearSlot.Weapon };
 
     Check("head coffer reads as head",
           Slots.SlotFromName("Grand Champion's Head Gear Coffer (IL 790)", armour) == GearSlot.Head);
@@ -179,8 +179,9 @@ var rules = new PriorityRules();
     Check("ring coffer reads as a ring",
           Slots.SlotFromName("Grand Champion's Ring Coffer (IL 790)", accessories) == GearSlot.Ring1);
 
-    Check("shield coffer reads as the off hand",
-          Slots.SlotFromName("Grand Champion's Shield Coffer (IL 790)", weapons) == GearSlot.OffHand);
+    // A shield is part of the weapon purchase, so even a coffer named for it files under the weapon.
+    Check("shield coffer reads as the weapon",
+          Slots.SlotFromName("Grand Champion's Shield Coffer (IL 790)", weapons) == GearSlot.Weapon);
 
     // Discovery now matches against every slot, since restricting it to what the tier claims a
     // fight drops mostly just left rows unassigned when those pools were slightly off.
@@ -486,22 +487,25 @@ var rules = new PriorityRules();
           quickScore < slowScore, $"quick {quickScore:0.00} < slow {slowScore:0.00}");
 }
 
-// --- a shield is bought, never dropped -------------------------------------------------------------
+// --- a shield comes with the weapon ----------------------------------------------------------------
 
 {
-    // No fight drops a shield; it only exists in the weapon book exchange. It must still be planned.
-    var m = Member("Pld", (GearSlot.OffHand, GearSource.Raid));
+    // Only one job carries a shield and it always arrives with the weapon, out of the same coffer
+    // and the same eight books. Tracking it as its own slot would invent work that does not exist.
+    Check("a shield is not a tracked slot", !Slots.All.Contains(GearSlot.OffHand));
+    Check("a shield files under the weapon coffer", Slots.CofferSlot(GearSlot.OffHand) == GearSlot.Weapon);
+
+    var m = Member("Pld", (GearSlot.Weapon, GearSource.Raid), (GearSlot.OffHand, GearSource.Raid));
     var plan = Plan(m, RaidRole.Tank, tier);
 
-    Check("a shield still becomes a need", plan.Open.Count == 1,
+    Check("a paladin owes one piece, not two", plan.Open.Count == 1,
           string.Join(", ", plan.Open.Select(n => n.Describe())));
 
-    Check("the shield is paid for with weapon books",
-          plan.Open.Count == 1 && plan.Open[0].Encounter == 4, $"encounter {plan.Open.FirstOrDefault().Encounter}");
+    Check("and it is the weapon", plan.Open.Count == 1 && plan.Open[0].Slot == GearSlot.Weapon);
 
-    // Five books at one a week.
-    var result = new WeekSimulator(tier, rules, 12).Run([Plan(m, RaidRole.Tank, tier)]);
-    Check("the shield arrives on book five", result.LastFinishWeek == 5, $"week {result.LastFinishWeek}");
+    // Rings are the opposite case, and the asymmetry is deliberate: two ring slots want two coffers.
+    var ringer = Member("B", (GearSlot.Ring1, GearSource.Raid), (GearSlot.Ring2, GearSource.Raid));
+    Check("two ring slots still want two coffers", Plan(ringer, RaidRole.Dps, tier).Open.Count == 2);
 }
 
 // --- scarcity: nobody gets starved ----------------------------------------------------------------

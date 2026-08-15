@@ -369,12 +369,6 @@ public sealed class TierCatalog
     public IEnumerable<GearSlot> CandidateSlots(TierReward reward)
     {
         var encounter = Tier.Encounter(reward.Encounter);
-        if (encounter == null)
-            return Slots.All;
-
-        // Weapon books also buy the shield, which no fight drops on its own.
-        return encounter.DropSlots.Contains(GearSlot.Weapon)
-                   ? encounter.DropSlots.Append(GearSlot.OffHand)
-                   : encounter.DropSlots;
+        return encounter == null ? Slots.All : encounter.DropSlots;
     }
 }
