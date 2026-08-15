@@ -166,6 +166,69 @@ var rules = new PriorityRules();
     Check("no candidates gives nothing", Slots.SlotFromName("Head Gear Coffer", []) == null);
 }
 
+// --- target vs actual --------------------------------------------------------------------------
+
+{
+    // Nothing handed over yet.
+    var owed = new SlotNeed { Source = GearSource.Raid, BisItemId = 500 };
+    Check("an unmet raid slot is owed", owed.StateFor(scanned: true) == SlotState.Needed);
+    Check("scanning does not change an owed slot", owed.StateFor(scanned: false) == SlotState.Needed);
+
+    // Handed over and worn.
+    var worn = new SlotNeed { Source = GearSource.Raid, BisItemId = 500, Obtained = true, EquippedItemId = 500 };
+    Check("handed over and worn is done", worn.StateFor(scanned: true) == SlotState.Done);
+
+    // Handed over, wearing something else. This is the case that has to stand out.
+    var unopened = new SlotNeed { Source = GearSource.Raid, BisItemId = 500, Obtained = true, EquippedItemId = 400 };
+    Check("handed over but wearing something else is flagged",
+          unopened.StateFor(scanned: true) == SlotState.AssignedNotWorn);
+
+    // Handed over, wearing nothing at all in that slot.
+    var empty = new SlotNeed { Source = GearSource.Raid, BisItemId = 500, Obtained = true };
+    Check("handed over with an empty slot is flagged", empty.StateFor(scanned: true) == SlotState.AssignedNotWorn);
+
+    // The point of the scanned flag: before anyone has looked, "not worn" is not knowable, and
+    // guessing would put a warning on every row of a fresh roster.
+    Check("nothing is flagged before a scan", empty.StateFor(scanned: false) == SlotState.Done);
+
+    // A slot set by hand has no BiS id, so the kind of the equipped item has to carry it.
+    var byHand = new SlotNeed
+    {
+        Source = GearSource.Raid, Obtained = true,
+        EquippedItemId = 400, EquippedSource = GearSource.Raid,
+    };
+    Check("a hand-set slot matches on the kind of item", byHand.StateFor(scanned: true) == SlotState.Done);
+
+    var wrongKind = new SlotNeed
+    {
+        Source = GearSource.Raid, Obtained = true,
+        EquippedItemId = 400, EquippedSource = GearSource.Crafted,
+    };
+    Check("wearing crafted where raid was planned is flagged",
+          wrongKind.StateFor(scanned: true) == SlotState.AssignedNotWorn);
+
+    // Slots that cost the raid nothing never carry a state at all.
+    var crafted = new SlotNeed { Source = GearSource.Crafted };
+    Check("a crafted slot is never planned", crafted.StateFor(scanned: true) == SlotState.NotPlanned);
+}
+
+// --- an unworn but awarded piece is still out of the distribution --------------------------------
+
+{
+    // The rule the whole thing turns on: a coffer that was handed over but never opened must not
+    // come back around, or the same player is assigned it twice.
+    var m = Member("A", (GearSlot.Body, GearSource.Raid));
+    var need = m.NeedFor(GearSlot.Body);
+    need.Obtained = true;
+    need.EquippedItemId = 0;
+
+    Check("an awarded but unworn slot is satisfied", need.IsSatisfied);
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+    Check("an awarded but unworn slot is not a need", plan.Open.Count == 0);
+    Check("and the player is not a candidate for it", !plan.Wants(GearSlot.Body));
+}
+
 // --- nobody needs it ---------------------------------------------------------------------------
 
 {

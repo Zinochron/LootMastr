@@ -14,13 +14,41 @@ public static class RosterKey
         string.IsNullOrWhiteSpace(world) ? name.Trim() : $"{name.Trim()}@{world.Trim()}";
 }
 
-/// <summary>What one player wants in one slot, and whether they already have it.</summary>
+/// <summary>How a slot reads once target and actual are both known.</summary>
+public enum SlotState
+{
+    /// <summary>Costs the raid nothing — plain tome, crafted, or nothing planned.</summary>
+    NotPlanned,
+
+    /// <summary>Planned and still owed.</summary>
+    Needed,
+
+    /// <summary>Handed over and being worn. Done in every sense.</summary>
+    Done,
+
+    /// <summary>
+    /// Handed over but not on the character. Still done as far as handing out loot goes — it must
+    /// never come up for assignment again — but the player has something left to do.
+    /// </summary>
+    AssignedNotWorn,
+}
+
+/// <summary>
+/// What one player wants in one slot (the target), what they were given, and what they are
+/// actually wearing (the actual). The three are deliberately separate: a coffer that has been
+/// awarded but not opened is done for distribution and not done for the player.
+/// </summary>
 [Serializable]
 public sealed class SlotNeed
 {
+    /// <summary>Target: where the player intends to get this slot from.</summary>
     public GearSource Source { get; set; } = GearSource.None;
 
-    /// <summary>The piece itself is done — won, bought with books, or already owned.</summary>
+    /// <summary>
+    /// The piece has been handed over — won, bought with books, or already owned. This is what
+    /// distribution goes by, and a gear scan may set it but must never clear it: not wearing
+    /// something is no evidence of not owning it.
+    /// </summary>
     public bool Obtained { get; set; }
 
     /// <summary>
@@ -32,6 +60,12 @@ public sealed class SlotNeed
     /// <summary>Item id from the imported gear set, 0 when the slot was set by hand.</summary>
     public uint BisItemId { get; set; }
 
+    /// <summary>Actual: item id last seen equipped on the character. 0 when never seen.</summary>
+    public uint EquippedItemId { get; set; }
+
+    /// <summary>What the equipped item was classified as, worked out once when it was read.</summary>
+    public GearSource EquippedSource { get; set; } = GearSource.None;
+
     /// <summary>Nothing left for the raid to provide for this slot.</summary>
     public bool IsSatisfied => Source switch
     {
@@ -40,12 +74,42 @@ public sealed class SlotNeed
         _ => true,
     };
 
+    /// <summary>
+    /// Whether the character is wearing what this slot was planned for. Prefers the exact item from
+    /// the imported set and falls back to "something of the right kind", so a slot filled by hand
+    /// still resolves.
+    /// </summary>
+    public bool IsWearingTarget =>
+        EquippedItemId != 0 &&
+        (BisItemId != 0 ? EquippedItemId == BisItemId : EquippedSource == Source);
+
+    /// <summary>
+    /// How the cell should read. <paramref name="scanned"/> says whether this character's gear has
+    /// ever been looked at — without that, "not wearing it" cannot be told apart from "not known",
+    /// and guessing would put a warning on every row of a fresh roster.
+    /// </summary>
+    public SlotState StateFor(bool scanned)
+    {
+        if (!Source.NeedsRaidResource())
+            return SlotState.NotPlanned;
+
+        if (!IsSatisfied)
+            return SlotState.Needed;
+
+        if (!scanned)
+            return SlotState.Done;
+
+        return IsWearingTarget ? SlotState.Done : SlotState.AssignedNotWorn;
+    }
+
     public SlotNeed Clone() => new()
     {
         Source = Source,
         Obtained = Obtained,
         UpgradeObtained = UpgradeObtained,
         BisItemId = BisItemId,
+        EquippedItemId = EquippedItemId,
+        EquippedSource = EquippedSource,
     };
 }
 
@@ -74,6 +138,17 @@ public sealed class RosterMember
 
     /// <summary>Pieces won so far, used by the fairness term when two players score equally.</summary>
     public int ItemsReceived { get; set; }
+
+    /// <summary>
+    /// When this character's equipment was last read. Null means never, which is what separates
+    /// "not wearing the piece" from "nobody has looked yet".
+    /// </summary>
+    public DateTime? LastScannedUtc { get; set; }
+
+    /// <summary>Average item level as the game reported it at the last scan. 0 when never read.</summary>
+    public int AverageItemLevel { get; set; }
+
+    public bool HasBeenScanned => LastScannedUtc != null;
 
     public string Key => RosterKey.For(Name, World);
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -24,6 +25,8 @@ public sealed class RosterTab : ITab
     private readonly BisImporter importer;
     private readonly TierCatalog tiers;
     private readonly ClearTracker clears;
+    private readonly GearScanner scanner;
+    private readonly ItemCatalog items;
 
     private string newName = string.Empty;
     private string newWorld = string.Empty;
@@ -31,7 +34,8 @@ public sealed class RosterTab : ITab
     private string urlBufferFor = string.Empty;
 
     public RosterTab(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
-                     BisImporter importer, TierCatalog tiers, ClearTracker clears)
+                     BisImporter importer, TierCatalog tiers, ClearTracker clears, GearScanner scanner,
+                     ItemCatalog items)
     {
         this.config = config;
         this.roster = roster;
@@ -40,6 +44,8 @@ public sealed class RosterTab : ITab
         this.importer = importer;
         this.tiers = tiers;
         this.clears = clears;
+        this.scanner = scanner;
+        this.items = items;
     }
 
     public string Title => "Roster";
@@ -52,6 +58,9 @@ public sealed class RosterTab : ITab
         DrawToolbar();
         DrawClearPrompt();
         DrawImportStatus();
+
+        if (!string.IsNullOrEmpty(scanner.Status))
+            Widgets.Coloured(scanner.IsRunning ? Widgets.Wanted : Widgets.Muted, scanner.Status);
         ImGuiHelpers.ScaledDummy(4f);
 
         if (roster.Members.Count == 0)
@@ -77,6 +86,23 @@ public sealed class RosterTab : ITab
 
         Widgets.HelpMarker("Adds anyone in your party who is not in the roster yet, and refreshes " +
                            "the job of everyone who already is. Nothing is ever removed.");
+
+        ImGui.SameLine();
+
+        if (scanner.IsRunning)
+        {
+            if (ImGui.Button("Stop reading"))
+                scanner.Stop("Stopped.");
+        }
+        else if (ImGui.Button("Read gear"))
+        {
+            Services.Chat.Print($"LootMastr: {scanner.Start()}");
+        }
+
+        Widgets.HelpMarker("Reads your own equipment, then examines each party member in turn to read " +
+                           "theirs. Examine reports real items, not glamours.\n\n" +
+                           "Anyone in another zone is skipped. Nothing is ever un-ticked by this: " +
+                           "a piece that was handed over stays handed over whether it is worn or not.");
 
         ImGui.SameLine();
         if (ImGui.Button("Re-file imports"))
@@ -164,26 +190,30 @@ public sealed class RosterTab : ITab
         Widgets.Coloured(Widgets.Muted, importer.Status);
     }
 
+    /// <summary>
+    /// The word in a cell is what the player wants, the mark after it is what they actually have.
+    /// </summary>
     private static void DrawLegend()
     {
+        ImGui.TextDisabled("wants:");
+        ImGui.SameLine(0f, 4f);
         Widgets.Coloured(Widgets.Wanted, "Raid");
-        ImGui.SameLine(0f, 4f);
-        ImGui.TextDisabled("needs a coffer");
-
-        ImGui.SameLine(0f, 12f);
+        ImGui.SameLine(0f, 6f);
         Widgets.Coloured(Widgets.Augment, "Tome+");
-        ImGui.SameLine(0f, 4f);
-        ImGui.TextDisabled("needs an upgrade material");
-
-        ImGui.SameLine(0f, 12f);
-        Widgets.Coloured(Widgets.Done, "✓");
-        ImGui.SameLine(0f, 4f);
-        ImGui.TextDisabled("done");
-
-        ImGui.SameLine(0f, 12f);
+        ImGui.SameLine(0f, 6f);
         Widgets.Coloured(Widgets.Muted, "Tome / Craft / —");
+
+        ImGui.SameLine(0f, 16f);
+        ImGui.TextDisabled("has:");
         ImGui.SameLine(0f, 4f);
-        ImGui.TextDisabled("costs the raid nothing");
+        Widgets.Coloured(Widgets.Done, "✓ worn");
+        ImGui.SameLine(0f, 6f);
+        Widgets.Coloured(Widgets.NotWorn, "✓! given, not worn");
+
+        Widgets.HelpMarker("A slot marked \"given, not worn\" has already been handed over — usually " +
+                           "an unopened coffer. It never comes up for assignment again; the mark is " +
+                           "there so the player knows they still have something to do.\n\n" +
+                           "\"has\" only appears once that character's gear has been read.");
     }
 
     private void DrawGrid()
@@ -388,24 +418,21 @@ public sealed class RosterTab : ITab
     private void DrawNeedCell(RosterMember member, GearSlot slot)
     {
         var need = member.NeedFor(slot);
-        var satisfied = need.IsSatisfied;
-        var label = need.Source.Label();
+        var state = need.StateFor(member.HasBeenScanned);
 
-        // Done pieces keep their label and gain a tick rather than being replaced by one: which
-        // source a finished slot came from is still the interesting part when reading a row, and
-        // the tick carries "done" on its own for anyone who cannot separate the green from the
-        // orange.
-        if (need.Source.NeedsRaidResource() && satisfied)
-            label = $"{label} ✓";
+        // The word is the target, the mark after it is the actual. Done pieces keep their label
+        // and gain a tick rather than being replaced by one: which source a finished slot came
+        // from is still the interesting part when reading a row, and the mark carries the state on
+        // its own for anyone who cannot separate the colours.
+        var label = need.Source.Label() + Widgets.MarkFor(state);
 
-        using (ImRaii.PushColor(ImGuiCol.Text, Widgets.ColourFor(need.Source, satisfied)))
+        using (ImRaii.PushColor(ImGuiCol.Text, Widgets.ColourFor(need.Source, state)))
         {
             if (ImGui.SmallButton($"{label}##{slot}"))
                 ImGui.OpenPopup($"##need{slot}");
         }
 
-        Widgets.Tooltip($"{member.Name} — {slot.Label()}\n{need.Source.Label()}: {need.Source.Description()}" +
-                        (need.BisItemId != 0 ? "\n\nFrom the imported gear set." : string.Empty));
+        Widgets.Tooltip(DescribeCell(member, slot, need, state));
 
         using var popup = ImRaii.Popup($"##need{slot}");
         if (!popup.Success)
@@ -452,6 +479,39 @@ public sealed class RosterTab : ITab
             Widgets.HelpMarker("Only the upgrade material is tracked. The tomestone piece itself costs " +
                                "no raid resource, so it never competes for a drop.");
         }
+    }
+
+    /// <summary>Spells target and actual out in full, since the cell itself only has room for a word.</summary>
+    private string DescribeCell(RosterMember member, GearSlot slot, SlotNeed need, SlotState state)
+    {
+        var lines = new List<string> { $"{member.Name} — {slot.Label()}", string.Empty };
+
+        lines.Add($"Wants: {need.Source.Label()} — {need.Source.Description()}");
+
+        if (need.BisItemId != 0)
+            lines.Add($"       {items.GetItemName(need.BisItemId)}");
+
+        if (!member.HasBeenScanned)
+            lines.Add("Has:   not read yet — press \"Read gear\".");
+        else if (need.EquippedItemId == 0)
+            lines.Add("Has:   nothing equipped.");
+        else
+            lines.Add($"Has:   {items.GetItemName(need.EquippedItemId)} ({need.EquippedSource.Label()})");
+
+        lines.Add(string.Empty);
+
+        lines.Add(state switch
+        {
+            SlotState.NotPlanned => "Costs the raid nothing.",
+            SlotState.Needed => "Still owed.",
+            SlotState.Done => "Done.",
+            SlotState.AssignedNotWorn =>
+                "Handed over but not worn — the coffer is probably still unopened.\n" +
+                "It stays out of the distribution either way; nobody gets it twice.",
+            _ => string.Empty,
+        });
+
+        return string.Join("\n", lines);
     }
 
     private static string SideLabel(GearSide side) => side switch

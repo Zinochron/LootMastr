@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using LootMastr.Data;
+using LootMastr.Roster;
 
 namespace LootMastr.UI;
 
@@ -19,6 +20,9 @@ public static class Widgets
     /// stay distinct for the red-green colour blind, who are most of the people this would fail.
     /// </summary>
     public static readonly Vector4 Augment = new(0.40f, 0.68f, 0.95f, 1f);
+
+    /// <summary>Awarded but not on the character — done for the raid, still open for the player.</summary>
+    public static readonly Vector4 NotWorn = new(0.82f, 0.55f, 0.95f, 1f);
 
     public static void Icon(uint iconId, float size = 20f)
     {
@@ -70,15 +74,26 @@ public static class Widgets
         ImGui.PopStyleColor();
     }
 
-    /// <summary>Colour a need cell by what it still costs the raid, and where that cost comes from.</summary>
-    public static Vector4 ColourFor(GearSource source, bool satisfied)
+    /// <summary>
+    /// Colour a need cell by its state. The glyph in the label carries the same distinction, so
+    /// nothing here is the only way to read a cell.
+    /// </summary>
+    public static Vector4 ColourFor(GearSource source, SlotState state) => state switch
     {
-        if (!source.NeedsRaidResource())
-            return Muted;
+        SlotState.NotPlanned => Muted,
+        SlotState.Done => Done,
+        SlotState.AssignedNotWorn => NotWorn,
+        _ => source == GearSource.TomeAugmented ? Augment : Wanted,
+    };
 
-        if (satisfied)
-            return Done;
-
-        return source == GearSource.TomeAugmented ? Augment : Wanted;
-    }
+    /// <summary>
+    /// The mark after a cell's label. Target is the word, actual is the mark: nothing means still
+    /// owed, a tick means worn, and a tick with a warning means handed over but not on.
+    /// </summary>
+    public static string MarkFor(SlotState state) => state switch
+    {
+        SlotState.Done => " ✓",
+        SlotState.AssignedNotWorn => " ✓!",
+        _ => string.Empty,
+    };
 }

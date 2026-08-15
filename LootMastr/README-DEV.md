@@ -139,6 +139,48 @@ No fight drops a shield; it exists only in the weapon book exchange at five book
 therefore falls back from "which fight drops this slot" to "which book buys it", or a paladin's
 shield would silently disappear from the plan instead of showing up as work. Covered by the harness.
 
+## Target, given, actual
+
+Three separate things per slot, and conflating any two of them breaks something:
+
+| | Field | Means |
+|---|---|---|
+| Target | `Source` | where the player intends to get this slot from |
+| Given | `Obtained` / `UpgradeObtained` | the group handed it over — **this is what distribution goes by** |
+| Actual | `EquippedItemId` / `EquippedSource` | what is on the character right now |
+
+`SlotNeed.StateFor` folds them into what the cell shows. The case that matters is *given but not
+worn* — an awarded coffer nobody opened. It is `AssignedNotWorn`: flagged in the grid so the player
+knows they owe themselves an equip, and still `IsSatisfied`, so it never comes back around for
+assignment. Getting that second half wrong would hand the same slot to the same person twice.
+
+`StateFor` takes a `scanned` flag because before anyone has looked, "not wearing it" cannot be told
+apart from "not known", and guessing would put a warning on every row of a fresh roster.
+
+`GearScanner` may set the given flags and **never clears them**. Not wearing a piece is no evidence
+of not owning it. The reverse does hold — wearing it proves ownership — which is what lets a scan
+fill in everything anyone picked up before the plugin existed.
+
+## Reading what people wear
+
+`AgentInspect.ExamineCharacter(entityId, false)` is a direct call, so the scan does not have to
+target anyone or drive the examine UI. `AgentInspect.ItemData` keeps `ItemId` and `GlamourItemId`
+in **separate fields**, so `ItemId` is the real gear — which is what makes this viable at all. The
+obvious alternative, reading `DrawData` model ids, returns whatever the character is glamoured as
+and would be wrong for most statics.
+
+`GearScanner` is a state machine on the framework tick rather than a loop, because examining is a
+request answered several frames later. It waits for `AgentInspect.CurrentEntityId` to actually be
+the character it asked for, with items present, and gives up after six seconds — the call's own
+return tells you nothing. `UIState.Instance()->Inspect.RequestCooldown` is the game's own examine
+throttle and is respected on top of `Configuration.ActionDelayMs`.
+
+Party members in another zone have no entity id to examine and are skipped by name, not waited on.
+
+Slots are filed from each item's own equip category rather than from its position, since the
+inventory container and the examine window do not lay out the same. Rings are the exception —
+item data never says which finger — so they go in the order the game listed them.
+
 ## Ticking things off
 
 Two independent paths, because neither is reliable alone:
@@ -159,6 +201,9 @@ and there is no way to notice from the outside.
    exchange table should fill with sensible costs. Assign each coffer to its slot.
 2. **Roster** → *Sync from party*, then import one gear set. Check that the grid marks raid pieces
    and tome upgrades, not everything as raid.
+2a. **Roster** → *Read gear* while standing in a party. Your own row should fill immediately; the
+   others should follow one at a time. Check a glamoured character reads as their real gear, and
+   that a slot you have already ticked off but are not wearing shows `✓!` rather than reverting.
 3. **Plan** → the forecast should give plausible week numbers, and the priority rows should list
    the people who actually still need each slot.
 4. Form a two person party, set **Lootmaster** in the duty finder, enter an old dungeon undersized.

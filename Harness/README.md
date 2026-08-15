@@ -23,6 +23,9 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 - `Augmented …` and `Aug. …` are read as tomestone gear, as a prefix only, and a raid piece is not.
 - A coffer's slot is read out of its name, never landing outside the slots that book buys — and
   "Grand Champion's Earring Coffer" resolves to the earrings rather than to a ring.
+- Target, given and actual stay separate: a piece that was handed over but is not being worn is
+  flagged in the grid and still counts as satisfied, so it never comes up for assignment twice.
+  Nothing is flagged before that character's gear has been read.
 - Both ring slots are filled by the one ring coffer.
 - Books are spent the week they cover something, and books already held count.
 - A drop goes to whoever is furthest from done, with damage dealers winning an even tie.

@@ -8,10 +8,17 @@ public readonly record struct PartyPlayer(
     string World,
     uint JobId,
     ulong ContentId,
+    uint EntityId,
     bool IsLeader,
     bool IsLocalPlayer)
 {
     public string Key => RosterKey.For(Name, World);
+
+    /// <summary>
+    /// Whether the character is actually in the world here. Examining someone needs a live object,
+    /// so a member in another zone has to be skipped rather than waited on.
+    /// </summary>
+    public bool IsPresent => EntityId is not (0 or 0xE0000000);
 }
 
 /// <summary>Reads the current party. Nothing here is cached; the party changes without notice.</summary>
@@ -35,6 +42,7 @@ public sealed class PartyReader
                                Services.PlayerState.HomeWorld.ValueNullable?.Name.ExtractText() ?? string.Empty,
                                Services.PlayerState.ClassJob.RowId,
                                Services.PlayerState.ContentId,
+                               Services.PlayerState.EntityId,
                                IsLeader: true,
                                IsLocalPlayer: true));
             }
@@ -57,6 +65,7 @@ public sealed class PartyReader
                            member.World.ValueNullable?.Name.ExtractText() ?? string.Empty,
                            member.ClassJob.RowId,
                            (ulong)member.ContentId,
+                           member.EntityId,
                            IsLeader: i == leaderIndex,
                            IsLocalPlayer: name == localName));
         }

@@ -35,6 +35,8 @@ public sealed class Plugin : IDalamudPlugin
     public LootPlanner Planner { get; }
     public LootWindowReader Loot { get; }
     public LootAssigner Assigner { get; }
+    public EquipmentReader Equipment { get; }
+    public GearScanner Scanner { get; }
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -60,10 +62,13 @@ public sealed class Plugin : IDalamudPlugin
         tracker = new ObtainTracker(Configuration, Roster, Tiers, Assigner);
         clears = new ClearTracker(Configuration, Tiers, Roster, Party);
 
+        Equipment = new EquipmentReader(Items);
+        Scanner = new GearScanner(Configuration, Roster, Party, Equipment, Classifier);
+
         var tabs = new List<ITab>
         {
             new LootTab(Configuration, Assigner, announcer),
-            new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, clears),
+            new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, clears, Scanner, Items),
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),
             new DebugTab(Loot, Party, Tiers, tracker),
@@ -104,6 +109,16 @@ public sealed class Plugin : IDalamudPlugin
                 mainWindow.OpenAt("loot");
                 break;
 
+            case "scan":
+            case "gear":
+                Services.Chat.Print($"LootMastr: {Scanner.Start()}");
+                break;
+
+            case "stop":
+                Scanner.Stop("Stopped by command.");
+                Services.Chat.Print("LootMastr: stopped.");
+                break;
+
             default:
                 ToggleMainUi();
                 break;
@@ -127,6 +142,7 @@ public sealed class Plugin : IDalamudPlugin
         importer.Dispose();
         tracker.Dispose();
         clears.Dispose();
+        Scanner.Dispose();
 
         ECommonsMain.Dispose();
     }
