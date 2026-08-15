@@ -1,8 +1,13 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using LootMastr.Automation;
+using LootMastr.Data;
+using LootMastr.Planning;
+using LootMastr.Roster;
 
 namespace LootMastr.UI.Tabs;
 
@@ -14,12 +19,19 @@ public sealed class LootTab : ITab
     private readonly Configuration config;
     private readonly LootAssigner assigner;
     private readonly ChatAnnouncer announcer;
+    private readonly RosterStore roster;
+    private readonly TierCatalog tiers;
+    private readonly LootPlanner planner;
 
-    public LootTab(Configuration config, LootAssigner assigner, ChatAnnouncer announcer)
+    public LootTab(Configuration config, LootAssigner assigner, ChatAnnouncer announcer,
+                   RosterStore roster, TierCatalog tiers, LootPlanner planner)
     {
         this.config = config;
         this.assigner = assigner;
         this.announcer = announcer;
+        this.roster = roster;
+        this.tiers = tiers;
+        this.planner = planner;
     }
 
     public string Title => "Loot";
@@ -35,14 +47,161 @@ public sealed class LootTab : ITab
         {
             Widgets.Coloured(Widgets.Muted, "No loot window open.");
             ImGui.TextDisabled("The Plan tab shows the same ranking ahead of time, per drop.");
+        }
+        else
+        {
+            ImGuiHelpers.ScaledDummy(4f);
+            DrawDecisions();
+
+            ImGuiHelpers.ScaledDummy(6f);
+            DrawActions();
+        }
+
+        ImGuiHelpers.ScaledDummy(10f);
+        ImGui.Separator();
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawBooks();
+    }
+
+    /// <summary>
+    /// Kills per fight and books per player, in one grid. These are the numbers the whole forecast
+    /// rests on and the ones the game gives no way to read, so they have to be both visible and
+    /// editable — a book counted wrong is invisible everywhere else.
+    /// </summary>
+    private void DrawBooks()
+    {
+        ImGui.TextUnformatted("Books");
+        Widgets.HelpMarker("Every player who clears a fight gets one of its books that week. Kills are " +
+                           "the group's count; the rows below are what each player is holding right now, " +
+                           "after anything they have already spent.");
+        ImGui.Separator();
+
+        var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
+        if (encounters.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "No fights defined — see the Tier tab.");
             return;
         }
 
-        ImGuiHelpers.ScaledDummy(4f);
-        DrawDecisions();
+        using var table = ImRaii.Table("##books", encounters.Count + 2,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit);
+        if (!table.Success)
+            return;
 
-        ImGuiHelpers.ScaledDummy(6f);
-        DrawActions();
+        ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthFixed, 150f * ImGuiHelpers.GlobalScale);
+
+        foreach (var encounter in encounters)
+            ImGui.TableSetupColumn(encounter.Name, ImGuiTableColumnFlags.WidthFixed, 78f * ImGuiHelpers.GlobalScale);
+
+        ImGui.TableSetupColumn("Can buy now", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableHeadersRow();
+
+        DrawKillsRow(encounters);
+
+        foreach (var member in roster.Members)
+            DrawPlayerBooks(member, encounters);
+    }
+
+    private void DrawKillsRow(IReadOnlyList<TierEncounter> encounters)
+    {
+        using var id = ImRaii.PushId("kills");
+
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Kills");
+        Widgets.HelpMarker("How often the group has cleared each fight. Counted automatically when a " +
+                           "clear is confirmed on the Roster tab, and editable here for anything that " +
+                           "happened before the plugin was in use.");
+
+        foreach (var encounter in encounters)
+        {
+            ImGui.TableNextColumn();
+
+            using var column = ImRaii.PushId(encounter.Index);
+
+            var kills = config.KillsFor(encounter.Index);
+            ImGui.SetNextItemWidth(-1f);
+
+            if (ImGui.InputInt("##kills", ref kills, 0))
+            {
+                config.Kills[encounter.Index] = Math.Max(0, kills);
+                config.Save();
+            }
+        }
+
+        ImGui.TableNextColumn();
+
+        // The bulk action for a clear nobody confirmed in time, which is most of them.
+        for (var i = 0; i < encounters.Count; i++)
+        {
+            var encounter = encounters[i];
+
+            if (i > 0)
+                ImGui.SameLine(0f, 4f);
+
+            using var column = ImRaii.PushId(encounter.Index);
+
+            if (ImGui.SmallButton($"+1 {encounter.Name}"))
+                GiveBookToEveryone(encounter.Index);
+
+            Widgets.Tooltip($"Counts one {encounter.Name} kill and gives every player in the roster one " +
+                            "of its books.\n\nUse the prompt on the Roster tab instead when the clear " +
+                            "just happened — that one only counts the people who were actually there.");
+        }
+    }
+
+    private void GiveBookToEveryone(int encounter)
+    {
+        config.Kills[encounter] = config.KillsFor(encounter) + 1;
+
+        foreach (var member in roster.Members)
+            member.Tokens[encounter] = member.TokensFor(encounter) + 1;
+
+        config.Save();
+    }
+
+    private void DrawPlayerBooks(RosterMember member, IReadOnlyList<TierEncounter> encounters)
+    {
+        using var id = ImRaii.PushId(member.Key);
+
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted(member.Name);
+
+        foreach (var encounter in encounters)
+        {
+            ImGui.TableNextColumn();
+
+            using var column = ImRaii.PushId(encounter.Index);
+
+            var held = member.TokensFor(encounter.Index);
+            var kills = config.KillsFor(encounter.Index);
+
+            // Holding more than the group has killed is not possible and always means a typo.
+            using var colour = ImRaii.PushColor(ImGuiCol.Text, Widgets.Bad, held > kills && kills > 0);
+
+            ImGui.SetNextItemWidth(-1f);
+
+            if (ImGui.InputInt("##books", ref held, 0))
+            {
+                member.Tokens[encounter.Index] = Math.Max(0, held);
+                config.Save();
+            }
+
+            if (held > kills && kills > 0)
+                Widgets.Tooltip($"More books than the group has {encounter.Name} kills ({kills}).");
+        }
+
+        ImGui.TableNextColumn();
+
+        var affordable = planner.AffordableNow(member);
+
+        if (affordable.Count == 0)
+            ImGui.TextDisabled("—");
+        else
+            Widgets.Coloured(Widgets.Done, string.Join(", ", affordable));
     }
 
     private void DrawBanner()

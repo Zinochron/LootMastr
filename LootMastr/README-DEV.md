@@ -193,7 +193,27 @@ Two independent paths, because neither is reliable alone:
 - `Loot → Record` does it by hand.
 
 `ClearTracker` counts books, and asks first. A book counted twice bends every forecast after it,
-and there is no way to notice from the outside.
+and there is no way to notice from the outside. Confirming also raises the group's kill count for
+that fight.
+
+## Books
+
+The game exposes no way to read how many books a player is holding, so the numbers are entered and
+have to be worth trusting. `Loot → Books` puts all of it in one grid:
+
+- **Kills per fight**, group level. Raised automatically when a clear is confirmed, editable for
+  everything that happened before the plugin was in use. Its real job is being the number an
+  individual's count can be checked against — a player holding more books than the group has kills
+  is impossible, so the cell turns red.
+- **Books per player per fight**, editable. This is what people are holding *now*, after anything
+  already spent, which is why it cannot simply be derived from kills.
+- **What that buys right now**, from `LootPlanner.AffordableNow`. This is the question the counts
+  exist to answer: someone who can already buy the piece outright does not need to compete for the
+  coffer.
+
+`+1 <fight>` raises the kill count and gives every roster member a book. The Roster tab's clear
+prompt is the accurate path — it only counts the people who were actually in the party — and this
+is the catch-up for the clears nobody confirmed in time.
 
 ## Testing order that does not cost a raid night
 

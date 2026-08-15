@@ -47,6 +47,15 @@ public class Configuration : IPluginConfiguration
 
     // ---- Distribution ----------------------------------------------------
 
+    /// <summary>
+    /// How often the group has cleared each fight, by encounter index. Group level rather than per
+    /// player: it is what says how many books *should* have gone out, which is the number to check
+    /// an individual's count against when it looks wrong.
+    /// </summary>
+    public Dictionary<int, int> Kills { get; set; } = new();
+
+    public int KillsFor(int encounter) => Kills.GetValueOrDefault(encounter);
+
     /// <summary>How many weeks the planner looks ahead when judging an assignment.</summary>
     public int LookaheadWeeks { get; set; } = 8;
 

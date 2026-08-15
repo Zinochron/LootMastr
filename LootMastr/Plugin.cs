@@ -67,7 +67,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var tabs = new List<ITab>
         {
-            new LootTab(Configuration, Assigner, announcer),
+            new LootTab(Configuration, Assigner, announcer, Roster, Tiers, Planner),
             new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, clears, Scanner, Items),
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),

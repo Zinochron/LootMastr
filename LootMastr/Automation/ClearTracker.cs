@@ -77,6 +77,8 @@ public sealed class ClearTracker : IDisposable
             counted++;
         }
 
+        config.Kills[Pending.Index] = config.KillsFor(Pending.Index) + 1;
+
         Status = $"{Pending.Name}: a book each for {counted} player(s).";
         Pending = null;
         PendingPlayers = [];

@@ -107,6 +107,32 @@ public sealed class LootPlanner
         return string.Join("; ", parts);
     }
 
+    /// <summary>
+    /// What this player's books would buy right now, cheapest first. Answers the question the book
+    /// counts are actually for: whether someone needs to compete for a coffer at all.
+    /// </summary>
+    public IReadOnlyList<string> AffordableNow(RosterMember member)
+    {
+        var tier = tiers.Tier;
+        var plan = PlayerPlan.From(member, roster.RoleOf(member), tier);
+        var result = new List<(int Cost, string Text)>();
+
+        foreach (var need in plan.Open)
+        {
+            var reward = need.IsUpgrade ? tier.RewardForUpgrade(need.Side) : tier.RewardForSlot(need.Slot);
+            if (reward is not { Cost: > 0 })
+                continue;
+
+            if (member.TokensFor(reward.Encounter) < reward.Cost)
+                continue;
+
+            var fight = tier.Encounter(reward.Encounter)?.Name ?? $"#{reward.Encounter}";
+            result.Add((reward.Cost, $"{need.Describe()} for {reward.Cost} {fight} book(s)"));
+        }
+
+        return result.OrderBy(r => r.Cost).Select(r => r.Text).ToList();
+    }
+
     /// <summary>The roster as simulation input. Members with nothing left are still included so the
     /// group's finish week accounts for them.</summary>
     public List<PlayerPlan> BuildPlans()
