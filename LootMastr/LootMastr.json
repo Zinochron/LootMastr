@@ -1,0 +1,13 @@
+{
+  "Author": "Zinochron",
+  "Name": "LootMastr",
+  "Punchline": "Plans and hands out savage raid loot.",
+  "Description": "Tracks what every member of your static still needs, works out who should get each drop so the whole group finishes as early as possible, and assigns the loot for you when the party is on the Lootmaster rule.\n\nOpen with /lootmastr.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "raid",
+    "savage",
+    "loot",
+    "bis"
+  ]
+}

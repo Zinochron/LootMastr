@@ -1,0 +1,51 @@
+{
+  "Id": "aac-heavyweight",
+  "Name": "AAC Heavyweight (Savage)",
+  "RaidItemLevel": 790,
+  "RaidWeaponItemLevel": 795,
+  "TomeItemLevel": 780,
+  "AugmentedItemLevel": 790,
+
+  "Upgrades": [
+    { "Side": "Right", "ItemName": "Thundersteeping Glaze" },
+    { "Side": "Left", "ItemName": "Thundersteeped Twine" },
+    { "Side": "Weapon", "ItemName": "Thundersteeped Solvent" }
+  ],
+
+  "Encounters": [
+    {
+      "Index": 1,
+      "Name": "M1S",
+      "TokenItemName": "AAC Illustrated: HW Edition I",
+      "DropSlots": [ "Earrings", "Necklace", "Bracelets", "Ring1" ],
+      "UpgradeDrops": [],
+      "DropCount": 2
+    },
+    {
+      "Index": 2,
+      "Name": "M2S",
+      "TokenItemName": "AAC Illustrated: HW Edition II",
+      "DropSlots": [ "Head", "Hands", "Feet" ],
+      "UpgradeDrops": [ "Right" ],
+      "DropCount": 2
+    },
+    {
+      "Index": 3,
+      "Name": "M3S",
+      "TokenItemName": "AAC Illustrated: HW Edition III",
+      "DropSlots": [ "Body", "Legs" ],
+      "UpgradeDrops": [ "Left", "Weapon" ],
+      "DropCount": 2
+    },
+    {
+      "Index": 4,
+      "Name": "M4S",
+      "TokenItemName": "AAC Illustrated: HW Edition IV",
+      "DropSlots": [ "Weapon" ],
+      "UpgradeDrops": [],
+      "DropCount": 2
+    }
+  ],
+
+  "Rewards": []
+}

@@ -1,5 +1,5 @@
 <Solution>
-  <Project Path="SamplePlugin/SamplePlugin.csproj">
+  <Project Path="LootMastr/LootMastr.csproj">
     <Platform Project="x64" />
   </Project>
 </Solution>

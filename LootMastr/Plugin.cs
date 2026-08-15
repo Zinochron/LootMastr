@@ -1,0 +1,133 @@
+using System.Collections.Generic;
+using Dalamud.Game.Command;
+using Dalamud.Interface.Windowing;
+using Dalamud.Plugin;
+using ECommons;
+using LootMastr.Automation;
+using LootMastr.Data;
+using LootMastr.Import;
+using LootMastr.Planning;
+using LootMastr.Roster;
+using LootMastr.UI;
+using LootMastr.UI.Tabs;
+
+namespace LootMastr;
+
+public sealed class Plugin : IDalamudPlugin
+{
+    private const string CommandName = "/lootmastr";
+
+    private readonly WindowSystem windowSystem = new("LootMastr");
+    private readonly MainWindow mainWindow;
+    private readonly BisImporter importer;
+    private readonly SafetyGuard guard;
+    private readonly ChatAnnouncer announcer;
+    private readonly ObtainTracker tracker;
+    private readonly ClearTracker clears;
+
+    public Configuration Configuration { get; }
+    public ItemCatalog Items { get; }
+    public JobCatalog Jobs { get; }
+    public TierCatalog Tiers { get; }
+    public GearClassifier Classifier { get; }
+    public PartyReader Party { get; }
+    public RosterStore Roster { get; }
+    public LootPlanner Planner { get; }
+    public LootWindowReader Loot { get; }
+    public LootAssigner Assigner { get; }
+
+    public Plugin(IDalamudPluginInterface pluginInterface)
+    {
+        pluginInterface.Create<Services>();
+        ECommonsMain.Init(pluginInterface, this);
+
+        Configuration = Services.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
+        Items = new ItemCatalog();
+        Jobs = new JobCatalog();
+        Tiers = new TierCatalog(Configuration, Items);
+        Classifier = new GearClassifier(Tiers, Items);
+        Party = new PartyReader();
+        Roster = new RosterStore(Configuration, Jobs);
+        importer = new BisImporter(Configuration, Classifier, Jobs);
+
+        Planner = new LootPlanner(Configuration, Tiers, Roster);
+
+        Loot = new LootWindowReader(Items, Tiers);
+        guard = new SafetyGuard(Party, Loot);
+        Assigner = new LootAssigner(Configuration, Loot, Planner, Roster, guard, Tiers);
+        announcer = new ChatAnnouncer(Configuration, guard);
+        tracker = new ObtainTracker(Configuration, Roster, Tiers, Assigner);
+        clears = new ClearTracker(Configuration, Tiers, Roster, Party);
+
+        var tabs = new List<ITab>
+        {
+            new LootTab(Configuration, Assigner, announcer),
+            new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, clears),
+            new PlanTab(Configuration, Roster, Planner, Tiers),
+            new TierTab(Configuration, Tiers, Items),
+            new DebugTab(Loot, Party, Tiers, tracker),
+            new SettingsTab(Configuration),
+        };
+
+        mainWindow = new MainWindow(tabs);
+        windowSystem.AddWindow(mainWindow);
+
+        Services.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "Open LootMastr. Also: /lootmastr roster, /lootmastr settings.",
+        });
+
+        Services.PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        Services.PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        Services.PluginInterface.UiBuilder.OpenConfigUi += OpenSettings;
+    }
+
+    private void OnCommand(string command, string args)
+    {
+        switch (args.Trim().ToLowerInvariant())
+        {
+            case "settings":
+            case "config":
+                OpenSettings();
+                break;
+
+            case "roster":
+                mainWindow.OpenAt("roster");
+                break;
+
+            case "plan":
+                mainWindow.OpenAt("plan");
+                break;
+
+            case "loot":
+                mainWindow.OpenAt("loot");
+                break;
+
+            default:
+                ToggleMainUi();
+                break;
+        }
+    }
+
+    private void ToggleMainUi() => mainWindow.Toggle();
+
+    private void OpenSettings() => mainWindow.OpenAt("settings");
+
+    public void Dispose()
+    {
+        Services.PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        Services.PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+        Services.PluginInterface.UiBuilder.OpenConfigUi -= OpenSettings;
+
+        Services.Commands.RemoveHandler(CommandName);
+
+        windowSystem.RemoveAllWindows();
+        mainWindow.Dispose();
+        importer.Dispose();
+        tracker.Dispose();
+        clears.Dispose();
+
+        ECommonsMain.Dispose();
+    }
+}

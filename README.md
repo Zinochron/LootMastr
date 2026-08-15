@@ -1,78 +1,52 @@
-> ⚠️ **Don't click Fork!**
-> 
-> This is a GitHub Template repo. If you want to use this for a plugin, [use this template][new-repo] to make a new repo!
->
-> ![image](https://github.com/goatcorp/SamplePlugin/assets/16760685/d9732094-e1ed-4769-a70b-58ed2b92580c)
+# LootMastr
 
-# SamplePlugin
+Loot planning and distribution for savage statics, as a Dalamud plugin.
 
-[![Use This Template badge](https://img.shields.io/badge/Use%20This%20Template-0?logo=github&labelColor=grey)][new-repo]
+Most loot tools tell you who is *allowed* to take a drop. LootMastr works out who *should* — by
+playing the rest of the tier forward, drops and books together, and picking the assignment that
+gets the whole group into full BiS soonest, with damage dealers ahead on an even call.
 
+Open it with `/lootmastr`.
 
-Simple example plugin for Dalamud.
+## What it does
 
-This is not designed to be the simplest possible example, but it is also not designed to cover everything you might want to do. For more detailed questions, come ask in [the Discord](https://discord.gg/holdshift).
+- **Keeps the static's need list.** Import each player's gear set from XIVGear or Etro, or fill the
+  grid in by hand. Every slot is marked as raid, tomestone, augmented tomestone or crafted, and only
+  the ones that actually cost the raid something are ever planned around.
+- **Counts books.** A player two books short of buying a slot outright should not be competing for
+  the coffer, so books are part of the plan rather than an afterthought. Clearing a fight offers to
+  count everyone's.
+- **Forecasts the tier.** Who finishes in which week, what is expected to drop, and where each piece
+  is expected to go.
+- **Answers the call.** When a chest opens, the Loot tab ranks who should get each item, with the
+  reasoning behind every placement in one line.
+- **Ticks itself off.** What people receive is picked up from the chat log.
 
-## Main Points
+## Loot rules
 
-* Simple functional plugin
-  * Slash command
-  * Main UI
-  * Settings UI
-  * Image loading
-  * Plugin json
-* Simple, slightly-improved plugin configuration handling
-* Project organization
-  * Copies all necessary plugin files to the output directory
-    * Does not copy dependencies that are provided by dalamud
-    * Output directory can be zipped directly and have exactly what is required
-  * Hides data files from visual studio to reduce clutter
-    * Also allows having data files in different paths than VS would usually allow if done in the IDE directly
+Assigning loot to another player is only possible with the party on the **Lootmaster** loot rule,
+which has to be set in the duty finder before the party enters and only works for a preformed or
+undersized party. Without it LootMastr still ranks every drop — it just cannot apply the result,
+and says so.
 
+> **Assigning is not finished yet.** LootMastr decides correctly and can announce the result in
+> party chat, but does not yet click the game's loot recipient control; that path has to be
+> captured from a live duty first. See `LootMastr/README-DEV.md`.
 
-The intention is less that any of this is used directly in other projects, and more to show how similar things can be done.
+## Which tier
 
-## How To Use
+Ships with AAC Heavyweight (Savage). Book costs, the augmented tomestone set and which zone belongs
+to which fight are all read out of the game rather than typed in, so they cannot drift out of date.
+A new tier is a json file under `LootMastr/Data/Tiers`, not a rebuild, and everything in it is
+editable in the Tier tab.
 
-### Getting Started
+## Building
 
-To begin, [clone this template repository][new-repo] to your own GitHub account. This will automatically bring in everything you need to get a jumpstart on development. You do not need to fork this repository unless you intend to contribute modifications to it.
+```bash
+dotnet build --configuration Release
+```
 
-Be sure to also check out the [Dalamud Developer Docs][dalamud-docs] for helpful information about building your own plugin. The Developer Docs includes helpful information about all sorts of things, including [how to submit][submit] your newly-created plugin to the official repository. Assuming you use this template repository, the provided project build configuration and license are already chosen to make everything a breeze.
+Needs XIVLauncher with in-game features enabled, for the Dalamud assemblies under
+`%AppData%\XIVLauncher\addon\Hooks\dev`.
 
-[new-repo]: https://github.com/new?template_name=SamplePlugin&template_owner=goatcorp
-[dalamud-docs]: https://dalamud.dev
-[submit]: https://dalamud.dev/plugin-publishing/submission
-
-### Prerequisites
-
-SamplePlugin assumes all the following prerequisites are met:
-
-* XIVLauncher, FINAL FANTASY XIV, and Dalamud have all been installed and the game has been run with Dalamud at least once.
-* XIVLauncher is installed to its default directories and configurations.
-  * If a custom path is required for Dalamud's dev directory, it must be set with the `DALAMUD_HOME` environment variable.
-* A .NET Core 8 SDK has been installed and configured, or is otherwise available. (In most cases, the IDE will take care of this.)
-
-### Building
-
-1. Open up `SamplePlugin.sln` in your C# editor of choice (likely [Visual Studio](https://visualstudio.microsoft.com) or [JetBrains Rider](https://www.jetbrains.com/rider/)).
-2. Build the solution. By default, this will build a `Debug` build, but you can switch to `Release` in your IDE.
-3. The resulting plugin can be found at `SamplePlugin/bin/x64/Debug/SamplePlugin.dll` (or `Release` if appropriate.)
-
-### Activating in-game
-
-1. Launch the game and use `/xlsettings` in chat or `xlsettings` in the Dalamud Console to open up the Dalamud settings.
-    * In here, go to `Experimental`, and add the full path to the `SamplePlugin.dll` to the list of Dev Plugin Locations.
-2. Next, use `/xlplugins` (chat) or `xlplugins` (console) to open up the Plugin Installer.
-    * In here, go to `Dev Tools > Installed Dev Plugins`, and the `SamplePlugin` should be visible. Enable it.
-3. You should now be able to use `/pmycommand` (chat) or `pmycommand` (console)!
-
-Note that you only need to add it to the Dev Plugin Locations once (Step 1); it is preserved afterwards. You can disable, enable, or load your plugin on startup through the Plugin Installer.
-
-### Reconfiguring for your own uses
-
-Replace all references to `SamplePlugin` in all the files and filenames with your desired name, then start building the plugin of your dreams. You'll figure it out 😁
-
-Dalamud will load the JSON file (by default, `SamplePlugin/SamplePlugin.json`) next to your DLL and use it for metadata, including the description for your plugin in the Plugin Installer. Make sure to update this with information relevant to _your_ plugin!
-
-All participation in this repository is governed by our [Code of Conduct](https://dalamud.dev/code-of-conduct). If you used AI tooling at any point, review the [AI Usage Policy](https://dalamud.dev/plugin-publishing/ai-policy) and disclose your level of AI use. Entirely AI-generated submissions will be rejected, and undisclosed AI use may result in a ban.
+`Harness/` checks the planner without a game running — see its README.
