@@ -51,28 +51,25 @@ static TierDefinition Tier()
         },
     };
 
-    // Book costs, as the SpecialShop scan would have produced them.
-    void Buy(int encounter, int cost, GearSlot? slot, GearSide? upgrade) =>
-        tier.Rewards.Add(new TierReward
+    // The real cost table: uniform per category.
+    void Rule(string label, int encounter, int cost, GearSlot[] slots, GearSide? upgrade = null) =>
+        tier.CostRules.Add(new TierCostRule
         {
-            Encounter = encounter, Cost = cost, ItemId = (uint)(100 + tier.Rewards.Count),
-            Slot = slot, Upgrade = upgrade,
+            Label = label, Encounter = encounter, Cost = cost,
+            Slots = [..slots], Upgrade = upgrade,
         });
 
-    Buy(1, 4, GearSlot.Earrings, null);
-    Buy(1, 4, GearSlot.Necklace, null);
-    Buy(1, 4, GearSlot.Bracelets, null);
-    Buy(1, 4, GearSlot.Ring1, null);
-    Buy(2, 4, GearSlot.Head, null);
-    Buy(2, 4, GearSlot.Hands, null);
-    Buy(2, 4, GearSlot.Feet, null);
-    Buy(2, 4, null, GearSide.Right);
-    Buy(3, 6, GearSlot.Body, null);
-    Buy(3, 6, GearSlot.Legs, null);
-    Buy(3, 4, null, GearSide.Left);
-    Buy(4, 8, GearSlot.Weapon, null);
-    Buy(4, 5, GearSlot.OffHand, null);
-    Buy(4, 4, null, GearSide.Weapon);
+    Rule("Accessories", 1, 3, [GearSlot.Earrings, GearSlot.Necklace, GearSlot.Bracelets, GearSlot.Ring1]);
+    Rule("Head, hands, feet", 2, 4, [GearSlot.Head, GearSlot.Hands, GearSlot.Feet]);
+    Rule("Accessory upgrade", 2, 3, [], GearSide.Right);
+    Rule("Body, legs", 3, 6, [GearSlot.Body, GearSlot.Legs]);
+    Rule("Armour upgrade", 3, 4, [], GearSide.Left);
+    Rule("Weapon upgrade", 3, 4, [], GearSide.Weapon);
+    Rule("Weapon", 4, 8, [GearSlot.Weapon]);
+    Rule("Shield", 4, 5, [GearSlot.OffHand]);
+
+    // The last fight's books trade one for one into any earlier fight's.
+    tier.Conversions.Add(new TierTokenConversion { FromEncounter = 4, ToEncounters = [1, 2, 3], Ratio = 1 });
 
     return tier;
 }
@@ -333,6 +330,87 @@ var rules = new PriorityRules();
 
     var result = new WeekSimulator(noDrops, rules, 12).Run([Plan(m, RaidRole.Dps, noDrops)]);
     Check("books already held count", result.LastFinishWeek == 2, $"week {result.LastFinishWeek}");
+}
+
+// --- book costs come from the rules ---------------------------------------------------------------
+
+{
+    Check("every accessory costs three T1 books",
+          tier.CostForSlot(GearSlot.Necklace) == new BookCost(1, 3) &&
+          tier.CostForSlot(GearSlot.Ring2) == new BookCost(1, 3));
+
+    Check("head, hands and feet cost four T2 books", tier.CostForSlot(GearSlot.Feet) == new BookCost(2, 4));
+    Check("body and legs cost six T3 books", tier.CostForSlot(GearSlot.Body) == new BookCost(3, 6));
+    Check("the weapon costs eight T4 books", tier.CostForSlot(GearSlot.Weapon) == new BookCost(4, 8));
+    Check("the accessory upgrade costs three T2 books", tier.CostForUpgrade(GearSide.Right) == new BookCost(2, 3));
+    Check("the armour upgrade costs four T3 books", tier.CostForUpgrade(GearSide.Left) == new BookCost(3, 4));
+    Check("the weapon upgrade costs four T3 books", tier.CostForUpgrade(GearSide.Weapon) == new BookCost(3, 4));
+}
+
+// --- trading the last fight's books in ------------------------------------------------------------
+
+{
+    // Someone who only needs a necklace, holding nothing but weapon books.
+    var m = Member("A", (GearSlot.Necklace, GearSource.Raid));
+    m.Tokens[4] = 3;
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+
+    Check("spare last-fight books count towards an earlier cost",
+          BookLedger.Available(tier, plan, 1) == 3, $"{BookLedger.Available(tier, plan, 1)}");
+
+    Check("and they can pay for it", BookLedger.CanAfford(tier, plan, tier.CostForSlot(GearSlot.Necklace)!));
+
+    BookLedger.Pay(tier, plan, tier.CostForSlot(GearSlot.Necklace)!);
+    Check("paying takes them out of the fourth fight's pile", plan.Tokens[4] == 0 && plan.Tokens[1] == 0);
+}
+
+{
+    // The trap: the same books are what buys the weapon. Someone who still needs it must not have
+    // them traded away, or the forecast reports a finish that never happens.
+    var m = Member("A", (GearSlot.Necklace, GearSource.Raid), (GearSlot.Weapon, GearSource.Raid));
+    m.Tokens[4] = 3;
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+
+    Check("books reserved for the weapon are not spare",
+          BookLedger.Spare(tier, plan, 4) == 0, $"{BookLedger.Spare(tier, plan, 4)}");
+
+    Check("so the necklace is not affordable yet",
+          !BookLedger.CanAfford(tier, plan, tier.CostForSlot(GearSlot.Necklace)!));
+}
+
+{
+    // Once the weapon is no longer owed, the surplus above it frees up.
+    var m = Member("A", (GearSlot.Necklace, GearSource.Raid), (GearSlot.Weapon, GearSource.Raid));
+    m.NeedFor(GearSlot.Weapon).Obtained = true;
+    m.Tokens[4] = 3;
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+    Check("with the weapon done the books are spare again", BookLedger.Spare(tier, plan, 4) == 3);
+}
+
+{
+    // Own books first: only the shortfall is converted.
+    var m = Member("A", (GearSlot.Necklace, GearSource.Raid));
+    m.Tokens[1] = 2;
+    m.Tokens[4] = 5;
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+    BookLedger.Pay(tier, plan, tier.CostForSlot(GearSlot.Necklace)!);
+
+    Check("own books are spent before anything is traded in",
+          plan.Tokens[1] == 0 && plan.Tokens[4] == 4, $"T1 {plan.Tokens[1]}, T4 {plan.Tokens[4]}");
+}
+
+{
+    // Conversion only runs one way.
+    var m = Member("A", (GearSlot.Weapon, GearSource.Raid));
+    m.Tokens[1] = 20;
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+    Check("earlier books never buy the last fight's rewards",
+          !BookLedger.CanAfford(tier, plan, tier.CostForSlot(GearSlot.Weapon)!));
 }
 
 // --- the simulator prefers whoever is furthest from done -----------------------------------------

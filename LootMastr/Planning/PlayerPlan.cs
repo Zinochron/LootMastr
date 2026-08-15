@@ -76,7 +76,7 @@ public sealed class PlayerPlan
                 // A shield drops from no fight at all and is bought with weapon books, so the
                 // encounter a need belongs to falls back to whichever book pays for it. Without
                 // this the slot would quietly vanish from the plan instead of showing up as work.
-                var encounter = tier.EncounterForSlot(slot)?.Index ?? tier.RewardForSlot(slot)?.Encounter;
+                var encounter = tier.EncounterForSlot(slot)?.Index ?? tier.CostForSlot(slot)?.Encounter;
                 if (encounter != null)
                     plan.Open.Add(new OpenNeed(slot, encounter.Value, false, Slots.SideOf(slot)));
 
@@ -84,7 +84,7 @@ public sealed class PlayerPlan
             }
 
             var side = Slots.SideOf(slot);
-            var upgradeFight = tier.EncounterForUpgrade(side)?.Index ?? tier.RewardForUpgrade(side)?.Encounter;
+            var upgradeFight = tier.EncounterForUpgrade(side)?.Index ?? tier.CostForUpgrade(side)?.Encounter;
             if (upgradeFight != null)
                 plan.Open.Add(new OpenNeed(slot, upgradeFight.Value, true, side));
         }

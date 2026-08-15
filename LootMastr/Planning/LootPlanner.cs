@@ -119,15 +119,22 @@ public sealed class LootPlanner
 
         foreach (var need in plan.Open)
         {
-            var reward = need.IsUpgrade ? tier.RewardForUpgrade(need.Side) : tier.RewardForSlot(need.Slot);
-            if (reward is not { Cost: > 0 })
+            var cost = BookLedger.CostOf(tier, need);
+            if (cost == null || !BookLedger.CanAfford(tier, plan, cost))
                 continue;
 
-            if (member.TokensFor(reward.Encounter) < reward.Cost)
-                continue;
+            var fight = tier.Encounter(cost.Encounter)?.Name ?? $"#{cost.Encounter}";
+            var text = $"{need.Describe()} for {cost.Cost} {fight} book(s)";
 
-            var fight = tier.Encounter(reward.Encounter)?.Name ?? $"#{reward.Encounter}";
-            result.Add((reward.Cost, $"{need.Describe()} for {reward.Cost} {fight} book(s)"));
+            // Say so when it only works by trading books in — it is not obvious from the counts.
+            if (plan.Tokens[Math.Clamp(cost.Encounter, 0, PlayerPlan.MaxEncounters)] < cost.Cost)
+            {
+                var source = tier.ConvertibleSourceFor(cost.Encounter);
+                if (source != null)
+                    text += $" (trading in {tier.Encounter(source.Value)?.Name ?? "later"} books)";
+            }
+
+            result.Add((cost.Cost, text));
         }
 
         return result.OrderBy(r => r.Cost).Select(r => r.Text).ToList();

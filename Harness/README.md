@@ -30,6 +30,9 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
   Nothing is flagged before that character's gear has been read.
 - Both ring slots are filled by the one ring coffer.
 - Books are spent the week they cover something, and books already held count.
+- Costs come from the category rules, and the last fight's books trade one for one into earlier
+  ones — but only the ones not still owed to that fight, so a weapon never gets traded away.
+  Own books are spent before anything is converted, and conversion never runs backwards.
 - A drop goes to whoever is furthest from done, with damage dealers winning an even tie.
 - Nobody starves when a coffer pool is scarce.
 - The same roster produces the same plan twice.

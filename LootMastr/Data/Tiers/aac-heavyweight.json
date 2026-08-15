@@ -47,5 +47,64 @@
     }
   ],
 
+  "CostRules": [
+    {
+      "Label": "Accessories",
+      "Encounter": 1,
+      "Cost": 3,
+      "Slots": [ "Earrings", "Necklace", "Bracelets", "Ring1" ]
+    },
+    {
+      "Label": "Head, hands, feet",
+      "Encounter": 2,
+      "Cost": 4,
+      "Slots": [ "Head", "Hands", "Feet" ]
+    },
+    {
+      "Label": "Accessory upgrade",
+      "Encounter": 2,
+      "Cost": 3,
+      "Upgrade": "Right"
+    },
+    {
+      "Label": "Body, legs",
+      "Encounter": 3,
+      "Cost": 6,
+      "Slots": [ "Body", "Legs" ]
+    },
+    {
+      "Label": "Armour upgrade",
+      "Encounter": 3,
+      "Cost": 4,
+      "Upgrade": "Left"
+    },
+    {
+      "Label": "Weapon upgrade",
+      "Encounter": 3,
+      "Cost": 4,
+      "Upgrade": "Weapon"
+    },
+    {
+      "Label": "Weapon",
+      "Encounter": 4,
+      "Cost": 8,
+      "Slots": [ "Weapon" ]
+    },
+    {
+      "Label": "Shield",
+      "Encounter": 4,
+      "Cost": 5,
+      "Slots": [ "OffHand" ]
+    }
+  ],
+
+  "Conversions": [
+    {
+      "FromEncounter": 4,
+      "ToEncounters": [ 1, 2, 3 ],
+      "Ratio": 1
+    }
+  ],
+
   "Rewards": []
 }

@@ -174,9 +174,8 @@ public sealed class WeekSimulator
             while (true)
             {
                 var affordable = player.Open
-                                       .Select(need => (Need: need, Reward: RewardFor(need)))
-                                       .Where(x => x.Reward is { Cost: > 0 })
-                                       .Where(x => player.Tokens[Clamp(x.Reward!.Encounter)] >= x.Reward!.Cost)
+                                       .Select(need => (Need: need, Cost: BookLedger.CostOf(tier, need)))
+                                       .Where(x => x.Cost != null && BookLedger.CanAfford(tier, player, x.Cost))
                                        .ToList();
 
                 if (affordable.Count == 0)
@@ -184,24 +183,21 @@ public sealed class WeekSimulator
 
                 var choice = affordable
                              .OrderByDescending(x => Contested(players, player, x.Need))
-                             .ThenByDescending(x => x.Reward!.Cost)
+                             .ThenByDescending(x => x.Cost!.Cost)
                              .First();
 
-                player.Tokens[Clamp(choice.Reward!.Encounter)] -= choice.Reward.Cost;
+                if (!BookLedger.Pay(tier, player, choice.Cost!))
+                    break;
+
                 player.Open.Remove(choice.Need);
 
-                awards.Add(new PlannedAward(currentWeek, choice.Reward.Encounter,
+                awards.Add(new PlannedAward(currentWeek, choice.Cost!.Encounter,
                                             choice.Need.IsUpgrade ? null : Slots.CofferSlot(choice.Need.Slot),
                                             choice.Need.IsUpgrade ? choice.Need.Side : null,
                                             player.Key, player.Name, Bought: true));
             }
         }
     }
-
-    private TierReward? RewardFor(OpenNeed need) =>
-        need.IsUpgrade ? tier.RewardForUpgrade(need.Side) : tier.RewardForSlot(need.Slot);
-
-    private static int Clamp(int encounter) => Math.Clamp(encounter, 0, PlayerPlan.MaxEncounters);
 
     private static int Contested(IEnumerable<PlayerPlan> players, PlayerPlan self, OpenNeed need) =>
         players.Count(p => p != self &&

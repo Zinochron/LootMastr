@@ -45,7 +45,121 @@ public sealed class TierTab : ITab
         DrawUpgrades();
 
         ImGuiHelpers.ScaledDummy(10f);
+        DrawCostRules();
+
+        ImGuiHelpers.ScaledDummy(10f);
         DrawExchange();
+    }
+
+    /// <summary>
+    /// Book costs, by category rather than by item — which is how the game prices them, and why
+    /// eight rows cover a table that would otherwise need one line per piece.
+    /// </summary>
+    private void DrawCostRules()
+    {
+        ImGui.TextUnformatted("Book costs");
+        Widgets.HelpMarker("What the planner charges for buying a piece with books. These are what " +
+                           "the arithmetic runs on; the discovered exchange below is only consulted " +
+                           "for anything no rule covers.");
+        ImGui.Separator();
+
+        var tier = tiers.Tier;
+
+        foreach (var mismatch in tier.CostMismatches())
+            Widgets.Coloured(Widgets.Wanted, $"? {mismatch}");
+
+        using (var table = ImRaii.Table("##costRules", 4,
+                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        {
+            if (table.Success)
+            {
+                ImGui.TableSetupColumn("Buys");
+                ImGui.TableSetupColumn("Books", ImGuiTableColumnFlags.WidthFixed, 70f * ImGuiHelpers.GlobalScale);
+                ImGui.TableSetupColumn("From", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+                ImGui.TableSetupColumn("Covers");
+                ImGui.TableHeadersRow();
+
+                for (var i = 0; i < tier.CostRules.Count; i++)
+                {
+                    var rule = tier.CostRules[i];
+                    using var id = ImRaii.PushId(i);
+
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.AlignTextToFramePadding();
+                    ImGui.TextUnformatted(rule.Label);
+
+                    ImGui.TableNextColumn();
+                    ImGui.SetNextItemWidth(-1f);
+                    var cost = rule.Cost;
+                    if (ImGui.InputInt("##cost", ref cost, 0))
+                    {
+                        rule.Cost = System.Math.Max(0, cost);
+                        config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    DrawEncounterPicker(rule);
+
+                    ImGui.TableNextColumn();
+                    ImGui.TextDisabled(rule.Upgrade != null
+                                           ? SideLabel(rule.Upgrade.Value)
+                                           : string.Join(", ", rule.Slots.Select(s => s.ShortLabel())));
+                }
+            }
+        }
+
+        DrawConversions();
+    }
+
+    private void DrawEncounterPicker(TierCostRule rule)
+    {
+        var name = tiers.Tier.Encounter(rule.Encounter)?.Name ?? $"#{rule.Encounter}";
+
+        if (ImGui.SmallButton($"{name}##from"))
+            ImGui.OpenPopup("##fromPopup");
+
+        using var popup = ImRaii.Popup("##fromPopup");
+        if (!popup.Success)
+            return;
+
+        foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
+        {
+            if (!ImGui.Selectable(encounter.Name))
+                continue;
+
+            rule.Encounter = encounter.Index;
+            config.Save();
+        }
+    }
+
+    /// <summary>
+    /// The last fight's books trade for earlier ones, which is worth stating explicitly: it changes
+    /// who is stuck. A player short on accessory books but sitting on spare weapon books is not.
+    /// </summary>
+    private void DrawConversions()
+    {
+        ImGuiHelpers.ScaledDummy(4f);
+        ImGui.TextUnformatted("Trading books in");
+
+        var tier = tiers.Tier;
+
+        if (tier.Conversions.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "No trades — every book is only good for its own fight.");
+            return;
+        }
+
+        foreach (var conversion in tier.Conversions)
+        {
+            var from = tier.Encounter(conversion.FromEncounter)?.Name ?? $"#{conversion.FromEncounter}";
+            var into = string.Join(", ", conversion.ToEncounters.Select(e => tier.Encounter(e)?.Name ?? $"#{e}"));
+
+            ImGui.TextUnformatted($"{conversion.Ratio} × {from} → 1 × any of: {into}");
+        }
+
+        Widgets.HelpMarker("The planner only trades books it does not need for that fight's own " +
+                           "rewards, so a weapon nobody could then afford never gets traded away.");
     }
 
     private void DrawToolbar()

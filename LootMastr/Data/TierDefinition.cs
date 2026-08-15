@@ -31,10 +31,24 @@ public sealed class TierDefinition
     public List<string> AugmentedNamePrefixes { get; set; } = ["Augmented ", "Aug. "];
 
     /// <summary>
-    /// The book exchange, discovered from <c>SpecialShop</c> rather than typed in — costs are the
-    /// kind of detail that is wrong in half the guides and changes between tiers.
+    /// What the shop actually sells, discovered from <c>SpecialShop</c>. Used to show the exchange
+    /// and as a fallback for costs; <see cref="CostRules"/> is what the arithmetic runs on.
     /// </summary>
     public List<TierReward> Rewards { get; set; } = new();
+
+    /// <summary>
+    /// What each kind of piece costs in books. Costs are uniform per category rather than per item,
+    /// so six rules say everything a per-item table would — and unlike the discovered table, a
+    /// rule cannot be half missing.
+    /// </summary>
+    public List<TierCostRule> CostRules { get; set; } = new();
+
+    /// <summary>
+    /// Books that can be traded for other books. The last fight's books convert into any earlier
+    /// fight's, which is why a player sitting on spare weapon books is not as stuck as their counts
+    /// make them look.
+    /// </summary>
+    public List<TierTokenConversion> Conversions { get; set; } = new();
 
     /// <summary>
     /// The augmented tomestone set, also discovered rather than typed: augmented pieces sit at the
@@ -117,6 +131,66 @@ public sealed class TierDefinition
     public TierReward? RewardForUpgrade(GearSide side) =>
         Rewards.Where(r => r.Upgrade == side).MinBy(r => r.Cost);
 
+    /// <summary>
+    /// What this slot costs in books. The rules answer first because they are complete by
+    /// construction; the discovered table only fills gaps.
+    /// </summary>
+    public BookCost? CostForSlot(GearSlot slot)
+    {
+        var coffer = Slots.CofferSlot(slot);
+
+        var rule = CostRules.Where(r => r.Slots.Contains(coffer)).MinBy(r => r.Cost);
+        if (rule != null)
+            return new BookCost(rule.Encounter, rule.Cost);
+
+        var reward = RewardForSlot(slot);
+        return reward is { Cost: > 0 } ? new BookCost(reward.Encounter, reward.Cost) : null;
+    }
+
+    public BookCost? CostForUpgrade(GearSide side)
+    {
+        var rule = CostRules.Where(r => r.Upgrade == side).MinBy(r => r.Cost);
+        if (rule != null)
+            return new BookCost(rule.Encounter, rule.Cost);
+
+        var reward = RewardForUpgrade(side);
+        return reward is { Cost: > 0 } ? new BookCost(reward.Encounter, reward.Cost) : null;
+    }
+
+    /// <summary>Encounters whose books this encounter's books can be traded for.</summary>
+    public IReadOnlyList<int> ConvertsInto(int encounter) =>
+        Conversions.FirstOrDefault(c => c.FromEncounter == encounter)?.ToEncounters ?? [];
+
+    /// <summary>Which encounter's books can be spent in place of this one's, if any.</summary>
+    public int? ConvertibleSourceFor(int encounter)
+    {
+        foreach (var conversion in Conversions)
+        {
+            if (conversion.FromEncounter != encounter && conversion.ToEncounters.Contains(encounter))
+                return conversion.FromEncounter;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Places where the shop disagrees with a cost rule. Not an error — the rules are what count —
+    /// but a reliable sign that the tier changed and the rules have not caught up.
+    /// </summary>
+    public IEnumerable<string> CostMismatches()
+    {
+        foreach (var reward in Rewards.Where(r => r.IsAssigned && r.Cost > 0))
+        {
+            var cost = reward.Slot != null ? CostForSlot(reward.Slot.Value) : CostForUpgrade(reward.Upgrade!.Value);
+            if (cost == null || (cost.Encounter == reward.Encounter && cost.Cost == reward.Cost))
+                continue;
+
+            var what = reward.Slot?.Label() ?? $"{reward.Upgrade} upgrade";
+            yield return $"{what}: rule says {cost.Cost} × {Encounter(cost.Encounter)?.Name ?? "?"}, " +
+                         $"shop says {reward.Cost} × {Encounter(reward.Encounter)?.Name ?? "?"}.";
+        }
+    }
+
     /// <summary>Problems worth showing in the tier tab. Empty means everything resolved.</summary>
     public IEnumerable<string> Problems()
     {
@@ -145,6 +219,46 @@ public sealed class TierDefinition
                          "Only the planner's \"can buy with books\" needs them; gear is classified " +
                          "from item level and name either way.";
     }
+}
+
+/// <summary>A number of books of one fight.</summary>
+public sealed record BookCost(int Encounter, int Cost);
+
+/// <summary>
+/// What one category of piece costs. Categories rather than items, because that is how the game
+/// actually prices them: every accessory costs the same, every one of head, hands and feet costs
+/// the same, and so on.
+/// </summary>
+[Serializable]
+public sealed class TierCostRule
+{
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>Which fight's books pay for it.</summary>
+    public int Encounter { get; set; }
+
+    public int Cost { get; set; }
+
+    /// <summary>Slots this rule prices. Rings are filed under <c>Ring1</c>.</summary>
+    public List<GearSlot> Slots { get; set; } = new();
+
+    /// <summary>Set instead of <see cref="Slots"/> when the rule prices an upgrade material.</summary>
+    public GearSide? Upgrade { get; set; }
+}
+
+/// <summary>
+/// Books of one fight being tradeable for books of another. Only ever generous in one direction:
+/// the last fight's books buy the earlier ones, not the other way round.
+/// </summary>
+[Serializable]
+public sealed class TierTokenConversion
+{
+    public int FromEncounter { get; set; }
+
+    public List<int> ToEncounters { get; set; } = new();
+
+    /// <summary>How many source books one target book costs. One, at least in every tier so far.</summary>
+    public int Ratio { get; set; } = 1;
 }
 
 /// <summary>One augmented tomestone piece, and the plain piece plus material it is traded from.</summary>

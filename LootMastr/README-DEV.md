@@ -213,6 +213,40 @@ Two independent paths, because neither is reliable alone:
 and there is no way to notice from the outside. Confirming also raises the group's kill count for
 that fight.
 
+## What a piece costs in books
+
+Costs are uniform per **category**, not per item, so `TierDefinition.CostRules` is eight rows where
+a per-item table would be thirty:
+
+| Buys | Books |
+|---|---|
+| Any accessory | 3 × T1 |
+| Head, hands, feet | 4 × T2 |
+| Accessory upgrade | 3 × T2 |
+| Body, legs | 6 × T3 |
+| Armour upgrade, weapon upgrade | 4 × T3 each |
+| Weapon | 8 × T4 |
+| Shield | 5 × T4 |
+
+The rules are what the arithmetic runs on, because a rule cannot be half missing the way a
+discovered table can. The `SpecialShop` walk is only consulted for anything no rule covers, and
+where the two disagree the Tier tab lists it — a mismatch is a reliable sign the tier moved on and
+the rules have not caught up.
+
+### Trading books in
+
+**T4 books convert one for one into any of T1–T3.** This is not a detail: it decides who is stuck.
+A player short on accessory books but sitting on spare weapon books is not short on anything.
+
+`BookLedger` is the whole of it, and the part that matters is `Spare`. The last fight's books are
+*also* what buys the weapon, so only books above what a player still owes that fight may be traded
+away. Without that reservation the simulator cheerfully trades off a weapon nobody can then afford
+and reports a finish date that never arrives. `Pay` spends own books first and converts only the
+shortfall, so nothing is traded that did not have to be.
+
+Conversion runs one way only. Earlier books never buy the last fight's rewards, and the harness
+pins that down along with the reservation.
+
 ## Books
 
 The game exposes no way to read how many books a player is holding, so the numbers are entered and
