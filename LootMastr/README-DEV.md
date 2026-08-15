@@ -80,22 +80,39 @@ upgrade materials. Everything else is discovered from the game:
 - **Book costs** come from walking `SpecialShop` for entries paid with the tier's book items.
   Guides disagree about whether an accessory is three books or four; the shop rows cannot.
 - **The augmented tome set** comes from the same walk, looking for entries paid with an *upgrade
-  material*. This matters more than it sounds: augmented tome gear sits at exactly the raid item
-  level, so item level alone can never tell an imported BiS piece apart from a raid piece. The
-  other cost on those entries is the plain tome piece, so one pass identifies both sets by id, in
-  any client language.
-
-  Discovery has to have been run for that, though, and the first version quietly filed every
-  augmented piece as a raid drop until it was. `TierDefinition.IsAugmentedName` is the fallback:
-  augmented gear is spelled `Augmented …` or `Aug. …`, and the check runs **before** the item level
-  check, because the level says "raid" for both. The prefixes live in the tier json since the
-  wording is localised. `Roster → Re-file imports` re-runs the decision over ids already imported,
-  so discovering the tier afterwards does not mean fetching every gear set again.
+  material*. The other cost on those entries is the plain tome piece, so one pass identifies both
+  sets by id.
 
 - **Which slot a coffer fills** is read out of its own name — coffers are named
-  `<Set> <Slot> Coffer (IL nnn)` — restricted to the slots that fight's book actually buys, so a
-  bad read can only land on a neighbour. `Slots.SlotFromName` holds the word list, and its order is
+  `<Set> <Slot> Coffer (IL nnn)`. Gear sold as itself rather than as a coffer skips that entirely
+  and uses its own equip category. `Slots.SlotFromName` holds the word list, and its order is
   load-bearing: "earring" contains "ring", so accessories are tested before the ring.
+
+  The name is matched against **every** slot, not only the ones the tier claims that fight drops.
+  The narrower version sounded safer and in practice just left rows unassigned whenever the drop
+  pools were slightly off — and a coffer with "Head" in its name is not a ring whatever the pools
+  say.
+
+## Classifying gear does not depend on any of that
+
+`TierDefinition.ClassifyByLevel` is the whole rule, and it needs nothing but the item sheet:
+
+> The **item level** says whether a piece belongs to this tier. The **name** says which half, because
+> augmented tomestone gear is spelled `Augmented …` and raid gear never is.
+
+That matters because raid gear and augmented tome gear sit at the *same* item level — 790 in this
+tier — so neither signal works alone. An earlier version had this the other way round, consulting
+the discovered id sets first, and quietly filed every augmented piece as a raid drop for anyone who
+had not run the discovery or whose run had come back incomplete.
+
+The discovered sets are now only consulted for items the levels do not explain. The prefixes live
+in the tier json since the wording is localised, and `Roster → Re-file imports` re-runs the
+decision over ids already imported, so fixing any of this never means fetching every gear set
+again.
+
+Practical consequence worth knowing: the tier's four **item levels** are load-bearing and the shop
+discovery is not. A wrong item level breaks the roster grid; a missing exchange table only costs
+the planner its "can buy with books" arithmetic.
 - **Which zone is which fight** is learned the first time a chest is seen there, and only when two
   or more of its drops match one fight's pool — one match could be a slot two fights share.
 

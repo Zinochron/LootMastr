@@ -20,7 +20,9 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 
 - Need lists only contain slots that actually cost the raid something — plain tome and crafted
   pieces never compete for a drop.
-- `Augmented …` and `Aug. …` are read as tomestone gear, as a prefix only, and a raid piece is not.
+- Gear is classified from item level plus name alone, with no shop data: raid and augmented tome
+  gear share an item level, and only the `Augmented …` prefix separates them. Levels the tier does
+  not know are left undecided rather than guessed.
 - A coffer's slot is read out of its name, never landing outside the slots that book buys — and
   "Grand Champion's Earring Coffer" resolves to the earrings rather than to a ring.
 - Target, given and actual stay separate: a piece that was handed over but is not being worn is

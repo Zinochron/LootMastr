@@ -45,9 +45,39 @@ public sealed class TierDefinition
     public TierEncounter? Encounter(int index) => Encounters.FirstOrDefault(e => e.Index == index);
 
     /// <summary>
-    /// Whether an item's name marks it as augmented tomestone gear. This is the only thing that
-    /// separates an augmented piece from a raid piece before the upgrade trade has been discovered,
-    /// since both sit at the same item level.
+    /// Where a piece of gear comes from, from nothing but its item level and its name — no shop
+    /// data involved. Null when the levels do not account for it, which is the caller's cue to
+    /// fall back on the discovered trade.
+    ///
+    /// The whole rule in two lines: the item level says whether the piece belongs to this tier,
+    /// and the name says which half of it, because augmented tomestone gear is spelled
+    /// <c>Augmented …</c> and raid gear never is.
+    /// </summary>
+    public GearSource? ClassifyByLevel(ushort itemLevel, string name)
+    {
+        var augmented = IsAugmentedName(name);
+
+        if (IsTierItemLevel(itemLevel))
+            return augmented ? GearSource.TomeAugmented : GearSource.Raid;
+
+        if (itemLevel != 0 && itemLevel == TomeItemLevel)
+            return augmented ? GearSource.TomeAugmented : GearSource.Tome;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Item levels this tier's endgame gear sits at. Raid gear and augmented tomestone gear share
+    /// one, which is exactly why the name is needed to tell them apart.
+    /// </summary>
+    public bool IsTierItemLevel(ushort itemLevel) =>
+        itemLevel != 0 &&
+        (itemLevel == RaidItemLevel || itemLevel == RaidWeaponItemLevel || itemLevel == AugmentedItemLevel);
+
+    /// <summary>
+    /// Whether an item's name marks it as augmented tomestone gear. Augmented pieces are spelled
+    /// <c>Augmented …</c>, raid pieces never are, and the two sit at the same item level — so this
+    /// is the whole of the distinction.
     /// </summary>
     public bool IsAugmentedName(string name)
     {
@@ -102,12 +132,18 @@ public sealed class TierDefinition
                 yield return $"{upgrade.Side} upgrade: \"{upgrade.ItemName}\" does not match any item.";
         }
 
-        if (Rewards.Count == 0)
-            yield return "Book costs not discovered yet — press \"Discover exchange\" while logged in.";
+        // These matter more than the shop data does: gear is told apart by level and name, so a
+        // level that is wrong or missing is what actually breaks the roster grid.
+        if (RaidItemLevel == 0)
+            yield return "Raid item level is not set — raid gear cannot be recognised without it.";
 
-        if (Augments.Count == 0)
-            yield return "Augmented tome gear not discovered yet — imported gear sets cannot tell " +
-                         "augmented pieces from raid pieces until it is.";
+        if (TomeItemLevel == 0)
+            yield return "Tomestone item level is not set — plain tome gear cannot be recognised.";
+
+        if (Rewards.Count == 0)
+            yield return "Book costs not discovered yet — press \"Discover exchange\" while logged in. " +
+                         "Only the planner's \"can buy with books\" needs them; gear is classified " +
+                         "from item level and name either way.";
     }
 }
 

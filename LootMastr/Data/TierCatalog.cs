@@ -262,11 +262,21 @@ public sealed class TierCatalog
     }
 
     /// <summary>
-    /// Fills in what can be worked out without asking: upgrade materials by id, and gear coffers
-    /// from the slot written in their own name. Guessing is kept to the slots that fight's book
-    /// actually buys, so a wrong read can only ever land on a plausible neighbour.
+    /// Fills in what can be worked out without asking, best evidence first:
+    ///
+    /// <list type="number">
+    /// <item>An upgrade material, matched by id.</item>
+    /// <item>Equippable gear sold directly, which knows its own slot exactly.</item>
+    /// <item>A coffer, from the slot written in its own name.</item>
+    /// <item>Failing all that, the only slot that fight's book buys, if there is just one.</item>
+    /// </list>
+    ///
+    /// The name is matched against every slot rather than only the ones the tier says that fight
+    /// drops. Restricting it sounded safer and mostly just left rows unassigned whenever the tier's
+    /// drop pools were slightly off — and a coffer with "Head" in its name is not a ring whatever
+    /// the pools claim.
     /// </summary>
-    private static void AutoAssign(TierDefinition tier, TierReward reward)
+    private void AutoAssign(TierDefinition tier, TierReward reward)
     {
         if (reward.IsAssigned)
             return;
@@ -278,24 +288,23 @@ public sealed class TierCatalog
             return;
         }
 
-        var encounter = tier.Encounter(reward.Encounter);
-        if (encounter == null)
+        // Gear sold as itself rather than as a coffer: no guessing needed.
+        if (items.TryGetItem(reward.ItemId, out var info) && info.Slot != null)
+        {
+            reward.Slot = Slots.CofferSlot(info.Slot.Value);
             return;
+        }
 
-        var candidates = encounter.DropSlots.Contains(GearSlot.Weapon)
-                             ? encounter.DropSlots.Append(GearSlot.OffHand).ToList()
-                             : encounter.DropSlots;
-
-        var named = Slots.SlotFromName(reward.ItemName, candidates);
+        var named = Slots.SlotFromName(reward.ItemName, Slots.All);
         if (named != null)
         {
             reward.Slot = named;
             return;
         }
 
-        // Nothing readable in the name, but if the book only buys one thing there is no ambiguity.
-        if (candidates.Count == 1)
-            reward.Slot = candidates[0];
+        var encounter = tier.Encounter(reward.Encounter);
+        if (encounter is { DropSlots.Count: 1 })
+            reward.Slot = encounter.DropSlots[0];
     }
 
     /// <summary>

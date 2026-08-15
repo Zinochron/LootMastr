@@ -24,33 +24,37 @@ public sealed class GearClassifier
         this.items = items;
     }
 
+    /// <summary>
+    /// Two questions, in order: does this item belong to the tier at all, and if so which half.
+    /// The item level answers the first, the name answers the second — augmented tomestone gear is
+    /// spelled <c>Augmented …</c> and raid gear never is.
+    ///
+    /// Both come straight from the item sheet, so classification does **not** depend on the
+    /// SpecialShop discovery having run or having got everything right. The discovered trade is
+    /// only consulted for items the levels do not account for, where it is exact.
+    /// </summary>
     public GearSource Classify(uint itemId)
     {
         if (itemId == 0)
             return GearSource.None;
 
+        if (!items.TryGetItem(itemId, out var info) || info.Slot == null)
+            return GearSource.None;
+
         var tier = tiers.Tier;
+
+        var byLevel = tier.ClassifyByLevel(info.ItemLevel, info.Name);
+        if (byLevel != null)
+            return byLevel.Value;
+
+        // Only for what the levels do not explain — a tier whose levels are not filled in, or an
+        // augmented set sitting somewhere unexpected.
         EnsureSets(tier);
 
         if (augmented!.Contains(itemId))
             return GearSource.TomeAugmented;
 
         if (tome!.Contains(itemId))
-            return GearSource.Tome;
-
-        if (!items.TryGetItem(itemId, out var info) || info.Slot == null)
-            return GearSource.None;
-
-        // Has to come before the item level check, not after: augmented gear is at exactly the raid
-        // item level, so the level says "raid" for both. The name is the only thing that separates
-        // them until the upgrade trade has been discovered.
-        if (tier.IsAugmentedName(info.Name))
-            return GearSource.TomeAugmented;
-
-        if (info.ItemLevel == tier.RaidItemLevel || info.ItemLevel == tier.RaidWeaponItemLevel)
-            return GearSource.Raid;
-
-        if (info.ItemLevel == tier.TomeItemLevel)
             return GearSource.Tome;
 
         // Anything else costs the raid nothing — crafted, an older tier, a relic. The planner only

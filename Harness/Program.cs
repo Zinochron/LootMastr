@@ -133,6 +133,35 @@ var rules = new PriorityRules();
     Check("an empty name is not augmented", !tier.IsAugmentedName(""));
 }
 
+// --- gear is classified from item level and name alone --------------------------------------------
+
+{
+    // The tier is raid 790 / raid weapon 795 / tome 780 -> augmented 790. Raid gear and augmented
+    // tome gear share an item level, so the name is the whole of the distinction. None of this may
+    // depend on the shop discovery having run.
+    Check("raid armour is raid",
+          tier.ClassifyByLevel(790, "Grand Champion's Coat") == GearSource.Raid);
+
+    Check("raid weapons are raid",
+          tier.ClassifyByLevel(795, "Grand Champion's Blade") == GearSource.Raid);
+
+    Check("augmented tome gear at the same level is not raid",
+          tier.ClassifyByLevel(790, "Augmented Bygone Brass Coat") == GearSource.TomeAugmented);
+
+    Check("an augmented weapon at the raid weapon level is still tome gear",
+          tier.ClassifyByLevel(795, "Augmented Bygone Brass Blade") == GearSource.TomeAugmented);
+
+    Check("plain tome gear is tome",
+          tier.ClassifyByLevel(780, "Bygone Brass Coat") == GearSource.Tome);
+
+    Check("the abbreviated spelling counts too",
+          tier.ClassifyByLevel(790, "Aug. Bygone Brass Coat") == GearSource.TomeAugmented);
+
+    // Anything the levels do not account for is handed back for the shop data to answer.
+    Check("an unrelated item level is left undecided", tier.ClassifyByLevel(710, "Crafted Coat") == null);
+    Check("no item level is left undecided", tier.ClassifyByLevel(0, "Something") == null);
+}
+
 // --- the slot is read out of a coffer's name ------------------------------------------------------
 
 {
@@ -156,7 +185,15 @@ var rules = new PriorityRules();
     Check("shield coffer reads as the off hand",
           Slots.SlotFromName("Grand Champion's Shield Coffer (IL 790)", weapons) == GearSlot.OffHand);
 
-    // A read is only ever allowed to land on a slot the same book already buys.
+    // Discovery now matches against every slot, since restricting it to what the tier claims a
+    // fight drops mostly just left rows unassigned when those pools were slightly off.
+    Check("matching against every slot still reads the head coffer",
+          Slots.SlotFromName("Grand Champion's Head Gear Coffer (IL 790)", Slots.All) == GearSlot.Head);
+
+    Check("and still does not turn an earring into a ring",
+          Slots.SlotFromName("Grand Champion's Earring Coffer (IL 790)", Slots.All) == GearSlot.Earrings);
+
+    // A narrowed candidate list is still honoured where one is passed.
     Check("a slot outside the candidates is never returned",
           Slots.SlotFromName("Grand Champion's Head Gear Coffer (IL 790)", accessories) == null);
 
