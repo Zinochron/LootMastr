@@ -153,8 +153,12 @@ public sealed class LootPlanner
                             Reason(run, saved, ownFinish, ownBefore, role, member.ItemsReceived)));
         }
 
+        // Role first when the order is strict: a healer waits while a tank still wants the piece,
+        // however much the simulation would rather hand it over. That is the whole point of saying
+        // "we gear damage first" — it is a queue, not a hint.
         return results
-               .OrderBy(c => c.Score)
+               .OrderBy(c => config.Rules.StrictRoleOrder ? config.Rules.RankOf(c.Role) : 0)
+               .ThenBy(c => c.Score)
                .ThenBy(c => c.ItemsReceived)
                .ThenByDescending(c => config.Rules.WeightFor(c.Role))
                .ThenBy(c => roster.Members.IndexOf(c.Member))

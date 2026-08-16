@@ -511,26 +511,73 @@ var rules = new PriorityRules();
                         (GearSlot.Head, GearSource.Raid),
                         (GearSlot.Hands, GearSource.Raid));
 
-    var plans = new List<PlayerPlan> { Plan(nearlyDone, RaidRole.Dps, tier), Plan(farOff, RaidRole.Tank, tier) };
+    // Both damage, because role is a queue that comes first — "furthest from done" only decides
+    // between people the role order cannot separate.
+    var plans = new List<PlayerPlan> { Plan(nearlyDone, RaidRole.Dps, tier), Plan(farOff, RaidRole.Dps, tier) };
     var result = new WeekSimulator(tier, rules, 12).Run(plans);
 
     var first = result.Awards.First(a => a.Slot == GearSlot.Body);
-    Check("the first body coffer goes to the player with more left", first.PlayerName == "Far",
-          $"went to {first.PlayerName}");
+    Check("within a role, the first body coffer goes to the player with more left",
+          first.PlayerName == "Far", $"went to {first.PlayerName}");
 }
 
-// --- damage dealers win a tie --------------------------------------------------------------------
+// --- roles are a queue, not a weight -------------------------------------------------------------
 
 {
+    Check("damage is geared first by default", rules.RankOf(RaidRole.Dps) == 0);
+    Check("then tanks", rules.RankOf(RaidRole.Tank) == 1);
+    Check("then healers", rules.RankOf(RaidRole.Healer) == 2);
+    Check("and the order is followed strictly by default", rules.StrictRoleOrder);
+
+    // The soft weights are derived from the same order, so the two can never disagree.
+    Check("the soft weight follows the order too",
+          rules.WeightFor(RaidRole.Dps) > rules.WeightFor(RaidRole.Tank) &&
+          rules.WeightFor(RaidRole.Tank) > rules.WeightFor(RaidRole.Healer));
+
     var dps = Member("Dps", (GearSlot.Body, GearSource.Raid));
     var tank = Member("Tank", (GearSlot.Body, GearSource.Raid));
+    var healer = Member("Healer", (GearSlot.Body, GearSource.Raid));
 
-    var plans = new List<PlayerPlan> { Plan(tank, RaidRole.Tank, tier), Plan(dps, RaidRole.Dps, tier) };
-    var result = new WeekSimulator(tier, rules, 12).Run(plans);
+    List<PlayerPlan> Three() =>
+    [
+        Plan(healer, RaidRole.Healer, tier), Plan(tank, RaidRole.Tank, tier), Plan(dps, RaidRole.Dps, tier),
+    ];
+
+    var result = new WeekSimulator(tier, rules, 12).Run(Three());
+    var order = result.Awards.Where(a => a.Slot == GearSlot.Body).Select(a => a.PlayerName).ToList();
+
+    Check("the first body coffer goes to the damage dealer", order.FirstOrDefault() == "Dps",
+          string.Join(" > ", order));
+
+    Check("then the tank, then the healer", order.Take(3).SequenceEqual(new[] { "Dps", "Tank", "Healer" }),
+          string.Join(" > ", order));
+}
+
+{
+    // A healer who is much further behind still waits, because a strict order is a queue. This is
+    // the case the old weights got wrong: a big enough gain used to jump the line.
+    var strict = new PriorityRules();
+
+    var behind = Member("Healer",
+                        (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid),
+                        (GearSlot.Head, GearSource.Raid), (GearSlot.Hands, GearSource.Raid));
+
+    var ahead = Member("Dps", (GearSlot.Body, GearSource.Raid));
+
+    var plans = new List<PlayerPlan> { Plan(behind, RaidRole.Healer, tier), Plan(ahead, RaidRole.Dps, tier) };
+    var result = new WeekSimulator(tier, strict, 12).Run(plans);
 
     var first = result.Awards.First(a => a.Slot == GearSlot.Body);
-    Check("an otherwise even tie goes to the damage dealer", first.PlayerName == "Dps",
+    Check("a healer with far more left still waits behind a damage dealer", first.PlayerName == "Dps",
           $"went to {first.PlayerName}");
+
+    // Turned off, need reasserts itself.
+    var soft = new PriorityRules { StrictRoleOrder = false };
+    var loose = new WeekSimulator(tier, soft, 12).Run(
+        [Plan(behind, RaidRole.Healer, tier), Plan(ahead, RaidRole.Dps, tier)]);
+
+    Check("with the order off, the one further behind goes first",
+          loose.Awards.First(a => a.Slot == GearSlot.Body).PlayerName == "Healer");
 }
 
 // --- handing a needed piece out never scores worse than holding it -------------------------------

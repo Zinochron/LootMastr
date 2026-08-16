@@ -38,7 +38,9 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 - Costs come from the category rules, and the last fight's books trade one for one into earlier
   ones — but only the ones not still owed to that fight, so a weapon never gets traded away.
   Own books are spent before anything is converted, and conversion never runs backwards.
-- A drop goes to whoever is furthest from done, with damage dealers winning an even tie.
+- Roles are a queue: damage, then tanks, then healers, and strictly by default — a healer with far
+  more left still waits behind a damage dealer. Within a role the drop goes to whoever has most
+  left. Turning the order off puts need back in charge.
 - Nobody starves when a coffer pool is scarce.
 - The same roster produces the same plan twice.
 

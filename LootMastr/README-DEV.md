@@ -311,6 +311,24 @@ Tiers live in two places: shipped ones next to the assembly, and ones built in g
 user's copy wins. Enums are written by name — these files get hand-edited and passed around, and
 `"Side": 2` tells nobody anything.
 
+## Role is a queue, not a weight
+
+Statics gear **damage, then tanks, then healers**, and they mean it. The first model had a
+multiplier per role on that player's finish week, which cannot express that: a multiplier is a
+preference the arithmetic can outvote, so a healer saving four weeks beat a damage dealer saving
+one. It also had no way to say anything about tanks against healers at all — the Settings tab
+exposed exactly one slider, "damage dealer priority".
+
+`PriorityRules.RoleOrder` is now an ordered list, and `StrictRoleOrder` (on by default) makes it
+decide outright: a healer waits while a tank still wants the same piece, whatever the forecast would
+prefer. Everything else — furthest from done, fairness, roster order — only separates people the
+role order could not.
+
+Turned off, role goes back to being a nudge, and `RoleStep` says how big a nudge. The soft weights
+are *derived* from the same list rather than stored separately, so the two forms cannot disagree.
+
+Both the ranking and the simulator's greedy consult it, so the projection matches the decision.
+
 ## Two rules, and which one is allowed to decide
 
 There are two ways this can answer "who gets it", and for a long time both were on screen at once

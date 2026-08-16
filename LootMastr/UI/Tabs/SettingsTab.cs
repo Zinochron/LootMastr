@@ -2,6 +2,7 @@ using System;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using LootMastr.Data;
 using LootMastr.Planning;
 using LootMastr.Roster;
 
@@ -88,6 +89,8 @@ public sealed class SettingsTab : ITab
     {
         var rules = config.Rules;
 
+        DrawRoleOrder();
+
         var last = (float)rules.LastFinisherWeight;
         if (ImGui.SliderFloat("Weight on the slowest player", ref last, 0f, 3f, "%.2f"))
         {
@@ -96,20 +99,8 @@ public sealed class SettingsTab : ITab
         }
 
         Widgets.HelpMarker("At 1.00 and above the plan optimises for the last person to finish, which " +
-                           "is usually what a static wants. Lowering it lets the plan trade a late tank " +
-                           "for two early damage dealers.");
-
-        var dps = (float)rules.DpsWeight;
-        if (ImGui.SliderFloat("Damage dealer priority", ref dps, 1f, 3f, "%.2f"))
-        {
-            rules.DpsWeight = dps;
-            config.Save();
-        }
-
-        Widgets.HelpMarker("How much a damage dealer finishing late counts against a plan, next to a " +
-                           "tank or healer. At 1.00 the roles are equal. This only ever settles a " +
-                           "choice that would otherwise be a coin flip — it cannot make the group as a " +
-                           "whole finish later.");
+                           "is usually what a static wants. At 0.00 it only balances the average, " +
+                           "which is a different thing — worth knowing you have asked for it.");
 
         var fairness = (float)rules.FairnessWeight;
         if (ImGui.SliderFloat("Spread the loot around", ref fairness, 0f, 0.5f, "%.3f"))
@@ -127,6 +118,82 @@ public sealed class SettingsTab : ITab
 
         ImGuiHelpers.ScaledDummy(6f);
         DrawPriorityOrder();
+    }
+
+    /// <summary>
+    /// The order roles get geared in. This used to be one slider called "damage dealer priority",
+    /// which could not say anything at all about tanks against healers — the two most common thing
+    /// a static has an opinion about after that.
+    /// </summary>
+    private void DrawRoleOrder()
+    {
+        var rules = config.Rules;
+        rules.EnsureComplete();
+
+        ImGui.TextUnformatted("Gear roles in this order");
+        Widgets.HelpMarker("Damage, then tanks, then healers is the usual answer. Move a role with " +
+                           "the arrows.");
+
+        RaidRole? moved = null;
+        var direction = 0;
+
+        for (var i = 0; i < rules.RoleOrder.Count; i++)
+        {
+            var role = rules.RoleOrder[i];
+            using var id = ImRaii.PushId((int)role);
+
+            using (ImRaii.Disabled(i == 0))
+            {
+                if (ImGui.SmallButton("^"))
+                {
+                    moved = role;
+                    direction = -1;
+                }
+            }
+
+            ImGui.SameLine(0f, 2f);
+
+            using (ImRaii.Disabled(i == rules.RoleOrder.Count - 1))
+            {
+                if (ImGui.SmallButton("v"))
+                {
+                    moved = role;
+                    direction = 1;
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{i + 1}.  {role}");
+        }
+
+        if (moved != null)
+        {
+            rules.Move(moved.Value, direction);
+            config.Save();
+        }
+
+        var strict = rules.StrictRoleOrder;
+        if (ImGui.Checkbox("Follow that order strictly", ref strict))
+        {
+            rules.StrictRoleOrder = strict;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("On: a healer waits while a tank still wants the same piece, whatever the " +
+                           "forecast would prefer. This is what a group means when it says it gears " +
+                           "damage first, and it is the default.\n\n" +
+                           "Off: role becomes a nudge inside the arithmetic instead, and a big enough " +
+                           "gain for someone further down the list can outweigh it.");
+
+        if (strict)
+            return;
+
+        var step = (float)rules.RoleStep;
+        if (ImGui.SliderFloat("How much one step down is worth", ref step, 0f, 2f, "%.2f"))
+        {
+            rules.RoleStep = step;
+            config.Save();
+        }
     }
 
     /// <summary>

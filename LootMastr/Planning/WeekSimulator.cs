@@ -179,7 +179,8 @@ public sealed class WeekSimulator
     /// else can only push the last finisher out, which is the thing being minimised.
     /// </summary>
     private PlayerPlan? Best(IEnumerable<PlayerPlan> candidates) =>
-        candidates.OrderByDescending(p => p.Open.Count)
+        candidates.OrderBy(p => rules.StrictRoleOrder ? rules.RankOf(p.Role) : 0)
+                  .ThenByDescending(p => p.Open.Count)
                   .ThenByDescending(p => rules.WeightFor(p.Role))
                   .ThenBy(p => p.ItemsReceived)
                   .ThenBy(p => p.Key, StringComparer.Ordinal)
