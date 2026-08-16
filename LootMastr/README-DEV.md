@@ -112,22 +112,22 @@ Assigning a unique item to someone who already owns one is refused by the game, 
 dialog — this happened during the recording. `VerifyGone` therefore waits for the item to actually
 leave the chest and reports if it does not, rather than retrying into the error.
 
-### Acting is off, because it crashed the client
+### Acting is opt-in, because an earlier version crashed the client
 
-`LootAssignmentRunner.CanAct` is `false`. Sending the events a click produces took the game down.
+`Configuration.EnableAssignment`, off by default.
 
-Knowing *which* events a click sends turned out not to be the same as being able to send them. The
-game's handlers read the `AtkEventData` that came with the event — where the mouse was, which
-renderer was under it — and were handed a null, along with the window's root node instead of the
-button that was actually pressed. Something in there gets dereferenced.
+The version that crashed synthesised **all four** steps as raw events, including the two list
+clicks, and passed a null `AtkEventData`. A list handler reads that data to work out which row was
+hit — knowing *which* events a click sends turned out not to be the same as being able to send them.
 
-Doing it properly means finding the real node and building matching event data, which is not
-something to get right by inference on somebody else's client. The safe way in is the outgoing side,
-`FireCallback`, which takes plain values — but its payload for this window is still unknown, and two
-guesses at that have already cost an item and a session.
+`AtkComponentList.SelectItem(index, dispatchEvent)` is the game's own method for picking a row, and
+it builds whatever the list needs internally. That is the part that could not be reconstructed from
+outside, so both list steps now go through it and no list event is hand-made any more. What is left
+is two button presses, and those get a real event *and* real event data rather than a null.
 
-So the plugin decides and verifies, and hands the last step to you. Turning this back on needs a
-recording of the **outgoing** call, which the current recorder cannot see.
+That is a specific fix for a specific cause, not a retry — but it is not proof, so it stays behind a
+switch and the first run belongs somewhere disposable. With it off the plugin still decides and
+verifies, and the clicking is yours.
 
 ### What a click actually sends
 

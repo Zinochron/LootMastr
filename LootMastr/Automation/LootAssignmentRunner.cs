@@ -101,19 +101,15 @@ public sealed class LootAssignmentRunner : IDisposable
     /// <summary>True when the last run finished with the item actually gone from the chest.</summary>
     public bool LastSucceeded { get; private set; }
 
-    /// <summary>
-    /// Whether the plugin will touch the loot window at all. Off: sending the events a click
-    /// produces crashed the client, and it stays off until the outgoing call can be recorded
-    /// instead of inferred. See <see cref="Send"/>.
-    /// </summary>
-    public static readonly bool CanAct = false;
-
     public string Start(LiveLootItem target, string playerName)
     {
-        if (!CanAct)
+        // Off unless switched on, because an earlier version of this crashed the client. The list
+        // clicks that most likely caused it are gone, but "most likely" is not something to turn on
+        // behind somebody's back.
+        if (!config.EnableAssignment)
         {
-            Status = $"{target.Name} → {playerName}. Assign it in game; the plugin will not touch " +
-                     "the window until it can do so without risking a crash.";
+            Status = $"{target.Name} → {playerName}. Assign it in game, or switch assigning on in " +
+                     "Settings once you have somewhere safe to try it.";
 
             return Status;
         }
@@ -210,9 +206,9 @@ public sealed class LootAssignmentRunner : IDisposable
 
         attempt++;
 
-        // Select the row, then press Loot Recipient — the two events a click produces.
-        Send(ChestAddon, AtkEventType.ListItemClick, item.Index);
-        Send(ChestAddon, AtkEventType.ButtonClick, LootRecipientButton);
+        // Select the row, then press Loot Recipient — what a click on that row does.
+        SelectInList(ChestAddon, item.Index);
+        ClickButton(ChestAddon, LootRecipientButton);
     }
 
     private void PickRecipient()
@@ -252,7 +248,7 @@ public sealed class LootAssignmentRunner : IDisposable
             return;
         }
 
-        Send(TargetingAddon, AtkEventType.ButtonClick, ConfirmButton);
+        ClickButton(TargetingAddon, ConfirmButton);
     }
 
     /// <summary>
@@ -285,7 +281,7 @@ public sealed class LootAssignmentRunner : IDisposable
         }
 
         // Yes is 0 on SelectYesno.
-        Send(ConfirmAddon, AtkEventType.ButtonClick, ConfirmButton);
+        ClickButton(ConfirmAddon, ConfirmButton);
         stepStarted = DateTime.UtcNow;
         phase = Phase.VerifyGone;
     }
@@ -354,41 +350,59 @@ public sealed class LootAssignmentRunner : IDisposable
     /// game's own handler to walk a null pointer, and that takes the client with it.
     /// </summary>
     /// <summary>
-    /// Disabled. This crashed the game client.
+    /// Presses a button in a window.
     ///
-    /// Knowing which events a click sends is not the same as being able to send them. The game's
-    /// own handlers read the <c>AtkEventData</c> that came with the event — where the mouse was,
-    /// which renderer was under it — and are handed a null here, along with the window's root node
-    /// instead of the button that was actually pressed. One of those is dereferenced and the client
-    /// goes down.
-    ///
-    /// Synthesising the event properly means finding the real node and building event data to match,
-    /// which is not something to get right by inference on somebody else's client. The safe way in
-    /// is the outgoing side — <c>FireCallback</c>, which takes plain values — but its payload for
-    /// this window is still unknown, and two guesses at it have already cost an item and a session.
-    ///
-    /// So deciding and verifying stay; acting waits until the outgoing call can be recorded rather
-    /// than guessed. Everything up to here is real work the plugin still does.
+    /// The version of this that crashed the client passed a <b>null</b> <c>AtkEventData</c>, and
+    /// used it for list clicks as well — where the game's handler reads that data to work out which
+    /// row was hit. Lists no longer go through here at all (see <see cref="SelectInList"/>), and
+    /// what is left gets a real, zeroed event and event data with the window as listener, which is
+    /// the shape a genuine press arrives in.
     /// </summary>
-    private void Send(string addonName, AtkEventType eventType, int eventParam)
+    private unsafe void ClickButton(string addonName, int eventParam)
     {
+        // Set even if the call falls through, so a failed step still waits its turn.
         lastAction = DateTime.UtcNow;
 
-        Services.Log.Warning(
-            $"Loot assignment is disabled: would have sent {eventType} param {eventParam} to {addonName}.");
+        var addon = AddonReader.Find(addonName);
+        if (addon.IsNull)
+            return;
+
+        var unitBase = (AtkUnitBase*)addon.Address;
+        if (unitBase == null || unitBase->RootNode == null)
+            return;
+
+        var eventData = new AtkEventData();
+
+        var atkEvent = new AtkEvent
+        {
+            Listener = (AtkEventListener*)unitBase,
+            Target = (AtkEventTarget*)unitBase->RootNode,
+            Node = unitBase->RootNode,
+            Param = (uint)eventParam,
+        };
+
+        unitBase->ReceiveEvent(AtkEventType.ButtonClick, eventParam, &atkEvent, &eventData);
     }
 
     /// <summary>
-    /// Points a window's list at one of its rows. The click event carries the list's id rather
-    /// than the row — the row lives here — which is why the recording showed the same parameter
-    /// for three different recipients.
+    /// Picks a row in a window's list, through the game's own <c>SelectItem</c> rather than by
+    /// synthesising the click. That method builds whatever the list needs internally, which is
+    /// exactly the part that could not be reconstructed from the outside — and hand-made list
+    /// events are what took the client down.
     ///
-    /// The list is found by asking for each node id in turn rather than by hardcoding one, so a
-    /// rearranged window costs a failed step instead of the wrong person being picked.
+    /// The click event carries the list's id rather than the row, which is why the recording showed
+    /// the same parameter for three different recipients: the row is this call's argument.
+    ///
+    /// The list is found by asking for each node id in turn rather than hardcoding one. A wrong
+    /// guess is caught by the checks that follow — the targeting window has to be showing the right
+    /// item, and the confirmation has to name the right player — so it costs a failed step rather
+    /// than the wrong person.
     /// </summary>
-    private static unsafe bool SelectInList(string addonName, int index)
+    private unsafe bool SelectInList(string addonName, int index)
     {
         const uint highestNodeId = 64;
+
+        lastAction = DateTime.UtcNow;
 
         var addon = AddonReader.Find(addonName);
         if (addon.IsNull)
@@ -404,7 +418,7 @@ public sealed class LootAssignmentRunner : IDisposable
             if (list == null)
                 continue;
 
-            list->SelectedItemIndex = index;
+            list->SelectItem(index, true);
             return true;
         }
 

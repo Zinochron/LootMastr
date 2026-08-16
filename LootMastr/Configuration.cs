@@ -85,5 +85,15 @@ public class Configuration : IPluginConfiguration
     /// <summary>Echo what the plugin is doing into the local chat log.</summary>
     public bool VerboseChat { get; set; } = false;
 
+    /// <summary>
+    /// Whether the plugin may drive the loot window itself.
+    ///
+    /// Off by default, and deliberately not remembered as "fine now": an earlier version of this
+    /// crashed the game. The list clicks that most likely caused it have been replaced by the
+    /// game's own <c>SelectItem</c>, but the first run after switching this on belongs in a duty
+    /// nobody minds losing.
+    /// </summary>
+    public bool EnableAssignment { get; set; } = false;
+
     public void Save() => Services.PluginInterface.SavePluginConfig(this);
 }
