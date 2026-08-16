@@ -22,11 +22,15 @@ namespace LootMastr.Automation;
 /// The candidate list is <b>not</b> in party order — the recording had the local player first and
 /// the party list the other way round — so recipients are matched by name, never by index.
 ///
-/// What is inferred rather than recorded is which callback opens each window, so every step is
+/// What is inferred rather than recorded is which callback drives each window, so every step is
 /// attempted and then <b>verified against what the game put on screen</b>. Nothing is irreversible
 /// until the Yes on that last dialog, and that is only pressed once the dialog's own text names
-/// both the intended player and the intended item. A wrong guess anywhere earlier opens the wrong
-/// window or none, and is abandoned.
+/// both the intended player and the intended item.
+///
+/// Where that verification does not exist, nothing is tried twice. An item in a Lootmaster chest
+/// offers two actions, and getting the callback wrong does not do nothing — it presses "Greed
+/// only", which settles that item for good. So the chest is given exactly one attempt with a known
+/// action id, and failure is reported rather than worked around.
 /// </summary>
 public sealed class LootAssignmentRunner : IDisposable
 {
@@ -43,16 +47,18 @@ public sealed class LootAssignmentRunner : IDisposable
     private const int StepTimeoutMs = 4000;
 
     /// <summary>
-    /// Callback shapes to try for a list selection, commonest first. Trying several is only
-    /// acceptable because each is followed by a check that the right window appeared: the wrong
-    /// shape does nothing, and the step gives up rather than pressing on.
+    /// Picking a recipient inside the targeting window may be tried in a few shapes, because the
+    /// step after it is the game asking "Allow &lt;player&gt; to claim &lt;item&gt;?" — a wrong shape
+    /// either does nothing or names the wrong person, and both are caught there before anything
+    /// irreversible happens.
+    ///
+    /// The chest itself gets no such list. See <see cref="OpenTargeting"/>.
     /// </summary>
-    private static readonly int[][] SelectionPayloads =
+    private static readonly int[][] RecipientPayloads =
     [
         [0, -1],
         [-1],
         [1, -1],
-        [3, -1],
     ];
 
     private enum Phase
@@ -161,7 +167,7 @@ public sealed class LootAssignmentRunner : IDisposable
         // Already showing the right item? Then the click landed.
         if (TargetingMatchesItem())
         {
-            Note("opening the assignment window");
+            Services.Log.Information($"Loot assignment: opened the window with action id {config.AssignActionId}.");
             attempt = 0;
             stepStarted = DateTime.UtcNow;
             phase = Phase.PickRecipient;
@@ -175,20 +181,29 @@ public sealed class LootAssignmentRunner : IDisposable
             return;
         }
 
-        if (attempt >= SelectionPayloads.Length)
+        // Exactly one attempt, and never a list of shapes to try.
+        //
+        // Each item in a Lootmaster chest offers two actions, and the wrong callback here does not
+        // do nothing — it presses "Greed only", which is a decision about that item that cannot be
+        // taken back. Trying shapes until one works is fine where the game asks for confirmation
+        // afterwards, and this is not one of those places.
+        if (attempt > 0)
         {
-            Fail($"{item.Name}: could not open the assignment window.");
+            Fail($"{item.Name}: the assignment window did not open. If the game's layout has " +
+                 $"changed, the action id is in Settings (currently {config.AssignActionId}); " +
+                 "the Debug tab's recorder shows what each one does.");
             return;
         }
 
-        Fire(ChestAddon, SelectionPayloads[attempt++], item.Index);
+        attempt++;
+        Fire(ChestAddon, [config.AssignActionId, -1], item.Index);
     }
 
     private void PickRecipient()
     {
         if (AddonReader.IsOpen(ConfirmAddon))
         {
-            Note("choosing a recipient");
+            Note("choosing a recipient", RecipientPayloads);
             attempt = 0;
             stepStarted = DateTime.UtcNow;
             phase = Phase.Confirm;
@@ -208,13 +223,13 @@ public sealed class LootAssignmentRunner : IDisposable
             return;
         }
 
-        if (attempt >= SelectionPayloads.Length)
+        if (attempt >= RecipientPayloads.Length)
         {
             Fail($"{item.Name}: could not choose {recipient} in the assignment window.");
             return;
         }
 
-        Fire(TargetingAddon, SelectionPayloads[attempt++], candidate.Value);
+        Fire(TargetingAddon, RecipientPayloads[attempt++], candidate.Value);
     }
 
     /// <summary>
@@ -341,15 +356,14 @@ public sealed class LootAssignmentRunner : IDisposable
     /// Writes down which callback shape actually worked. The list of shapes is inferred, so the
     /// first successful run is what turns it into a known one — after which the others can go.
     /// </summary>
-    private void Note(string step)
+    private void Note(string step, IReadOnlyList<int[]> shapes)
     {
-        if (attempt == 0)
+        if (attempt == 0 || attempt > shapes.Count)
             return;
 
-        var used = SelectionPayloads[attempt - 1];
         Services.Log.Information(
-            $"Loot assignment: {step} worked with payload [{string.Join(", ", used)}] " +
-            $"(shape {attempt} of {SelectionPayloads.Length}).");
+            $"Loot assignment: {step} worked with payload [{string.Join(", ", shapes[attempt - 1])}] " +
+            $"(shape {attempt} of {shapes.Count}).");
     }
 
     private void Fail(string reason)

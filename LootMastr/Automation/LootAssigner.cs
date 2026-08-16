@@ -79,22 +79,43 @@ public sealed class LootAssigner
             return;
 
         lastSignature = signature;
-        decisions = items.Select(Decide).ToList();
+
+        // Worked out in order rather than item by item. A chest can hold the same coffer twice —
+        // the recorded Deltascape chest had two of them — and since the gear is unique the second
+        // cannot go to whoever is taking the first. Each decision is made with the ones above it
+        // already counted.
+        var pending = new List<PendingAward>();
+        decisions = [];
+
+        foreach (var item in items)
+        {
+            var decision = Decide(item, pending);
+            decisions.Add(decision);
+
+            if (decision.Winner != null)
+                pending.Add(new PendingAward(decision.Winner.Key, item.Slot, item.Upgrade));
+        }
 
         LearnTerritory(items);
     }
 
-    private LootDecision Decide(LiveLootItem item)
+    private LootDecision Decide(LiveLootItem item, IReadOnlyList<PendingAward> pending)
     {
         if (!item.IsTierLoot)
             return new LootDecision(item, null, "Not part of this tier — free for all.", []);
 
         var ranking = item.Upgrade != null
-                          ? planner.RankForUpgrade(item.Upgrade.Value)
-                          : planner.RankForSlot(item.Slot!.Value);
+                          ? planner.RankForUpgrade(item.Upgrade.Value, pending)
+                          : planner.RankForSlot(item.Slot!.Value, pending);
 
         if (ranking.Count == 0)
-            return new LootDecision(item, null, "Nobody in the roster still needs it — greed.", ranking);
+        {
+            var reason = pending.Any(p => p.Slot == item.Slot && p.Upgrade == item.Upgrade)
+                             ? "Nobody left who needs it — the other one in this chest covers them."
+                             : "Nobody in the roster still needs it — greed.";
+
+            return new LootDecision(item, null, reason, ranking);
+        }
 
         var best = ranking[0];
         return new LootDecision(item, best.Member, best.Reason, ranking);

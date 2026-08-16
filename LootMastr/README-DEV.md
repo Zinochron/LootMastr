@@ -84,6 +84,28 @@ Assignment modes map onto the flow directly. **Confirm** does steps 1–2 and le
 Yes/No for the human, which is a better confirmation than anything the plugin could put on screen.
 **Automatic** answers it too. One item at a time, because each walks all three windows.
 
+### One attempt where there is no confirmation
+
+The three-window flow has one place where a wrong callback is *itself* a decision. Each item in a
+Lootmaster chest offers two actions, and action `0` is **Greed only** — pressing it settles that
+item for good. An early version tried a list of payload shapes on the chest until one worked, on
+the reasoning that a wrong shape does nothing. It does something: it greeds the item.
+
+So the chest gets exactly **one** attempt, with `Configuration.AssignActionId` (1), and reports
+failure rather than working around it. Picking a recipient inside the targeting window may still be
+tried in a few shapes, because the game asks "Allow &lt;player&gt; to claim &lt;item&gt;?" afterwards and
+that check catches both a wrong name and a wrong item before anything irreversible happens.
+
+The rule worth carrying: **retry only where a verification gate stands between the attempt and the
+consequence.**
+
+### The same coffer twice
+
+A chest can hold two of a kind — the recorded Deltascape chest had two earring coffers. The gear is
+unique, so the second cannot go to whoever is taking the first. `LootAssigner.Refresh` therefore
+decides the window in order, feeding each decision the ones above it as `PendingAward`s, instead of
+ranking every item against the same untouched roster.
+
 ### It can legitimately fail
 
 Assigning a unique item to someone who already owns one is refused by the game, with an error

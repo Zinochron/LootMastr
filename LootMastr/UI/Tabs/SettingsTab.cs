@@ -77,6 +77,20 @@ public sealed class SettingsTab : ITab
             config.VerboseChat = verbose;
             config.Save();
         }
+
+        var action = config.AssignActionId;
+        ImGui.SetNextItemWidth(90f * ImGuiHelpers.GlobalScale);
+        if (ImGui.InputInt("Assign action id", ref action, 0))
+        {
+            // Never 0: that is the greed-only button, and pressing it settles the item.
+            config.AssignActionId = Math.Max(1, action);
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Which of a chest item's two actions means \"assign this\". 0 is greed " +
+                           "only, so this is 1 and should not need touching — it is here because a " +
+                           "layout change should be fixable without a rebuild, rather than by the " +
+                           "plugin trying buttons on a live chest to find out.");
     }
 
     /// <summary>

@@ -247,6 +247,26 @@ var rules = new PriorityRules();
     Check("a crafted slot is never planned", crafted.StateFor(scanned: true) == SlotState.NotPlanned);
 }
 
+// --- the same coffer twice in one chest -----------------------------------------------------------
+
+{
+    // Old chests really do drop two of a kind — the recorded Deltascape chest had two earring
+    // coffers and two of another. Since the gear is unique, the second cannot go to whoever is
+    // taking the first, so a decision has to be made with the ones above it already counted.
+    var a = Member("A", (GearSlot.Earrings, GearSource.Raid));
+    var b = Member("B", (GearSlot.Earrings, GearSource.Raid));
+
+    var plans = new List<PlayerPlan> { Plan(a, RaidRole.Dps, tier), Plan(b, RaidRole.Dps, tier) };
+
+    Check("both want the first earring coffer", plans.Count(p => p.Wants(GearSlot.Earrings)) == 2);
+
+    // Hand the first one over, the way the loot tab does before ranking the next item.
+    plans[0].TakeSlot(GearSlot.Earrings);
+
+    Check("only one is left wanting the second", plans.Count(p => p.Wants(GearSlot.Earrings)) == 1);
+    Check("and it is the other player", plans.Single(p => p.Wants(GearSlot.Earrings)).Name == "B");
+}
+
 // --- an unworn but awarded piece is still out of the distribution --------------------------------
 
 {

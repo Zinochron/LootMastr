@@ -96,6 +96,35 @@ public sealed class RosterStore
         return added;
     }
 
+    /// <summary>
+    /// Updates the job of members already in the roster, and adds nobody. Swapping job mid-tier is
+    /// meant to be an emergency, but when it happens the role drives the damage-dealer priority and
+    /// a stale job quietly plans for the wrong person — while adding whoever wanders into the party
+    /// is exactly what the roster must not do.
+    /// </summary>
+    public int RefreshJobsFromParty(IEnumerable<PartyPlayer> party)
+    {
+        var changed = 0;
+
+        foreach (var player in party)
+        {
+            if (player.JobId == 0)
+                continue;
+
+            var member = Find(player.Name, player.World);
+            if (member == null || member.JobId == player.JobId)
+                continue;
+
+            member.JobId = player.JobId;
+            changed++;
+        }
+
+        if (changed > 0)
+            config.Save();
+
+        return changed;
+    }
+
     public RaidRole RoleOf(RosterMember member) => jobs.RoleOf(member.JobId);
 
     /// <summary>

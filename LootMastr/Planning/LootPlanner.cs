@@ -6,6 +6,9 @@ using LootMastr.Roster;
 
 namespace LootMastr.Planning;
 
+/// <summary>An item earlier in the same chest that is already spoken for.</summary>
+public readonly record struct PendingAward(string PlayerKey, GearSlot? Slot, GearSide? Upgrade);
+
 /// <summary>One player weighed up for one drop, with the numbers that put them where they are.</summary>
 public sealed record Candidate(
     RosterMember Member,
@@ -38,15 +41,16 @@ public sealed class LootPlanner
     /// <summary>The forecast as things stand, with nothing handed out yet.</summary>
     public SimulationResult Forecast() => NewSimulator().Run(BuildPlans());
 
-    public IReadOnlyList<Candidate> RankForSlot(GearSlot slot) =>
-        Rank(plan => plan.Wants(slot), plan => plan.TakeSlot(slot), slot.Label());
+    public IReadOnlyList<Candidate> RankForSlot(GearSlot slot, IEnumerable<PendingAward>? applied = null) =>
+        Rank(plan => plan.Wants(slot), plan => plan.TakeSlot(slot), slot.CofferLabel(), applied);
 
-    public IReadOnlyList<Candidate> RankForUpgrade(GearSide side) =>
-        Rank(plan => plan.WantsUpgrade(side), plan => plan.TakeUpgrade(side), $"{side} upgrade");
+    public IReadOnlyList<Candidate> RankForUpgrade(GearSide side, IEnumerable<PendingAward>? applied = null) =>
+        Rank(plan => plan.WantsUpgrade(side), plan => plan.TakeUpgrade(side), $"{side} upgrade", applied);
 
-    private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, Func<PlayerPlan, bool> take, string what)
+    private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, Func<PlayerPlan, bool> take, string what,
+                                          IEnumerable<PendingAward>? applied = null)
     {
-        var basePlans = BuildPlans();
+        var basePlans = BuildPlans(applied);
         var eligible = basePlans.Where(wants).Select(p => p.Key).ToList();
         if (eligible.Count == 0)
             return [];
@@ -140,15 +144,38 @@ public sealed class LootPlanner
         return result.OrderBy(r => r.Cost).Select(r => r.Text).ToList();
     }
 
-    /// <summary>The roster as simulation input. Members with nothing left are still included so the
-    /// group's finish week accounts for them.</summary>
-    public List<PlayerPlan> BuildPlans()
+    /// <summary>
+    /// The roster as simulation input. Members with nothing left are still included so the group's
+    /// finish week accounts for them.
+    ///
+    /// <paramref name="applied"/> is for items already spoken for but not yet handed over — the
+    /// rest of an open chest. A chest can hold the same coffer twice, and since the gear is unique
+    /// the second one cannot go to whoever is taking the first.
+    /// </summary>
+    public List<PlayerPlan> BuildPlans(IEnumerable<PendingAward>? applied = null)
     {
         var tier = tiers.Tier;
 
-        return roster.Members
-                     .Select(m => PlayerPlan.From(m, roster.RoleOf(m), tier))
-                     .ToList();
+        var plans = roster.Members
+                          .Select(m => PlayerPlan.From(m, roster.RoleOf(m), tier))
+                          .ToList();
+
+        if (applied == null)
+            return plans;
+
+        foreach (var award in applied)
+        {
+            var plan = plans.FirstOrDefault(p => p.Key == award.PlayerKey);
+            if (plan == null)
+                continue;
+
+            if (award.Upgrade != null)
+                plan.TakeUpgrade(award.Upgrade.Value);
+            else if (award.Slot != null)
+                plan.TakeSlot(award.Slot.Value);
+        }
+
+        return plans;
     }
 
     private static List<PlayerPlan> Clone(IEnumerable<PlayerPlan> plans) =>
