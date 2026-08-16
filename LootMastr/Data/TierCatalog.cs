@@ -228,6 +228,8 @@ public sealed class TierCatalog
             });
         }
 
+        ApplyStandardLayout(tier);
+
         config.ActiveTierId = tier.Id;
         config.Tier = tier;
         resolved = false;
@@ -489,6 +491,7 @@ public sealed class TierCatalog
         ApplyTrades(tier, trades);
         DiscoverAugments(tier);
         DeriveItemLevels(tier);
+        ApplyStandardLayout(tier);
         config.Save();
 
         Services.Log.Information(
@@ -558,6 +561,51 @@ public sealed class TierCatalog
         Services.Log.Information(
             $"Item levels for {tier.Name}: raid {tier.RaidItemLevel}, weapon {tier.RaidWeaponItemLevel}, " +
             $"tome {tier.TomeItemLevel}, augmented {tier.AugmentedItemLevel}.");
+    }
+
+    /// <summary>
+    /// How every tier the game has shipped lays its drops out: accessories in the first fight,
+    /// head/hands/feet in the second, body and legs in the third, the weapon in the fourth, with
+    /// the accessory material falling where its books do and the armour and weapon materials
+    /// together in the third.
+    /// </summary>
+    private static readonly (GearSlot[] Slots, GearSide[] Upgrades)[] StandardLayout =
+    [
+        ([GearSlot.Earrings, GearSlot.Necklace, GearSlot.Bracelets, GearSlot.Ring1], []),
+        ([GearSlot.Head, GearSlot.Hands, GearSlot.Feet], [GearSide.Right]),
+        ([GearSlot.Body, GearSlot.Legs], [GearSide.Left, GearSide.Weapon]),
+        ([GearSlot.Weapon], []),
+    ];
+
+    /// <summary>
+    /// Fills in which fight drops what, for fights that have nothing set. Only ever a starting
+    /// point — anything already filled in is left alone, because the layout is a convention rather
+    /// than something read out of the game.
+    /// </summary>
+    public int ApplyStandardLayout(TierDefinition tier)
+    {
+        var filled = 0;
+        var encounters = tier.Encounters.OrderBy(e => e.Index).ToList();
+
+        for (var i = 0; i < encounters.Count && i < StandardLayout.Length; i++)
+        {
+            var encounter = encounters[i];
+            if (encounter.DropSlots.Count > 0 || encounter.UpgradeDrops.Count > 0)
+                continue;
+
+            var (slots, upgrades) = StandardLayout[i];
+            encounter.DropSlots = [..slots];
+
+            // Only the materials this tier actually has. An older tier with no upgrade concept
+            // should not be given phantom ones.
+            encounter.UpgradeDrops = upgrades
+                                     .Where(side => tier.Upgrades.Any(u => u.Side == side))
+                                     .ToList();
+
+            filled++;
+        }
+
+        return filled;
     }
 
     /// <summary>

@@ -178,6 +178,23 @@ public sealed class TierTab : ITab
                                     : "LootMastr: found nothing — check that the books below resolve.");
         }
 
+        ImGui.SameLine();
+        if (ImGui.Button("Fill in drops"))
+        {
+            var filled = tiers.ApplyStandardLayout(tiers.Tier);
+            config.Save();
+
+            Services.Chat.Print(filled > 0
+                                    ? $"LootMastr: set the usual drops for {filled} fight(s)."
+                                    : "LootMastr: every fight already has its drops set.");
+        }
+
+        Widgets.HelpMarker("Sets which fight drops what, the way every tier so far has done it: " +
+                           "accessories first, head/hands/feet second, body and legs third, the " +
+                           "weapon fourth. Fights that already have drops set are left alone.\n\n" +
+                           "\"Discover exchange\" does this too — this is for when you have changed " +
+                           "your mind and cleared one.");
+
         Widgets.HelpMarker("Reads the game's own shop data for everything this tier's books buy, " +
                            "including how many books each costs. Slots you have already assigned are kept.\n\n" +
                            "Do this standing at the exchange NPC with the shop open and it will read " +

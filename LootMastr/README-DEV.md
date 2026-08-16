@@ -184,6 +184,13 @@ none. Whatever is still missing after all that falls back to the usual relations
 raid + 5, tomestone is raid − 10 — and the mode is used rather than the max, so one stray item
 cannot move a whole tier.
 
+Which fight drops what is a **convention**, not something the game exposes: accessories first,
+head/hands/feet second, body and legs third, the weapon fourth, with the accessory material where
+its books are and the armour and weapon materials together in the third. `ApplyStandardLayout`
+fills that in for fights that have nothing set, and never touches one that does. It runs on
+`Discover exchange`, on `New tier`, and on its own button for when you have cleared one and changed
+your mind.
+
 There is no id field. The file name is the tier's name slugified, which removes a field that could
 only ever be got wrong and keeps the two from drifting apart. The load list shows names, not files.
 

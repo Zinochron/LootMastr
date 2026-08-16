@@ -65,7 +65,12 @@ public sealed class LootAssigner
         }
 
         var items = loot.Read();
-        var signature = string.Join("|", items.Select(i => $"{i.Index}:{i.ItemId}:{i.RollResult}"));
+
+        // The roster is part of the signature, not just the window. Inside an instance the chest
+        // does not change, so keying only on it meant that removing someone from the roster left
+        // the old ranking standing — with the removed player still in it.
+        var signature = string.Join("|", items.Select(i => $"{i.Index}:{i.ItemId}:{i.RollResult}")) +
+                        $"#{roster.Signature()}";
 
         if (!force && signature == lastSignature)
             return;
