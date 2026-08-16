@@ -24,6 +24,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ChatAnnouncer announcer;
     private readonly ObtainTracker tracker;
     private readonly ClearTracker clears;
+    private readonly AddonWatcher watcher;
 
     public Configuration Configuration { get; }
     public ItemCatalog Items { get; }
@@ -64,6 +65,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Equipment = new EquipmentReader(Items);
         Scanner = new GearScanner(Configuration, Roster, Party, Equipment, Classifier);
+        watcher = new AddonWatcher();
 
         var tabs = new List<ITab>
         {
@@ -71,7 +73,7 @@ public sealed class Plugin : IDalamudPlugin
             new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, clears, Scanner, Items),
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),
-            new DebugTab(Loot, Party, Tiers, tracker),
+            new DebugTab(Loot, Party, Tiers, tracker, watcher),
             new SettingsTab(Configuration, Roster, Planner),
         };
 
@@ -143,6 +145,7 @@ public sealed class Plugin : IDalamudPlugin
         tracker.Dispose();
         clears.Dispose();
         Scanner.Dispose();
+        watcher.Dispose();
 
         ECommonsMain.Dispose();
     }

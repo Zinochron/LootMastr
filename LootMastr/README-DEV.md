@@ -62,9 +62,18 @@ but nothing typed for the recipient choice, and `AddonNeedGreed` only offers `Nu
 `SelectedItemIndex` and a `CurrentDropDownOwnerNode`. Firing a guessed `AtkValue` payload at that
 would be guessing with somebody's weekly lockout.
 
-**Debug → Write capture file** exists for exactly this. Take one with a Lootmaster chest on screen;
-it records the party, every loot item, `AgentLoot`, and the addon's full `AtkValues` list. The
-recipient rows show up there as strings, which is what the click needs.
+**Debug → Write capture file** records the party, every loot item, `AgentLoot`, and the addon's
+full `AtkValues` list. Three captures taken in a live Deltascape chest gave all of that — and none
+of the assignment step, because by the time the capture button is pressed the moment has passed.
+The chest and the recipient choice are two different screens and only the first survives to be
+captured.
+
+So **Debug → Record windows that open over the loot window** exists for the second. It hooks
+`IAddonLifecycle.PostSetup` for every addon, keeps the ones that appear while `NeedGreed` is up, and
+dumps their values into the capture. One run of: switch it on, open a chest, assign an item to
+someone, write a capture — names the window and shows what it was holding, which is everything the
+click needs. It is off by default because it hooks every window in the game, and it can be deleted
+once the answer is in.
 
 When wiring it up, follow the two rules Sortr learned the hard way: match players **by name**
 against what the window is offering rather than by index, and never judge success by a return

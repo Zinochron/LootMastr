@@ -22,15 +22,18 @@ public sealed class DebugTab : ITab
     private readonly PartyReader party;
     private readonly TierCatalog tiers;
     private readonly ObtainTracker tracker;
+    private readonly AddonWatcher watcher;
 
     private string lastCapture = string.Empty;
 
-    public DebugTab(LootWindowReader loot, PartyReader party, TierCatalog tiers, ObtainTracker tracker)
+    public DebugTab(LootWindowReader loot, PartyReader party, TierCatalog tiers, ObtainTracker tracker,
+                    AddonWatcher watcher)
     {
         this.loot = loot;
         this.party = party;
         this.tiers = tiers;
         this.tracker = tracker;
+        this.watcher = watcher;
     }
 
     public string Title => "Debug";
@@ -42,6 +45,9 @@ public sealed class DebugTab : ITab
 
         ImGuiHelpers.ScaledDummy(8f);
         DrawLootItems();
+
+        ImGuiHelpers.ScaledDummy(8f);
+        DrawAssignmentRecorder();
 
         ImGuiHelpers.ScaledDummy(8f);
         DrawCapture();
@@ -130,6 +136,42 @@ public sealed class DebugTab : ITab
         }
     }
 
+    /// <summary>
+    /// The one thing still needed to finish automatic assignment: what the game puts on screen when
+    /// the leader picks who gets an item. Captures taken so far all showed the chest and not that
+    /// step, because pressing the capture button means the moment has already passed.
+    /// </summary>
+    private void DrawAssignmentRecorder()
+    {
+        ImGui.TextUnformatted("Record the assignment window");
+        ImGui.Separator();
+
+        var enabled = watcher.Enabled;
+        if (ImGui.Checkbox("Record windows that open over the loot window", ref enabled))
+            watcher.Enabled = enabled;
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Clear"))
+            watcher.Clear();
+
+        Widgets.Coloured(Widgets.Muted,
+                         "Turn this on, open a chest as Lootmaster, click an item and assign it to " +
+                         "someone, then write a capture file. Whatever the game opened in between is " +
+                         "recorded with its values, which is what the assignment code needs.");
+
+        if (watcher.Sightings.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, enabled ? "Nothing recorded yet." : "Not recording.");
+            return;
+        }
+
+        foreach (var sighting in watcher.Sightings)
+        {
+            ImGui.TextUnformatted($"{sighting.At:HH:mm:ss}  {sighting.Name}");
+            Widgets.Tooltip(sighting.Values);
+        }
+    }
+
     private void DrawCapture()
     {
         ImGui.TextUnformatted("Capture the loot addon");
@@ -200,6 +242,8 @@ public sealed class DebugTab : ITab
                 builder.AppendLine($"{name} AtkValues:");
                 AppendAddonValues(builder, name);
             }
+
+            watcher.Append(builder);
 
             var path = Path.Combine(Services.PluginInterface.GetPluginConfigDirectory(),
                                     $"loot-capture-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
