@@ -38,8 +38,75 @@ public sealed class LootPlanner
         this.roster = roster;
     }
 
-    /// <summary>The forecast as things stand, with nothing handed out yet.</summary>
-    public SimulationResult Forecast() => NewSimulator().Run(BuildPlans());
+    /// <summary>
+    /// The forecast as things stand.
+    ///
+    /// The coming week is decided by the same ranking the loot window uses — one full simulation per
+    /// candidate — and only the weeks after it are projected with the simulator's cheap greedy rule.
+    /// That matters: the two rules genuinely disagree, and having the plan and the chest recommend
+    /// different people was not a display quirk but two different algorithms answering the same
+    /// question.
+    ///
+    /// Anything acted on is therefore the ranking's answer; the greedy only shapes weeks nobody is
+    /// standing in front of yet.
+    /// </summary>
+    public SimulationResult Forecast()
+    {
+        var plans = BuildPlans();
+        var thisWeek = AssignComingWeek(plans);
+
+        var rest = NewSimulator().Run(plans, startWeek: 2);
+
+        return rest with { Awards = [..thisWeek, ..rest.Awards] };
+    }
+
+    /// <summary>
+    /// Hands out the coming week's expected drops by ranking, applying each to the plans before
+    /// deciding the next — the same order-of-decision the loot window uses, so a chest holding two
+    /// of a kind does not name the same player twice.
+    /// </summary>
+    private List<PlannedAward> AssignComingWeek(List<PlayerPlan> plans)
+    {
+        var tier = tiers.Tier;
+        var awards = new List<PlannedAward>();
+        var pending = new List<PendingAward>();
+
+        foreach (var encounter in tier.Encounters.OrderBy(e => e.Index))
+        {
+            foreach (var slot in WeekSimulator.DropsFor(tier, encounter, 1))
+            {
+                var coffer = Slots.CofferSlot(slot);
+
+                var winner = WinnerOf(plans, RankForSlot(slot, pending));
+                if (winner == null)
+                    continue;
+
+                winner.TakeSlot(slot);
+                pending.Add(new PendingAward(winner.Key, coffer, null));
+
+                awards.Add(new PlannedAward(1, encounter.Index, coffer, null,
+                                            winner.Key, winner.Name, Bought: false));
+            }
+
+            foreach (var side in encounter.UpgradeDrops)
+            {
+                var winner = WinnerOf(plans, RankForUpgrade(side, pending));
+                if (winner == null)
+                    continue;
+
+                winner.TakeUpgrade(side);
+                pending.Add(new PendingAward(winner.Key, null, side));
+
+                awards.Add(new PlannedAward(1, encounter.Index, null, side,
+                                            winner.Key, winner.Name, Bought: false));
+            }
+        }
+
+        return awards;
+    }
+
+    private static PlayerPlan? WinnerOf(List<PlayerPlan> plans, IReadOnlyList<Candidate> ranking) =>
+        ranking.Count == 0 ? null : plans.FirstOrDefault(p => p.Key == ranking[0].Member.Key);
 
     public IReadOnlyList<Candidate> RankForSlot(GearSlot slot, IEnumerable<PendingAward>? applied = null) =>
         Rank(plan => plan.Wants(slot), plan => plan.TakeSlot(slot), slot.CofferLabel(), applied);

@@ -311,6 +311,26 @@ Tiers live in two places: shipped ones next to the assembly, and ones built in g
 user's copy wins. Enums are written by name — these files get hand-edited and passed around, and
 `"Side": 2` tells nobody anything.
 
+## Two rules, and which one is allowed to decide
+
+There are two ways this can answer "who gets it", and for a long time both were on screen at once
+saying different things:
+
+- **The ranking** (`LootPlanner.Rank`) runs a full simulation per candidate and compares what each
+  assignment does to the finish weeks. Expensive, and the better answer.
+- **The greedy** (`WeekSimulator.Best`) hands the drop to whoever has most left. Cheap, and only a
+  proxy — it ignores the weights entirely, so with "weight on the slowest player" turned down the
+  two diverge completely.
+
+The rule now: **anything anyone acts on comes from the ranking.** `Forecast` decides the coming week
+with it, applying each drop before ranking the next, and only then hands the plans to the simulator
+with `startWeek: 2` for the projection. So the loot window, "Next drops", and week 1 of the schedule
+are one answer, and the greedy only shapes weeks nobody is standing in front of yet.
+
+"If it dropped right now" is the exception, deliberately: it judges every kind of drop on its own
+with nothing else handed out. It can name someone else, and that is not a contradiction — the week
+above has already given the earlier drops away.
+
 ## The one number the plan is built on
 
 `WeekSimulator` plays the rest of the tier forward and reports the week the **last** player

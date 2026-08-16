@@ -260,8 +260,12 @@ public sealed class PlanTab : ITab
     private void DrawPriorities()
     {
         ImGui.TextUnformatted("If it dropped right now");
-        Widgets.HelpMarker("Every kind of drop the tier has, not just next week's — for when " +
-                           "something comes up that the forecast did not expect.");
+        Widgets.HelpMarker("Every kind of drop the tier has, each judged on its own with nothing " +
+                           "else handed out yet — for when something turns up that the week above " +
+                           "did not expect.\n\n" +
+                           "It can name someone other than the table above, and that is not a " +
+                           "disagreement: up there the earlier drops of the week have already been " +
+                           "given away, and here they have not.");
         ImGui.Separator();
 
         // Two levels of table rather than one. ImGui has no row spanning, so the fight name gets a

@@ -636,6 +636,31 @@ var rules = new PriorityRules();
           $"A W{weekA}, B W{weekB}");
 }
 
+// --- picking up after a week decided elsewhere ----------------------------------------------------
+
+{
+    // The coming week is decided by the full ranking, not by the greedy rule in the simulator, so
+    // the projection has to start after it rather than repeat it.
+    var m = Member("A", (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid));
+    var plan = Plan(m, RaidRole.Dps, tier);
+
+    var result = new WeekSimulator(tier, rules, 12).Run([plan], startWeek: 2);
+
+    Check("nothing is handed out for a week that is already decided",
+          result.Awards.All(a => a.Week >= 2),
+          string.Join(", ", result.Awards.Select(a => $"W{a.Week}")));
+}
+
+{
+    // Someone the caller already finished counts as done that week, not before the tier started.
+    var m = Member("A", (GearSlot.Body, GearSource.Raid));
+    m.NeedFor(GearSlot.Body).Obtained = true;
+
+    var result = new WeekSimulator(tier, rules, 12).Run([Plan(m, RaidRole.Dps, tier)], startWeek: 2);
+    Check("a plan handed over already finished is dated to the week before the run",
+          result.LastFinishWeek == 1, $"week {result.LastFinishWeek}");
+}
+
 // --- determinism ---------------------------------------------------------------------------------
 
 {

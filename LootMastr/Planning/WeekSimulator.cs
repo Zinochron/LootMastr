@@ -60,16 +60,22 @@ public sealed class WeekSimulator
         this.horizon = Math.Max(1, horizon);
     }
 
-    /// <summary>Runs to completion, mutating the plans it is given. Pass clones.</summary>
-    public SimulationResult Run(IReadOnlyList<PlayerPlan> players)
+    /// <summary>
+    /// Runs to completion, mutating the plans it is given. Pass clones.
+    ///
+    /// <paramref name="startWeek"/> lets a caller hand over plans that already have a week applied
+    /// to them — the coming week is decided by the full ranking rather than by the greedy rule in
+    /// here, and the projection has to pick up after it rather than repeat it.
+    /// </summary>
+    public SimulationResult Run(IReadOnlyList<PlayerPlan> players, int startWeek = 1)
     {
         awards.Clear();
 
         var encounters = tier.Encounters.OrderBy(e => e.Index).ToList();
 
-        MarkFinished(players, 0);
+        MarkFinished(players, Math.Max(0, startWeek - 1));
 
-        for (currentWeek = 1; currentWeek <= horizon && players.Any(p => !p.IsDone); currentWeek++)
+        for (currentWeek = startWeek; currentWeek <= horizon && players.Any(p => !p.IsDone); currentWeek++)
         {
             foreach (var encounter in encounters)
             {
@@ -120,7 +126,8 @@ public sealed class WeekSimulator
         return (rules.LastFinisherWeight * result.LastFinishWeek) + average;
     }
 
-    private static IEnumerable<GearSlot> DropsFor(TierDefinition tier, TierEncounter encounter, int week)
+    /// <summary>What a fight is expected to put up in a given week.</summary>
+    public static IEnumerable<GearSlot> DropsFor(TierDefinition tier, TierEncounter encounter, int week)
     {
         var pool = encounter.DropSlots;
         if (pool.Count == 0)
