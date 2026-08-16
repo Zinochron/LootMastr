@@ -419,9 +419,29 @@ a per-item table would be thirty:
 | Weapon, shield included | 8 × T4 |
 
 The rules are what the arithmetic runs on, because a rule cannot be half missing the way a
-discovered table can. The `SpecialShop` walk is only consulted for anything no rule covers, and
-where the two disagree the Tier tab lists it — a mismatch is a reliable sign the tier moved on and
-the rules have not caught up.
+discovered table can. A tier with none gets them **derived from its own shop** rather than handed
+this tier's numbers — an older tier prices things differently and its shop knows. Slots that come
+out at the same price end up sharing a rule, which reproduces the categories the game prices by
+without being told what they are.
+
+Where the shop is consulted, the price taken is the **most common** one, never the cheapest. A
+slot's gear is uniformly priced, so the odd one out is an outlier: Deltascape sells a shield
+separately for three books, it files under the weapon slot, and taking the minimum priced every
+weapon in the tier at three.
+
+The Tier tab lists disagreements between a rule and the shop, one line per category. Comparing
+every reward individually produced twenty weapons all disagreeing with the same rule in the same
+way, which says nothing twenty times.
+
+### Whether every coffer drops
+
+`TierDefinition.AllCoffersDrop`. On, a fight puts up one of each slot it can — all four accessories
+every week — and drop counts are ignored. Off, it drops `DropCount` out of its pool and the same
+coffer can come up twice.
+
+This is not cosmetic: four guaranteed accessories a week and two random ones out of four are
+different tiers to gear through, and the forecast says so. With it off the pool is walked
+round-robin, which reproduces each slot's average rate without pretending to roll dice.
 
 ### Trading books in
 

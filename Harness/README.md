@@ -31,6 +31,10 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 - Raid gear is unique, so at most one raid ring is ever counted however many a set claims, and a
   raid ring paired with an augmented one is two separate needs.
 - Books are spent the week they cover something, and books already held count.
+- Shop prices are taken as the most common one, never the cheapest, so a separately sold shield
+  does not price every weapon in the tier at three books.
+- With "every coffer drops" on a fight puts up one of each slot and drop counts are ignored;
+  with it off the pool is walked at the set rate.
 - Costs come from the category rules, and the last fight's books trade one for one into earlier
   ones — but only the ones not still owed to that fight, so a weapon never gets traded away.
   Own books are spent before anything is converted, and conversion never runs backwards.

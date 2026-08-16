@@ -81,7 +81,7 @@ public sealed class WeekSimulator
                         player.Tokens[encounter.Index]++;
                 }
 
-                foreach (var slot in DropsFor(encounter, currentWeek))
+                foreach (var slot in DropsFor(tier, encounter, currentWeek))
                     AwardCoffer(players, slot);
 
                 // One material of each kind per clear.
@@ -120,12 +120,27 @@ public sealed class WeekSimulator
         return (rules.LastFinisherWeight * result.LastFinishWeek) + average;
     }
 
-    private static IEnumerable<GearSlot> DropsFor(TierEncounter encounter, int week)
+    private static IEnumerable<GearSlot> DropsFor(TierDefinition tier, TierEncounter encounter, int week)
     {
         var pool = encounter.DropSlots;
-        if (pool.Count == 0 || encounter.DropCount <= 0)
+        if (pool.Count == 0)
             yield break;
 
+        // Every slot, every week: no rate to average, so this is exact rather than a model.
+        if (tier.AllCoffersDrop)
+        {
+            foreach (var slot in pool)
+                yield return slot;
+
+            yield break;
+        }
+
+        if (encounter.DropCount <= 0)
+            yield break;
+
+        // Otherwise the pool is walked round-robin. A real chest can put the same coffer up twice
+        // and skip another; over the weeks that averages out to each slot appearing at
+        // DropCount/pool rate, which is what this reproduces without pretending to roll dice.
         var start = (week - 1) * encounter.DropCount % pool.Count;
 
         for (var i = 0; i < encounter.DropCount; i++)

@@ -312,6 +312,18 @@ public sealed class TierTab : ITab
         ImGui.TextUnformatted("Fights");
         ImGui.Separator();
 
+        var all = tiers.Tier.AllCoffersDrop;
+        if (ImGui.Checkbox("Every fight drops one of each of its coffers", ref all))
+        {
+            tiers.Tier.AllCoffersDrop = all;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("On: the first fight puts up all four accessories every week, the last " +
+                           "puts up its one weapon, and the drop counts below are ignored.\n\n" +
+                           "Off: each fight drops the number of coffers set below, drawn from its " +
+                           "pool, and the same coffer can come up more than once.");
+
         using var table = ImRaii.Table("##encounters", 5,
                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
         if (!table.Success)
@@ -343,6 +355,15 @@ public sealed class TierTab : ITab
             DrawUpgradeToggles(encounter);
 
             ImGui.TableNextColumn();
+
+            if (tiers.Tier.AllCoffersDrop)
+            {
+                // Derived, not set: with everything dropping, the count is however big the pool is.
+                ImGui.AlignTextToFramePadding();
+                ImGui.TextDisabled($"{encounter.DropSlots.Count} (all)");
+                continue;
+            }
+
             ImGui.SetNextItemWidth(-1f);
             var drops = encounter.DropCount;
             if (ImGui.InputInt("##drops", ref drops))

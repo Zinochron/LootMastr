@@ -31,6 +31,16 @@ public sealed class TierDefinition
     public List<string> AugmentedNamePrefixes { get; set; } = ["Augmented ", "Aug. "];
 
     /// <summary>
+    /// Whether every fight always drops one of each slot it can — the first fight putting up all
+    /// four accessories, the last putting up its one weapon.
+    ///
+    /// With it off, a fight drops <see cref="TierEncounter.DropCount"/> coffers out of its pool and
+    /// the same one can come up more than once. The difference is not cosmetic: four guaranteed
+    /// accessories a week and two random ones out of four are different tiers to gear through.
+    /// </summary>
+    public bool AllCoffersDrop { get; set; }
+
+    /// <summary>
     /// What the shop actually sells, discovered from <c>SpecialShop</c>. Used to show the exchange
     /// and as a fallback for costs; <see cref="CostRules"/> is what the arithmetic runs on.
     /// </summary>
@@ -143,8 +153,7 @@ public sealed class TierDefinition
         if (rule != null)
             return new BookCost(rule.Encounter, rule.Cost);
 
-        var reward = RewardForSlot(slot);
-        return reward is { Cost: > 0 } ? new BookCost(reward.Encounter, reward.Cost) : null;
+        return ShopCostFor(Rewards.Where(r => r.Slot == coffer));
     }
 
     public BookCost? CostForUpgrade(GearSide side)
@@ -153,8 +162,27 @@ public sealed class TierDefinition
         if (rule != null)
             return new BookCost(rule.Encounter, rule.Cost);
 
-        var reward = RewardForUpgrade(side);
-        return reward is { Cost: > 0 } ? new BookCost(reward.Encounter, reward.Cost) : null;
+        return ShopCostFor(Rewards.Where(r => r.Upgrade == side));
+    }
+
+    /// <summary>
+    /// What the shop charges for a category, taken as the most common price rather than the
+    /// cheapest. A slot's gear is uniformly priced, so the odd one out is an outlier and not a
+    /// bargain: a shield sold separately for three books sits under the weapon slot and would
+    /// otherwise have priced every weapon in the tier at three.
+    /// </summary>
+    public static BookCost? ShopCostFor(IEnumerable<TierReward> rewards)
+    {
+        var priced = rewards.Where(r => r.Cost > 0).ToList();
+        if (priced.Count == 0)
+            return null;
+
+        var group = priced.GroupBy(r => (r.Encounter, r.Cost))
+                          .OrderByDescending(g => g.Count())
+                          .ThenByDescending(g => g.Key.Cost)
+                          .First();
+
+        return new BookCost(group.Key.Encounter, group.Key.Cost);
     }
 
     /// <summary>Encounters whose books this encounter's books can be traded for.</summary>
@@ -179,15 +207,26 @@ public sealed class TierDefinition
     /// </summary>
     public IEnumerable<string> CostMismatches()
     {
-        foreach (var reward in Rewards.Where(r => r.IsAssigned && r.Cost > 0))
+        // One line per category, against what the shop mostly charges for it. Comparing every
+        // reward individually produced a wall of near-identical warnings — twenty weapons all
+        // disagreeing with the same rule in the same way says nothing twenty times.
+        foreach (var group in Rewards.Where(r => r.IsAssigned && r.Cost > 0)
+                                     .GroupBy(r => (r.Slot, r.Upgrade)))
         {
-            var cost = reward.Slot != null ? CostForSlot(reward.Slot.Value) : CostForUpgrade(reward.Upgrade!.Value);
-            if (cost == null || (cost.Encounter == reward.Encounter && cost.Cost == reward.Cost))
+            var shop = ShopCostFor(group);
+            if (shop == null)
                 continue;
 
-            var what = reward.Slot?.CofferLabel() ?? $"{reward.Upgrade} upgrade";
-            yield return $"{what}: rule says {cost.Cost} × {Encounter(cost.Encounter)?.Name ?? "?"}, " +
-                         $"shop says {reward.Cost} × {Encounter(reward.Encounter)?.Name ?? "?"}.";
+            var rule = group.Key.Slot != null
+                           ? CostForSlot(group.Key.Slot.Value)
+                           : CostForUpgrade(group.Key.Upgrade!.Value);
+
+            if (rule == null || (rule.Encounter == shop.Encounter && rule.Cost == shop.Cost))
+                continue;
+
+            var what = group.Key.Slot?.CofferLabel() ?? $"{group.Key.Upgrade} upgrade";
+            yield return $"{what}: rule says {rule.Cost} × {Encounter(rule.Encounter)?.Name ?? "?"}, " +
+                         $"shop mostly charges {shop.Cost} × {Encounter(shop.Encounter)?.Name ?? "?"}.";
         }
     }
 

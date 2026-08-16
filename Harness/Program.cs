@@ -368,6 +368,73 @@ var rules = new PriorityRules();
     Check("the weapon upgrade costs four T3 books", tier.CostForUpgrade(GearSide.Weapon) == new BookCost(3, 4));
 }
 
+// --- shop prices are the common one, not the cheapest ---------------------------------------------
+
+{
+    // A tier with no rules of its own falls back on the shop. Old tiers sell the shield separately
+    // and cheaply, and it sits under the weapon slot — taking the minimum priced every weapon in
+    // Deltascape at three books.
+    var shop = Tier();
+    shop.CostRules.Clear();
+
+    void Sell(int cost, string name, GearSlot slot) =>
+        shop.Rewards.Add(new TierReward
+        {
+            Encounter = 4, Cost = cost, ItemId = (uint)(900 + shop.Rewards.Count),
+            ItemName = name, Slot = slot,
+        });
+
+    Sell(3, "Genji Shield", GearSlot.Weapon);
+    Sell(8, "Genji Blade", GearSlot.Weapon);
+    Sell(8, "Genji Cane", GearSlot.Weapon);
+    Sell(8, "Genji Rod", GearSlot.Weapon);
+
+    Check("the weapon costs what most weapons cost", shop.CostForSlot(GearSlot.Weapon) == new BookCost(4, 8),
+          $"{shop.CostForSlot(GearSlot.Weapon)}");
+
+    Check("and the odd cheap one does not set the price",
+          shop.CostForSlot(GearSlot.Weapon)!.Cost != 3);
+
+    // A typed-in rule still wins over the shop.
+    shop.CostRules.Add(new TierCostRule { Label = "Weapon", Encounter = 4, Cost = 6, Slots = [GearSlot.Weapon] });
+    Check("a rule beats the shop", shop.CostForSlot(GearSlot.Weapon) == new BookCost(4, 6));
+}
+
+// --- every coffer dropping, or a set number ------------------------------------------------------
+
+{
+    // Four accessories every week, so one player alone is done in week one.
+    var everything = Tier();
+    everything.AllCoffersDrop = true;
+
+    var accessories = new[]
+    {
+        (GearSlot.Earrings, GearSource.Raid), (GearSlot.Necklace, GearSource.Raid),
+        (GearSlot.Bracelets, GearSource.Raid), (GearSlot.Ring1, GearSource.Raid),
+    };
+
+    var m = Member("A", accessories);
+    var all = new WeekSimulator(everything, rules, 12).Run([Plan(m, RaidRole.Dps, everything)]);
+    Check("with every coffer dropping, all four accessories land in week one",
+          all.LastFinishWeek == 1, $"week {all.LastFinishWeek}");
+
+    // Two out of the pool of four, so it takes two weeks.
+    var some = Tier();
+    some.AllCoffersDrop = false;
+    some.Encounter(1)!.DropCount = 2;
+
+    var m2 = Member("B", accessories);
+    var partial = new WeekSimulator(some, rules, 12).Run([Plan(m2, RaidRole.Dps, some)]);
+    Check("with two of four, the same player needs two weeks",
+          partial.LastFinishWeek == 2, $"week {partial.LastFinishWeek}");
+
+    // The count is ignored entirely when everything drops.
+    everything.Encounter(1)!.DropCount = 0;
+    var ignored = new WeekSimulator(everything, rules, 12).Run([Plan(Member("C", accessories), RaidRole.Dps, everything)]);
+    Check("the drop count is ignored when every coffer drops", ignored.LastFinishWeek == 1,
+          $"week {ignored.LastFinishWeek}");
+}
+
 // --- trading the last fight's books in ------------------------------------------------------------
 
 {

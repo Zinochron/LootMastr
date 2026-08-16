@@ -492,6 +492,7 @@ public sealed class TierCatalog
         DiscoverAugments(tier);
         DeriveItemLevels(tier);
         ApplyStandardLayout(tier);
+        DeriveCostRules(tier);
         config.Save();
 
         Services.Log.Information(
@@ -634,6 +635,65 @@ public sealed class TierCatalog
 
     private static ushort Mode(IReadOnlyCollection<ushort> levels) =>
         levels.GroupBy(l => l).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key).First().Key;
+
+    /// <summary>
+    /// Writes the tier's book costs from what the shop actually charges, when it has none.
+    ///
+    /// Better than shipping this tier's numbers into every other one: an old tier prices things
+    /// differently, and its shop knows. Slots that share a price end up sharing a rule, which
+    /// reproduces the categories the game prices by without being told what they are.
+    ///
+    /// Only ever fills an empty table. Numbers that were typed in are somebody's decision.
+    /// </summary>
+    private static void DeriveCostRules(TierDefinition tier)
+    {
+        if (tier.CostRules.Count > 0 || tier.Rewards.Count == 0)
+            return;
+
+        var rules = new List<TierCostRule>();
+
+        // Slots first, grouped by the price they came out at.
+        var perSlot = new List<(GearSlot Slot, BookCost Cost)>();
+
+        foreach (var slot in Slots.All.Select(Slots.CofferSlot).Distinct())
+        {
+            var cost = TierDefinition.ShopCostFor(tier.Rewards.Where(r => r.Slot == slot));
+            if (cost != null)
+                perSlot.Add((slot, cost));
+        }
+
+        foreach (var group in perSlot.GroupBy(x => (x.Cost.Encounter, x.Cost.Cost)))
+        {
+            var slots = group.Select(x => x.Slot).ToList();
+
+            rules.Add(new TierCostRule
+            {
+                Label = string.Join(", ", slots.Select(s => s.CofferLabel())),
+                Encounter = group.Key.Encounter,
+                Cost = group.Key.Cost,
+                Slots = slots,
+            });
+        }
+
+        foreach (var side in new[] { GearSide.Right, GearSide.Left, GearSide.Weapon })
+        {
+            var cost = TierDefinition.ShopCostFor(tier.Rewards.Where(r => r.Upgrade == side));
+            if (cost == null)
+                continue;
+
+            rules.Add(new TierCostRule
+            {
+                Label = $"{side} upgrade",
+                Encounter = cost.Encounter,
+                Cost = cost.Cost,
+                Upgrade = side,
+            });
+        }
+
+        tier.CostRules = rules.OrderBy(r => r.Encounter).ThenBy(r => r.Cost).ToList();
+
+        Services.Log.Information($"Derived {tier.CostRules.Count} cost rule(s) for {tier.Name}.");
+    }
 
     /// <summary>
     /// Folds the book-for-book rows into conversions. Discovering these matters as much as the
