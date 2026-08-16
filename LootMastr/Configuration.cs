@@ -82,13 +82,5 @@ public class Configuration : IPluginConfiguration
     /// <summary>Echo what the plugin is doing into the local chat log.</summary>
     public bool VerboseChat { get; set; } = false;
 
-    /// <summary>
-    /// Which action a click on a chest item stands for. Each item offers two — assigning it and
-    /// setting it to greed only — and 0 is greed only, so this must not be 0. Exposed because
-    /// getting it wrong settles an item for good, and a layout change should be fixable without a
-    /// rebuild rather than by the plugin experimenting on a live chest.
-    /// </summary>
-    public int AssignActionId { get; set; } = 1;
-
     public void Save() => Services.PluginInterface.SavePluginConfig(this);
 }

@@ -112,22 +112,42 @@ Assigning a unique item to someone who already owns one is refused by the game, 
 dialog — this happened during the recording. `VerifyGone` therefore waits for the item to actually
 leave the chest and reports if it does not, rather than retrying into the error.
 
-### Which callback opens the targeting window is still unknown
+### What a click actually sends
 
-Two inferences, two different failures: `[0, index]` pressed **Greed only**, `[1, index]` did
-nothing at all. Neither is a number to keep raising — that is guessing on a live chest, and one of
-those guesses already cost an item.
+Recorded off three assignments in a live chest, via `PreReceiveEvent`:
 
-`AddonWatcher` therefore also records `PreReceiveEvent` on `NeedGreed` and `NeedGreedTargeting`,
-giving the **event type and parameter the real button sends**. That is not an inference: pressing
-assign by hand on two different rows shows both the event and how the row is encoded in it. Mouse
-movement events are filtered out or they bury the clicks.
+```
+NeedGreed            ListItemClick  param=0   select the row
+NeedGreed            ButtonClick    param=5   "Loot Recipient"
+NeedGreedTargeting   ListItemClick  param=0   pick the name
+NeedGreedTargeting   ButtonClick    param=0   confirm
+```
 
-Until that recording exists, `Assign` will keep failing harmlessly — one attempt, no fallback.
+Two earlier versions guessed a `FireCallback` number instead: `[0, index]` pressed **Greed only**
+and settled an item, `[1, index]` did nothing. The recording is what replaced that.
 
-`AddonWatcher` also hooks `PostSetup` for every addon and keeps the ones appearing while `NeedGreed`
-is up, which is what produced the window table above. Off by default, since it hooks every window
-in the game.
+**The recipient's `param` stayed 0 across three different recipients**, so it names the list, not the
+row. The chosen row lives in the list component's own `SelectedItemIndex`, which is why
+`SelectInList` sets that and then presses confirm. That list is found by asking for each node id in
+turn rather than hardcoding one, so a rearranged window costs a failed step instead of the wrong
+person being picked.
+
+Events are sent with their `Listener`, `Target` and `Node` pointing at the window, the way a real
+one arrives. A zeroed `AtkEvent` invites the game's own handler to walk a null pointer, and that
+takes the client down rather than just failing.
+
+Verification still wraps every step, because a recording is one client on one patch.
+
+### Debug → the recorder
+
+`AddonWatcher` hooks `PreReceiveEvent` on the two loot windows and `PostSetup` for every addon,
+keeping the windows that appear while `NeedGreed` is up. It produced both tables above and stays for
+whenever the flow changes.
+
+On by default: the press hook is scoped to two windows and the window hook returns immediately
+unless a chest is open, so it costs nothing — and a checkbox that has to be remembered already cost
+one recording session. Worth knowing that `PostSetup` fires **once** per addon lifetime, so a window
+that was opened earlier and is being reused will not appear in the window list again.
 
 When wiring it up, follow the two rules Sortr learned the hard way: match players **by name**
 against what the window is offering rather than by index, and never judge success by a return

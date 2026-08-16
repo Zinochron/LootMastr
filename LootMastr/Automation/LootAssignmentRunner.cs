@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using AtkEventType = FFXIVClientStructs.FFXIV.Component.GUI.AtkEventType;
 using LootMastr.Data;
 
 namespace LootMastr.Automation;
@@ -22,15 +23,14 @@ namespace LootMastr.Automation;
 /// The candidate list is <b>not</b> in party order — the recording had the local player first and
 /// the party list the other way round — so recipients are matched by name, never by index.
 ///
-/// What is inferred rather than recorded is which callback drives each window, so every step is
-/// attempted and then <b>verified against what the game put on screen</b>. Nothing is irreversible
-/// until the Yes on that last dialog, and that is only pressed once the dialog's own text names
-/// both the intended player and the intended item.
+/// The window events are recorded too, not inferred. Two earlier attempts guessed at a callback
+/// number: one pressed <b>Greed only</b> and settled an item, the next did nothing at all. What
+/// drives each step now is the event a real click sends, read off a recording of three assignments.
 ///
-/// Where that verification does not exist, nothing is tried twice. An item in a Lootmaster chest
-/// offers two actions, and getting the callback wrong does not do nothing — it presses "Greed
-/// only", which settles that item for good. So the chest is given exactly one attempt with a known
-/// action id, and failure is reported rather than worked around.
+/// Every step is still verified against what the game put on screen afterwards, because a recording
+/// is one client on one patch. Nothing is irreversible until the Yes on the last dialog, and that is
+/// only pressed once the dialog's own text names both the intended player and the intended item.
+/// Nothing is ever tried twice: a wrong press in the chest is a decision, not a no-op.
 /// </summary>
 public sealed class LootAssignmentRunner : IDisposable
 {
@@ -47,19 +47,22 @@ public sealed class LootAssignmentRunner : IDisposable
     private const int StepTimeoutMs = 4000;
 
     /// <summary>
-    /// Picking a recipient inside the targeting window may be tried in a few shapes, because the
-    /// step after it is the game asking "Allow &lt;player&gt; to claim &lt;item&gt;?" — a wrong shape
-    /// either does nothing or names the wrong person, and both are caught there before anything
-    /// irreversible happens.
+    /// The events a real click sends, taken off a recording of three assignments in a live chest:
     ///
-    /// The chest itself gets no such list. See <see cref="OpenTargeting"/>.
+    /// <code>
+    /// NeedGreed            ListItemClick  param=0   select the row
+    /// NeedGreed            ButtonClick    param=5   "Loot Recipient"
+    /// NeedGreedTargeting   ListItemClick  param=0   pick the name
+    /// NeedGreedTargeting   ButtonClick    param=0   confirm
+    /// </code>
+    ///
+    /// The recipient's <c>param</c> stayed 0 across three different recipients, so it identifies
+    /// the list rather than the row — the chosen row lives in the list component's own
+    /// <c>SelectedItemIndex</c>, which is why that is set instead of encoded here.
     /// </summary>
-    private static readonly int[][] RecipientPayloads =
-    [
-        [0, -1],
-        [-1],
-        [1, -1],
-    ];
+    private const int LootRecipientButton = 5;
+
+    private const int ConfirmButton = 0;
 
     private enum Phase
     {
@@ -167,7 +170,6 @@ public sealed class LootAssignmentRunner : IDisposable
         // Already showing the right item? Then the click landed.
         if (TargetingMatchesItem())
         {
-            Services.Log.Information($"Loot assignment: opened the window with action id {config.AssignActionId}.");
             attempt = 0;
             stepStarted = DateTime.UtcNow;
             phase = Phase.PickRecipient;
@@ -181,29 +183,27 @@ public sealed class LootAssignmentRunner : IDisposable
             return;
         }
 
-        // Exactly one attempt, and never a list of shapes to try.
-        //
-        // Each item in a Lootmaster chest offers two actions, and the wrong callback here does not
-        // do nothing — it presses "Greed only", which is a decision about that item that cannot be
-        // taken back. Trying shapes until one works is fine where the game asks for confirmation
-        // afterwards, and this is not one of those places.
+        // One attempt, never a list of shapes to try. Each item in a Lootmaster chest offers two
+        // actions, and a wrong press here does not do nothing — it hits "Greed only", which
+        // settles that item for good.
         if (attempt > 0)
         {
-            Fail($"{item.Name}: the assignment window did not open. If the game's layout has " +
-                 $"changed, the action id is in Settings (currently {config.AssignActionId}); " +
-                 "the Debug tab's recorder shows what each one does.");
+            Fail($"{item.Name}: the assignment window did not open. The Debug tab's recorder shows " +
+                 "what the buttons actually send if the layout has changed.");
             return;
         }
 
         attempt++;
-        Fire(ChestAddon, [config.AssignActionId, -1], item.Index);
+
+        // Select the row, then press Loot Recipient — the two events a click produces.
+        Send(ChestAddon, AtkEventType.ListItemClick, item.Index);
+        Send(ChestAddon, AtkEventType.ButtonClick, LootRecipientButton);
     }
 
     private void PickRecipient()
     {
         if (AddonReader.IsOpen(ConfirmAddon))
         {
-            Note("choosing a recipient", RecipientPayloads);
             attempt = 0;
             stepStarted = DateTime.UtcNow;
             phase = Phase.Confirm;
@@ -223,13 +223,21 @@ public sealed class LootAssignmentRunner : IDisposable
             return;
         }
 
-        if (attempt >= RecipientPayloads.Length)
+        if (attempt > 0)
         {
             Fail($"{item.Name}: could not choose {recipient} in the assignment window.");
             return;
         }
 
-        Fire(TargetingAddon, RecipientPayloads[attempt++], candidate.Value);
+        attempt++;
+
+        if (!SelectInList(TargetingAddon, candidate.Value))
+        {
+            Fail($"{item.Name}: the recipient list could not be read — nothing was chosen.");
+            return;
+        }
+
+        Send(TargetingAddon, AtkEventType.ButtonClick, ConfirmButton);
     }
 
     /// <summary>
@@ -262,7 +270,7 @@ public sealed class LootAssignmentRunner : IDisposable
         }
 
         // Yes is 0 on SelectYesno.
-        Fire(ConfirmAddon, [0], 0);
+        Send(ConfirmAddon, AtkEventType.ButtonClick, ConfirmButton);
         stepStarted = DateTime.UtcNow;
         phase = Phase.VerifyGone;
     }
@@ -325,10 +333,14 @@ public sealed class LootAssignmentRunner : IDisposable
         prompt.Contains(recipient, StringComparison.OrdinalIgnoreCase) &&
         prompt.Contains(item.Name, StringComparison.OrdinalIgnoreCase);
 
-    private unsafe void Fire(string addonName, IReadOnlyList<int> payload, int index)
+    /// <summary>
+    /// Sends a window the same event a click on it would. The event is built with its listener and
+    /// target pointing at the window, which is what a real one carries — a zeroed event invites the
+    /// game's own handler to walk a null pointer, and that takes the client with it.
+    /// </summary>
+    private unsafe void Send(string addonName, AtkEventType eventType, int eventParam)
     {
-        // Set even if the call falls through: a failed attempt still has to wait its turn, or the
-        // remaining payload shapes would all be tried inside a single frame.
+        // Set even if the call falls through, so a failed step still waits its turn.
         lastAction = DateTime.UtcNow;
 
         var addon = AddonReader.Find(addonName);
@@ -339,31 +351,48 @@ public sealed class LootAssignmentRunner : IDisposable
         if (unitBase == null)
             return;
 
-        var values = stackalloc AtkValue[payload.Count];
-
-        for (var i = 0; i < payload.Count; i++)
+        var atkEvent = new AtkEvent
         {
-            values[i].Type = AtkValueType.Int;
+            Listener = (AtkEventListener*)unitBase,
+            Target = (AtkEventTarget*)unitBase->RootNode,
+            Node = unitBase->RootNode,
+            Param = (uint)eventParam,
+        };
 
-            // -1 in a payload template stands for "the thing being selected".
-            values[i].Int = payload[i] == -1 ? index : payload[i];
-        }
-
-        unitBase->FireCallback((uint)payload.Count, values, false);
+        unitBase->ReceiveEvent(eventType, eventParam, &atkEvent, null);
     }
 
     /// <summary>
-    /// Writes down which callback shape actually worked. The list of shapes is inferred, so the
-    /// first successful run is what turns it into a known one — after which the others can go.
+    /// Points a window's list at one of its rows. The click event carries the list's id rather
+    /// than the row — the row lives here — which is why the recording showed the same parameter
+    /// for three different recipients.
+    ///
+    /// The list is found by asking for each node id in turn rather than by hardcoding one, so a
+    /// rearranged window costs a failed step instead of the wrong person being picked.
     /// </summary>
-    private void Note(string step, IReadOnlyList<int[]> shapes)
+    private static unsafe bool SelectInList(string addonName, int index)
     {
-        if (attempt == 0 || attempt > shapes.Count)
-            return;
+        const uint highestNodeId = 64;
 
-        Services.Log.Information(
-            $"Loot assignment: {step} worked with payload [{string.Join(", ", shapes[attempt - 1])}] " +
-            $"(shape {attempt} of {shapes.Count}).");
+        var addon = AddonReader.Find(addonName);
+        if (addon.IsNull)
+            return false;
+
+        var unitBase = (AtkUnitBase*)addon.Address;
+        if (unitBase == null)
+            return false;
+
+        for (uint nodeId = 1; nodeId <= highestNodeId; nodeId++)
+        {
+            var list = unitBase->GetComponentListById(nodeId);
+            if (list == null)
+                continue;
+
+            list->SelectedItemIndex = index;
+            return true;
+        }
+
+        return false;
     }
 
     private void Fail(string reason)
