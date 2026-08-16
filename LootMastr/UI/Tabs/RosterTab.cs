@@ -300,6 +300,13 @@ public sealed class RosterTab : ITab
             Widgets.Coloured(Widgets.Wanted, "*");
             Widgets.Tooltip("Damage dealer — gets priority on equal footing.");
         }
+
+        if (string.IsNullOrEmpty(member.ImportWarning))
+            return;
+
+        ImGui.SameLine();
+        Widgets.Coloured(Widgets.Wanted, "?");
+        Widgets.Tooltip(member.ImportWarning);
     }
 
     private void DrawImportCell(RosterMember member)

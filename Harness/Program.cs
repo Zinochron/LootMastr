@@ -503,9 +503,21 @@ var rules = new PriorityRules();
 
     Check("and it is the weapon", plan.Open.Count == 1 && plan.Open[0].Slot == GearSlot.Weapon);
 
-    // Rings are the opposite case, and the asymmetry is deliberate: two ring slots want two coffers.
+    // Raid gear is unique, so a character can only ever wear one raid ring — the other ring is
+    // normally the augmented one. A set claiming two must not have the planner chase two coffers.
     var ringer = Member("B", (GearSlot.Ring1, GearSource.Raid), (GearSlot.Ring2, GearSource.Raid));
-    Check("two ring slots still want two coffers", Plan(ringer, RaidRole.Dps, tier).Open.Count == 2);
+    Check("two raid rings count as one, since raid gear is unique",
+          Plan(ringer, RaidRole.Dps, tier).Open.Count == 1);
+
+    // The usual pairing, which is two separate pieces of work.
+    var mixed = Member("C", (GearSlot.Ring1, GearSource.Raid), (GearSlot.Ring2, GearSource.TomeAugmented));
+    var mixedPlan = Plan(mixed, RaidRole.Dps, tier);
+    Check("a raid ring plus an augmented ring is two needs", mixedPlan.Open.Count == 2,
+          string.Join(", ", mixedPlan.Open.Select(n => n.Describe())));
+
+    // And the drop is spoken of as one thing, because there is one ring coffer.
+    Check("a ring coffer is called \"Ring\"", GearSlot.Ring1.CofferLabel() == "Ring" &&
+                                              GearSlot.Ring2.CofferLabel() == "Ring");
 }
 
 // --- scarcity: nobody gets starved ----------------------------------------------------------------

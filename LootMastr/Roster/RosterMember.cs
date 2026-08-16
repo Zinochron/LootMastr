@@ -125,6 +125,13 @@ public sealed class RosterMember
     /// <summary>XIVGear or Etro link the gear set was imported from, kept so it can be refreshed.</summary>
     public string GearPlannerUrl { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Why the last import was not applied, empty when it was. A set from a different tier
+    /// classifies as crafted from top to bottom, which looks like a filled-in row and is worse
+    /// than an empty one — so it is refused and said out loud instead.
+    /// </summary>
+    public string ImportWarning { get; set; } = string.Empty;
+
     public Dictionary<GearSlot, SlotNeed> Needs { get; set; } = new();
 
     /// <summary>Books held, keyed by encounter index (1..4).</summary>

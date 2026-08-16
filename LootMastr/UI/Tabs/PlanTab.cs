@@ -194,7 +194,7 @@ public sealed class PlanTab : ITab
                 if (!slotRankings.TryGetValue(slot, out var ranking))
                     slotRankings[slot] = ranking = planner.RankForSlot(slot);
 
-                DrawPriorityRow(slot.Label(), ranking);
+                DrawPriorityRow(slot.CofferLabel(), ranking);
             }
 
             foreach (var side in encounter.UpgradeDrops)

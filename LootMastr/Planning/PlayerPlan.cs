@@ -10,7 +10,7 @@ namespace LootMastr.Planning;
 public readonly record struct OpenNeed(GearSlot Slot, int Encounter, bool IsUpgrade, GearSide Side)
 {
     /// <summary>What the drop or the book has to be, for matching against what is on offer.</summary>
-    public string Describe() => IsUpgrade ? $"{Side} upgrade" : Slots.Label(Slot);
+    public string Describe() => IsUpgrade ? $"{Side} upgrade" : Slots.CofferLabel(Slot);
 }
 
 /// <summary>
@@ -65,6 +65,8 @@ public sealed class PlayerPlan
         for (var encounter = 1; encounter <= MaxEncounters; encounter++)
             plan.Tokens[encounter] = member.TokensFor(encounter);
 
+        var raidRingTaken = false;
+
         foreach (var slot in Slots.All)
         {
             var need = member.NeedFor(slot);
@@ -73,6 +75,17 @@ public sealed class PlayerPlan
 
             if (need.Source == GearSource.Raid)
             {
+                // Raid gear is unique, so a character can only ever wear one raid ring. A set
+                // claiming two is a mistake in the set, and counting both would have the planner
+                // chase a coffer that could not be equipped even if it won it.
+                if (Slots.IsRing(slot))
+                {
+                    if (raidRingTaken)
+                        continue;
+
+                    raidRingTaken = true;
+                }
+
                 // A shield drops from no fight at all and is bought with weapon books, so the
                 // encounter a need belongs to falls back to whichever book pays for it. Without
                 // this the slot would quietly vanish from the plan instead of showing up as work.

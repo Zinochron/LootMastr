@@ -25,7 +25,7 @@ public readonly record struct LiveLootItem(
 
     public bool Decided => RollResult is RollResult.Awarded or RollResult.Passed;
 
-    public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.Label() ?? Name;
+    public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.CofferLabel() ?? Name;
 }
 
 /// <summary>

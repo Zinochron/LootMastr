@@ -28,7 +28,8 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 - Target, given and actual stay separate: a piece that was handed over but is not being worn is
   flagged in the grid and still counts as satisfied, so it never comes up for assignment twice.
   Nothing is flagged before that character's gear has been read.
-- Both ring slots are filled by the one ring coffer.
+- Raid gear is unique, so at most one raid ring is ever counted however many a set claims, and a
+  raid ring paired with an augmented one is two separate needs.
 - Books are spent the week they cover something, and books already held count.
 - Costs come from the category rules, and the last fight's books trade one for one into earlier
   ones — but only the ones not still owed to that fight, so a weapon never gets traded away.

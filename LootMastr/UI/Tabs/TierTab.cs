@@ -406,7 +406,7 @@ public sealed class TierTab : ITab
                 continue;
 
             var on = encounter.DropSlots.Contains(slot);
-            if (!ImGui.Checkbox(slot.Label(), ref on))
+            if (!ImGui.Checkbox(slot.CofferLabel(), ref on))
                 continue;
 
             if (on)
@@ -544,7 +544,7 @@ public sealed class TierTab : ITab
     {
         var label = reward.Upgrade != null
                         ? SideLabel(reward.Upgrade.Value)
-                        : reward.Slot?.Label() ?? "unassigned";
+                        : reward.Slot?.CofferLabel() ?? "unassigned";
 
         using (ImRaii.PushColor(ImGuiCol.Text, reward.IsAssigned ? Widgets.Done : Widgets.Wanted))
         {
@@ -567,7 +567,7 @@ public sealed class TierTab : ITab
 
         foreach (var slot in tiers.CandidateSlots(reward).Distinct())
         {
-            if (!ImGui.Selectable(slot.Label()))
+            if (!ImGui.Selectable(slot.CofferLabel()))
                 continue;
 
             reward.Slot = Slots.CofferSlot(slot);

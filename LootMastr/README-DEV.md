@@ -181,6 +181,18 @@ Practical consequence worth knowing: the tier's four **item levels** are load-be
 discovery is not. A wrong item level breaks the roster grid; a missing exchange table only costs
 the planner its "can buy with books" arithmetic.
 
+### A gear set from the wrong tier
+
+Every piece of it classifies as `Crafted`, which fills a roster row in with something that looks
+deliberate and is entirely wrong. `BisImporter.BelongsToTier` refuses such a set instead: if nothing
+in it reads as raid, augmented or tomestone gear for the active tier, nothing is applied, and the
+player gets an orange `?` next to their name carrying the reason.
+
+The other direction is useful rather than a problem. When a tier has **no** item levels yet, the
+imported set can supply them: every savage set uses the raid weapon, and that weapon sits five above
+the rest of the raid gear and above augmented tomestone gear — so one number gives all four
+(`SeedItemLevelsFrom`).
+
 ### Coffers are not gear
 
 `TierCatalog.TryMatch` decides whether something in a chest is worth planning around, and item
@@ -256,6 +268,23 @@ better. The greedy "most remaining needs" rule inside the simulation and the ran
 are allowed to disagree; the ranking wins, because it is the one that plays the whole tier forward.
 
 The first version of the harness asserted the opposite and was wrong.
+
+## Everything here is unique
+
+Raid gear, augmented gear and the materials can only be held once. Two consequences that are easy
+to get wrong and invisible when you do:
+
+- **A character can only wear one raid ring.** The second ring is normally the augmented one, or
+  occasionally a crafted piece that stays best in slot. `PlayerPlan.From` therefore counts at most
+  one raid ring however many a gear set claims — two would have the planner chase a coffer that
+  could not be equipped even if it won it. The harness had this the wrong way round and asserted
+  two coffers were wanted.
+- **There is one ring coffer**, so drop-facing views say "Ring" rather than "Ring 1" —
+  `Slots.CofferLabel`. The roster grid keeps both columns, because a gear set really does have two
+  ring slots.
+
+An assignment can also be refused for exactly this reason: handing someone a unique item they
+already own fails, which is why success is the item leaving the chest rather than the click landing.
 
 ## Shields are not a slot
 

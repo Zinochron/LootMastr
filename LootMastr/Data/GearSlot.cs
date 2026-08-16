@@ -112,6 +112,14 @@ public static class Slots
         _ => slot.ToString(),
     };
 
+    /// <summary>
+    /// What to call a slot when talking about the <em>drop</em> rather than the gear set: there is
+    /// one ring coffer, so it is "Ring". A set has two ring slots, but raid gear is unique, so at
+    /// most one of them is ever raid — see <c>PlayerPlan.From</c>.
+    /// </summary>
+    public static string CofferLabel(this GearSlot slot) =>
+        IsRing(slot) ? "Ring" : slot.Label();
+
     /// <summary>Short label for dense tables, where a column is barely wider than the text.</summary>
     public static string ShortLabel(this GearSlot slot) => slot switch
     {

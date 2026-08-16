@@ -53,7 +53,7 @@ public sealed class Plugin : IDalamudPlugin
         Classifier = new GearClassifier(Tiers, Items);
         Party = new PartyReader();
         Roster = new RosterStore(Configuration, Jobs);
-        importer = new BisImporter(Configuration, Classifier, Jobs);
+        importer = new BisImporter(Configuration, Classifier, Jobs, Tiers, Items);
 
         Planner = new LootPlanner(Configuration, Tiers, Roster);
 
