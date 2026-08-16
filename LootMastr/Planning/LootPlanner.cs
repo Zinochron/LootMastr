@@ -79,9 +79,11 @@ public sealed class LootPlanner
             var score = NewSimulator().Score(run, plans.Count) +
                         (member.ItemsReceived * config.Rules.FairnessWeight);
 
+            var ownBefore = baseline.FinishWeeks.GetValueOrDefault(key, baseline.Horizon + 1);
+
             results.Add(new Candidate(
                             member, role, score, run.LastFinishWeek, ownFinish, member.ItemsReceived, saved,
-                            Reason(what, run, saved, ownFinish, role, member.ItemsReceived)));
+                            Reason(run, saved, ownFinish, ownBefore, role, member.ItemsReceived)));
         }
 
         return results
@@ -92,7 +94,7 @@ public sealed class LootPlanner
                .ToList();
     }
 
-    private static string Reason(string what, SimulationResult run, int saved, int ownFinish,
+    private static string Reason(SimulationResult run, int saved, int ownFinish, int ownBefore,
                                  RaidRole role, int received)
     {
         var parts = new List<string>(4);
@@ -101,11 +103,16 @@ public sealed class LootPlanner
                       ? $"pulls the group's last week in by {saved}"
                       : $"group still finishes W{run.LastFinishWeek}");
 
-        parts.Add(run.BeyondHorizon(ownFinish) ? "not done inside the horizon" : $"done W{ownFinish}");
+        // What it does for them, not just where they end up. When the group's last week is the same
+        // whoever takes it — which it is whenever "weight on the slowest player" is turned down —
+        // this is the whole of why one candidate beat another, and it used to be missing.
+        var own = run.BeyondHorizon(ownFinish) ? "not done inside the horizon" : $"done W{ownFinish}";
 
-        if (role == RaidRole.Dps)
-            parts.Add("damage dealer");
+        if (ownBefore > ownFinish)
+            own += $", was W{(run.BeyondHorizon(ownBefore) ? run.Horizon + 1 : ownBefore)}";
 
+        parts.Add(own);
+        parts.Add(role == RaidRole.Dps ? "damage dealer" : role.ToString().ToLowerInvariant());
         parts.Add(received == 0 ? "nothing won yet" : $"{received} won so far");
 
         return string.Join("; ", parts);

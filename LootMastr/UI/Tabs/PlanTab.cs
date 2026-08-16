@@ -77,10 +77,13 @@ public sealed class PlanTab : ITab
         DrawForecast(forecast);
 
         ImGuiHelpers.ScaledDummy(10f);
-        DrawPriorities();
+        DrawNextDrops(forecast);
 
         ImGuiHelpers.ScaledDummy(10f);
         DrawSchedule(forecast);
+
+        ImGuiHelpers.ScaledDummy(10f);
+        DrawPriorities();
     }
 
     private void DrawForecast(SimulationResult result)
@@ -142,14 +145,123 @@ public sealed class PlanTab : ITab
     }
 
     /// <summary>
+    /// What is expected to drop next and who it goes to.
+    ///
+    /// Driven by the forecast's first week rather than computed separately, so this and week 1 of
+    /// the schedule below cannot disagree — they are the same answer shown at two lengths.
+    /// </summary>
+    private void DrawNextDrops(SimulationResult result)
+    {
+        ImGui.TextUnformatted("Next drops");
+        Widgets.HelpMarker("The coming week, in fight order. The same thing week 1 of the schedule " +
+                           "says, with who else was in the running.");
+
+        ImGui.SameLine();
+        var onlyNext = config.ShowOnlyNextRecipient;
+        if (ImGui.Checkbox("Winner only", ref onlyNext))
+        {
+            config.ShowOnlyNextRecipient = onlyNext;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Hides the runners-up, leaving just who each drop is for.");
+        ImGui.Separator();
+
+        var week = result.Awards.Where(a => a.Week == 1).ToList();
+        if (week.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "Nothing expected next week.");
+            return;
+        }
+
+        using var table = ImRaii.Table("##nextDrops", 3,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("Fight", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Drop", ImGuiTableColumnFlags.WidthFixed, 130f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Goes to");
+        ImGui.TableHeadersRow();
+
+        var namedFight = -1;
+
+        foreach (var award in week.OrderBy(a => a.Encounter))
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+
+            if (award.Encounter != namedFight)
+            {
+                ImGui.TextUnformatted(tiers.Tier.Encounter(award.Encounter)?.Name ?? $"#{award.Encounter}");
+                namedFight = award.Encounter;
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(award.What);
+
+            if (award.Bought)
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled("(books)");
+            }
+
+            ImGui.TableNextColumn();
+            DrawAwardRecipients(award);
+        }
+    }
+
+    private void DrawAwardRecipients(PlannedAward award)
+    {
+        var ranking = award.Upgrade != null
+                          ? Upgrade(award.Upgrade.Value)
+                          : award.Slot != null
+                              ? Slot(award.Slot.Value)
+                              : [];
+
+        Widgets.Coloured(Widgets.Done, award.PlayerName);
+
+        var winner = ranking.FirstOrDefault(c => c.Member.Name == award.PlayerName);
+        if (winner != null)
+            Widgets.Tooltip($"{winner.Member.Name}\n{winner.Reason}");
+
+        if (config.ShowOnlyNextRecipient || ranking.Count <= 1)
+            return;
+
+        var rest = ranking.Where(c => c.Member.Name != award.PlayerName).Take(3).ToList();
+        if (rest.Count == 0)
+            return;
+
+        ImGui.SameLine();
+        ImGui.TextDisabled($"> {string.Join(" > ", rest.Select(c => c.Member.Name))}");
+        Widgets.Tooltip(string.Join("\n", ranking.Select((c, i) => $"{i + 1}. {c.Member.Name} — {c.Reason}")));
+    }
+
+    private IReadOnlyList<Candidate> Slot(GearSlot slot)
+    {
+        if (!slotRankings.TryGetValue(slot, out var ranking))
+            slotRankings[slot] = ranking = planner.RankForSlot(slot);
+
+        return ranking;
+    }
+
+    private IReadOnlyList<Candidate> Upgrade(GearSide side)
+    {
+        if (!upgradeRankings.TryGetValue(side, out var ranking))
+            upgradeRankings[side] = ranking = planner.RankForUpgrade(side);
+
+        return ranking;
+    }
+
+    /// <summary>
     /// The answer to "this just dropped, who takes it" for every kind of drop in the tier, computed
     /// up front so the call during a raid is a glance rather than a wait.
     /// </summary>
     private void DrawPriorities()
     {
         ImGui.TextUnformatted("If it dropped right now");
-        Widgets.HelpMarker("Each row is ranked by what the assignment does to the group's finish week. " +
-                           "Hover a name for the reasoning behind its place.");
+        Widgets.HelpMarker("Every kind of drop the tier has, not just next week's — for when " +
+                           "something comes up that the forecast did not expect.");
         ImGui.Separator();
 
         // Two levels of table rather than one. ImGui has no row spanning, so the fight name gets a
@@ -191,18 +303,12 @@ public sealed class PlanTab : ITab
 
             foreach (var slot in encounter.DropSlots)
             {
-                if (!slotRankings.TryGetValue(slot, out var ranking))
-                    slotRankings[slot] = ranking = planner.RankForSlot(slot);
-
-                DrawPriorityRow(slot.CofferLabel(), ranking);
+                DrawPriorityRow(slot.CofferLabel(), Slot(slot));
             }
 
             foreach (var side in encounter.UpgradeDrops)
             {
-                if (!upgradeRankings.TryGetValue(side, out var ranking))
-                    upgradeRankings[side] = ranking = planner.RankForUpgrade(side);
-
-                DrawPriorityRow($"{side} upgrade", ranking);
+                DrawPriorityRow($"{side} upgrade", Upgrade(side));
             }
         }
     }

@@ -210,7 +210,7 @@ public sealed class DebugTab : ITab
         try
         {
             var builder = new StringBuilder();
-            builder.AppendLine($"LootMastr capture {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            builder.AppendLine($"LootMastr {Build.Version} capture {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             builder.AppendLine($"Territory: {Services.ClientState.TerritoryType}");
             builder.AppendLine($"Leader: {party.LocalPlayerIsLeader()}");
             builder.AppendLine();

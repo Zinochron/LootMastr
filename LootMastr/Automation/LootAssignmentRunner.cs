@@ -101,8 +101,23 @@ public sealed class LootAssignmentRunner : IDisposable
     /// <summary>True when the last run finished with the item actually gone from the chest.</summary>
     public bool LastSucceeded { get; private set; }
 
+    /// <summary>
+    /// Whether the plugin will touch the loot window at all. Off: sending the events a click
+    /// produces crashed the client, and it stays off until the outgoing call can be recorded
+    /// instead of inferred. See <see cref="Send"/>.
+    /// </summary>
+    public static readonly bool CanAct = false;
+
     public string Start(LiveLootItem target, string playerName)
     {
+        if (!CanAct)
+        {
+            Status = $"{target.Name} → {playerName}. Assign it in game; the plugin will not touch " +
+                     "the window until it can do so without risking a crash.";
+
+            return Status;
+        }
+
         if (IsRunning)
             return "Already assigning something.";
 
@@ -338,28 +353,29 @@ public sealed class LootAssignmentRunner : IDisposable
     /// target pointing at the window, which is what a real one carries — a zeroed event invites the
     /// game's own handler to walk a null pointer, and that takes the client with it.
     /// </summary>
-    private unsafe void Send(string addonName, AtkEventType eventType, int eventParam)
+    /// <summary>
+    /// Disabled. This crashed the game client.
+    ///
+    /// Knowing which events a click sends is not the same as being able to send them. The game's
+    /// own handlers read the <c>AtkEventData</c> that came with the event — where the mouse was,
+    /// which renderer was under it — and are handed a null here, along with the window's root node
+    /// instead of the button that was actually pressed. One of those is dereferenced and the client
+    /// goes down.
+    ///
+    /// Synthesising the event properly means finding the real node and building event data to match,
+    /// which is not something to get right by inference on somebody else's client. The safe way in
+    /// is the outgoing side — <c>FireCallback</c>, which takes plain values — but its payload for
+    /// this window is still unknown, and two guesses at it have already cost an item and a session.
+    ///
+    /// So deciding and verifying stay; acting waits until the outgoing call can be recorded rather
+    /// than guessed. Everything up to here is real work the plugin still does.
+    /// </summary>
+    private void Send(string addonName, AtkEventType eventType, int eventParam)
     {
-        // Set even if the call falls through, so a failed step still waits its turn.
         lastAction = DateTime.UtcNow;
 
-        var addon = AddonReader.Find(addonName);
-        if (addon.IsNull)
-            return;
-
-        var unitBase = (AtkUnitBase*)addon.Address;
-        if (unitBase == null)
-            return;
-
-        var atkEvent = new AtkEvent
-        {
-            Listener = (AtkEventListener*)unitBase,
-            Target = (AtkEventTarget*)unitBase->RootNode,
-            Node = unitBase->RootNode,
-            Param = (uint)eventParam,
-        };
-
-        unitBase->ReceiveEvent(eventType, eventParam, &atkEvent, null);
+        Services.Log.Warning(
+            $"Loot assignment is disabled: would have sent {eventType} param {eventParam} to {addonName}.");
     }
 
     /// <summary>

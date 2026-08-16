@@ -112,6 +112,23 @@ Assigning a unique item to someone who already owns one is refused by the game, 
 dialog — this happened during the recording. `VerifyGone` therefore waits for the item to actually
 leave the chest and reports if it does not, rather than retrying into the error.
 
+### Acting is off, because it crashed the client
+
+`LootAssignmentRunner.CanAct` is `false`. Sending the events a click produces took the game down.
+
+Knowing *which* events a click sends turned out not to be the same as being able to send them. The
+game's handlers read the `AtkEventData` that came with the event — where the mouse was, which
+renderer was under it — and were handed a null, along with the window's root node instead of the
+button that was actually pressed. Something in there gets dereferenced.
+
+Doing it properly means finding the real node and building matching event data, which is not
+something to get right by inference on somebody else's client. The safe way in is the outgoing side,
+`FireCallback`, which takes plain values — but its payload for this window is still unknown, and two
+guesses at that have already cost an item and a session.
+
+So the plugin decides and verifies, and hands the last step to you. Turning this back on needs a
+recording of the **outgoing** call, which the current recorder cannot see.
+
 ### What a click actually sends
 
 Recorded off three assignments in a live chest, via `PreReceiveEvent`:

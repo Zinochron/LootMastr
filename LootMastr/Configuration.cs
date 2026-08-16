@@ -60,6 +60,9 @@ public class Configuration : IPluginConfiguration
 
     public int KillsFor(int encounter) => Kills.GetValueOrDefault(encounter);
 
+    /// <summary>Show only who each expected drop goes to, without the runners-up.</summary>
+    public bool ShowOnlyNextRecipient { get; set; }
+
     /// <summary>How many weeks the planner looks ahead when judging an assignment.</summary>
     public int LookaheadWeeks { get; set; } = 8;
 

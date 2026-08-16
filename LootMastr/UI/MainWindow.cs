@@ -4,6 +4,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using LootMastr.Data;
 
 namespace LootMastr.UI;
 
@@ -14,7 +15,7 @@ public sealed class MainWindow : Window, IDisposable
     /// <summary>Set to have the next draw jump to a specific tab, e.g. when opened via the config button.</summary>
     private string? pendingTabId;
 
-    public MainWindow(IEnumerable<ITab> tabs) : base("LootMastr###LootMastrMain")
+    public MainWindow(IEnumerable<ITab> tabs) : base($"LootMastr {Build.Version}###LootMastrMain")
     {
         this.tabs = new List<ITab>(tabs);
 
