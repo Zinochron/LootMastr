@@ -120,6 +120,10 @@ public static class Slots
     public static string CofferLabel(this GearSlot slot) =>
         IsRing(slot) ? "Ring" : slot.Label();
 
+    /// <summary>Compact form of <see cref="CofferLabel"/>, for lists inside a table cell.</summary>
+    public static string ShortCofferLabel(this GearSlot slot) =>
+        IsRing(slot) ? "Ring" : slot.ShortLabel();
+
     /// <summary>Short label for dense tables, where a column is barely wider than the text.</summary>
     public static string ShortLabel(this GearSlot slot) => slot switch
     {

@@ -104,7 +104,7 @@ public sealed class TierTab : ITab
                     ImGui.TableNextColumn();
                     ImGui.TextDisabled(rule.Upgrade != null
                                            ? SideLabel(rule.Upgrade.Value)
-                                           : string.Join(", ", rule.Slots.Select(s => s.ShortLabel())));
+                                           : string.Join(", ", rule.Slots.Select(s => s.ShortCofferLabel())));
                 }
             }
         }
@@ -390,7 +390,7 @@ public sealed class TierTab : ITab
     {
         var label = encounter.DropSlots.Count == 0
                         ? "none"
-                        : string.Join(", ", encounter.DropSlots.Select(s => s.ShortLabel()));
+                        : string.Join(", ", encounter.DropSlots.Select(s => s.ShortCofferLabel()));
 
         if (ImGui.SmallButton($"{label}##slots"))
             ImGui.OpenPopup("##slotPopup");

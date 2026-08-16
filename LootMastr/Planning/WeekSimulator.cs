@@ -15,7 +15,7 @@ public readonly record struct PlannedAward(
     string PlayerName,
     bool Bought)
 {
-    public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.Label() ?? "?";
+    public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.CofferLabel() ?? "?";
 }
 
 public sealed record SimulationResult(

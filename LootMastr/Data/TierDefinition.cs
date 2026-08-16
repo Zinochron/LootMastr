@@ -185,7 +185,7 @@ public sealed class TierDefinition
             if (cost == null || (cost.Encounter == reward.Encounter && cost.Cost == reward.Cost))
                 continue;
 
-            var what = reward.Slot?.Label() ?? $"{reward.Upgrade} upgrade";
+            var what = reward.Slot?.CofferLabel() ?? $"{reward.Upgrade} upgrade";
             yield return $"{what}: rule says {cost.Cost} × {Encounter(cost.Encounter)?.Name ?? "?"}, " +
                          $"shop says {reward.Cost} × {Encounter(reward.Encounter)?.Name ?? "?"}.";
         }
