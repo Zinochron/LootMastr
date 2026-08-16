@@ -112,11 +112,22 @@ Assigning a unique item to someone who already owns one is refused by the game, 
 dialog — this happened during the recording. `VerifyGone` therefore waits for the item to actually
 leave the chest and reports if it does not, rather than retrying into the error.
 
-### Debug → Record windows that open over the loot window
+### Which callback opens the targeting window is still unknown
 
-`AddonWatcher` hooks `IAddonLifecycle.PostSetup` for every addon and keeps the ones appearing while
-`NeedGreed` is up. It is what produced the table above, and stays for confirming the callback
-shapes or for whenever the flow changes. Off by default, since it hooks every window in the game.
+Two inferences, two different failures: `[0, index]` pressed **Greed only**, `[1, index]` did
+nothing at all. Neither is a number to keep raising — that is guessing on a live chest, and one of
+those guesses already cost an item.
+
+`AddonWatcher` therefore also records `PreReceiveEvent` on `NeedGreed` and `NeedGreedTargeting`,
+giving the **event type and parameter the real button sends**. That is not an inference: pressing
+assign by hand on two different rows shows both the event and how the row is encoded in it. Mouse
+movement events are filtered out or they bury the clicks.
+
+Until that recording exists, `Assign` will keep failing harmlessly — one attempt, no fallback.
+
+`AddonWatcher` also hooks `PostSetup` for every addon and keeps the ones appearing while `NeedGreed`
+is up, which is what produced the window table above. Off by default, since it hooks every window
+in the game.
 
 When wiring it up, follow the two rules Sortr learned the hard way: match players **by name**
 against what the window is offering rather than by index, and never judge success by a return

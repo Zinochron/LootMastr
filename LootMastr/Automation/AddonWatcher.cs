@@ -32,19 +32,67 @@ public sealed class AddonWatcher : IDisposable
         "Hud", "_TargetInfo", "_NaviMap", "_Notification", "_ChatLog", "_ScreenText",
     ];
 
+    /// <summary>Windows whose button presses are worth writing down.</summary>
+    private static readonly string[] LootAddons = ["NeedGreed", "NeedGreedTargeting"];
+
+    /// <summary>Event kinds that fire constantly from moving the mouse, and would bury the clicks.</summary>
+    private static readonly string[] NoisyEvents = ["MouseMove", "MouseOver", "MouseOut", "Drag", "Focus"];
+
     private readonly List<AddonSighting> sightings = new();
+    private readonly List<string> events = new();
 
     public AddonWatcher()
     {
         Services.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, OnAddonSetup);
+        Services.AddonLifecycle.RegisterListener(AddonEvent.PreReceiveEvent, LootAddons, OnReceiveEvent);
     }
 
     public IReadOnlyList<AddonSighting> Sightings => sightings;
 
+    /// <summary>
+    /// Button presses inside the loot windows, as the game itself reports them.
+    ///
+    /// This is the piece that was missing. Which callback stands for "assign this item" was being
+    /// inferred, and two inferences were wrong in two different ways — one pressed Greed only, the
+    /// next did nothing. Recording the real click is not a guess: the event type and parameter here
+    /// are exactly what the button sends, and clicking assign on two different rows shows how the
+    /// row is encoded.
+    /// </summary>
+    public IReadOnlyList<string> Events => events;
+
     /// <summary>Off until it is wanted — it hooks every window in the game.</summary>
     public bool Enabled { get; set; }
 
-    public void Clear() => sightings.Clear();
+    public void Clear()
+    {
+        sightings.Clear();
+        events.Clear();
+    }
+
+    private void OnReceiveEvent(AddonEvent type, AddonArgs args)
+    {
+        if (!Enabled || args is not AddonReceiveEventArgs received)
+            return;
+
+        var kind = received.AtkEventType.ToString();
+
+        foreach (var noisy in NoisyEvents)
+        {
+            if (kind.Contains(noisy, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+
+        var line = $"{DateTime.Now:HH:mm:ss.fff}  {args.AddonName}  {kind}  param={received.EventParam}";
+
+        // Held down buttons repeat the same event; only the distinct ones say anything.
+        if (events.Count > 0 && events[0][23..] == line[23..])
+            return;
+
+        events.Insert(0, line);
+
+        if (events.Count > Limit)
+            events.RemoveRange(Limit, events.Count - Limit);
+    }
 
     private void OnAddonSetup(AddonEvent type, AddonArgs args)
     {
@@ -88,6 +136,19 @@ public sealed class AddonWatcher : IDisposable
     public void Append(StringBuilder builder)
     {
         builder.AppendLine();
+        builder.AppendLine($"Button presses in the loot windows (recording: {Enabled}):");
+
+        if (events.Count == 0)
+        {
+            builder.AppendLine("  none recorded");
+        }
+        else
+        {
+            foreach (var line in Enumerable.Reverse(events))
+                builder.AppendLine($"  {line}");
+        }
+
+        builder.AppendLine();
         builder.AppendLine($"Windows opened over the loot window (recording: {Enabled}):");
 
         if (sightings.Count == 0)
@@ -104,5 +165,9 @@ public sealed class AddonWatcher : IDisposable
         }
     }
 
-    public void Dispose() => Services.AddonLifecycle.UnregisterListener(OnAddonSetup);
+    public void Dispose()
+    {
+        Services.AddonLifecycle.UnregisterListener(OnAddonSetup);
+        Services.AddonLifecycle.UnregisterListener(OnReceiveEvent);
+    }
 }

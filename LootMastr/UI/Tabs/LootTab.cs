@@ -22,9 +22,10 @@ public sealed class LootTab : ITab
     private readonly RosterStore roster;
     private readonly TierCatalog tiers;
     private readonly LootPlanner planner;
+    private readonly ClearTracker clears;
 
     public LootTab(Configuration config, LootAssigner assigner, ChatAnnouncer announcer,
-                   RosterStore roster, TierCatalog tiers, LootPlanner planner)
+                   RosterStore roster, TierCatalog tiers, LootPlanner planner, ClearTracker clears)
     {
         this.config = config;
         this.assigner = assigner;
@@ -32,6 +33,7 @@ public sealed class LootTab : ITab
         this.roster = roster;
         this.tiers = tiers;
         this.planner = planner;
+        this.clears = clears;
     }
 
     public string Title => "Loot";
@@ -41,6 +43,7 @@ public sealed class LootTab : ITab
     {
         assigner.Refresh();
 
+        DrawClearPrompt();
         DrawBanner();
 
         if (assigner.Decisions.Count == 0)
@@ -111,7 +114,7 @@ public sealed class LootTab : ITab
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted("Kills");
         Widgets.HelpMarker("How often the group has cleared each fight. Counted automatically when a " +
-                           "clear is confirmed on the Roster tab, and editable here for anything that " +
+                           "clear is confirmed above, and editable here for anything that " +
                            "happened before the plugin was in use.");
 
         foreach (var encounter in encounters)
@@ -202,6 +205,34 @@ public sealed class LootTab : ITab
             ImGui.TextDisabled("—");
         else
             Widgets.Coloured(Widgets.Done, string.Join(", ", affordable));
+    }
+
+    /// <summary>
+    /// Books earned by clearing, asked for rather than counted silently — a book counted twice
+    /// quietly bends every forecast after it. It belongs here because this is the tab that is
+    /// already open when a fight ends.
+    /// </summary>
+    private void DrawClearPrompt()
+    {
+        if (clears.Pending == null)
+        {
+            if (!string.IsNullOrEmpty(clears.Status))
+                Widgets.Coloured(Widgets.Muted, clears.Status);
+
+            return;
+        }
+
+        Widgets.Coloured(Widgets.Wanted,
+                         $"{clears.Pending.Name} cleared — add a book for {clears.PendingPlayers.Length} player(s)?");
+
+        if (ImGui.Button("Add books"))
+            clears.Confirm();
+
+        ImGui.SameLine();
+        if (ImGui.Button("Not now"))
+            clears.Dismiss();
+
+        ImGuiHelpers.ScaledDummy(6f);
     }
 
     private void DrawBanner()

@@ -24,7 +24,6 @@ public sealed class RosterTab : ITab
     private readonly PartyReader party;
     private readonly BisImporter importer;
     private readonly TierCatalog tiers;
-    private readonly ClearTracker clears;
     private readonly GearScanner scanner;
     private readonly ItemCatalog items;
 
@@ -34,7 +33,7 @@ public sealed class RosterTab : ITab
     private string urlBufferFor = string.Empty;
 
     public RosterTab(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
-                     BisImporter importer, TierCatalog tiers, ClearTracker clears, GearScanner scanner,
+                     BisImporter importer, TierCatalog tiers, GearScanner scanner,
                      ItemCatalog items)
     {
         this.config = config;
@@ -43,7 +42,6 @@ public sealed class RosterTab : ITab
         this.party = party;
         this.importer = importer;
         this.tiers = tiers;
-        this.clears = clears;
         this.scanner = scanner;
         this.items = items;
     }
@@ -56,7 +54,6 @@ public sealed class RosterTab : ITab
         importer.Poll();
 
         DrawToolbar();
-        DrawClearPrompt();
         DrawImportStatus();
 
         if (!string.IsNullOrEmpty(scanner.Status))
@@ -130,35 +127,6 @@ public sealed class RosterTab : ITab
                 newWorld = string.Empty;
             }
         }
-    }
-
-    /// <summary>
-    /// Counting books is a confirmation rather than something that happens on its own — a book
-    /// counted twice quietly bends every forecast after it.
-    /// </summary>
-    private void DrawClearPrompt()
-    {
-        if (clears.Pending == null)
-        {
-            if (!string.IsNullOrEmpty(clears.Status))
-            {
-                ImGuiHelpers.ScaledDummy(2f);
-                Widgets.Coloured(Widgets.Muted, clears.Status);
-            }
-
-            return;
-        }
-
-        ImGuiHelpers.ScaledDummy(4f);
-        Widgets.Coloured(Widgets.Wanted,
-                         $"{clears.Pending.Name} cleared — add a book for {clears.PendingPlayers.Length} player(s)?");
-
-        if (ImGui.Button("Add books"))
-            clears.Confirm();
-
-        ImGui.SameLine();
-        if (ImGui.Button("Not now"))
-            clears.Dismiss();
     }
 
     private void DrawImportStatus()

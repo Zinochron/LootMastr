@@ -155,15 +155,30 @@ public sealed class DebugTab : ITab
             watcher.Clear();
 
         Widgets.Coloured(Widgets.Muted,
-                         "Turn this on, open a chest as Lootmaster, click an item and assign it to " +
-                         "someone, then write a capture file. Whatever the game opened in between is " +
-                         "recorded with its values, which is what the assignment code needs.");
+                         "Turn this on, open a chest as Lootmaster, then press the assign button on " +
+                         "two different items by hand and write a capture file. Both the button " +
+                         "presses and any window they open are recorded — the two together are what " +
+                         "the assignment code still needs.");
+
+        if (watcher.Events.Count > 0)
+        {
+            ImGuiHelpers.ScaledDummy(4f);
+            ImGui.TextDisabled("Button presses, newest first:");
+
+            foreach (var line in watcher.Events)
+                ImGui.TextUnformatted(line);
+        }
 
         if (watcher.Sightings.Count == 0)
         {
-            Widgets.Coloured(Widgets.Muted, enabled ? "Nothing recorded yet." : "Not recording.");
+            if (watcher.Events.Count == 0)
+                Widgets.Coloured(Widgets.Muted, enabled ? "Nothing recorded yet." : "Not recording.");
+
             return;
         }
+
+        ImGuiHelpers.ScaledDummy(4f);
+        ImGui.TextDisabled("Windows opened:");
 
         foreach (var sighting in watcher.Sightings)
         {
