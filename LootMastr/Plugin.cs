@@ -25,6 +25,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ObtainTracker tracker;
     private readonly ClearTracker clears;
     private readonly AddonWatcher watcher;
+    private readonly LootAssignmentRunner runner;
 
     public Configuration Configuration { get; }
     public ItemCatalog Items { get; }
@@ -58,7 +59,8 @@ public sealed class Plugin : IDalamudPlugin
 
         Loot = new LootWindowReader(Items, Tiers);
         guard = new SafetyGuard(Party, Loot);
-        Assigner = new LootAssigner(Configuration, Loot, Planner, Roster, guard, Tiers);
+        runner = new LootAssignmentRunner(Configuration, Loot, guard);
+        Assigner = new LootAssigner(Configuration, Loot, Planner, Roster, guard, Tiers, runner);
         announcer = new ChatAnnouncer(Configuration, guard);
         tracker = new ObtainTracker(Configuration, Roster, Tiers, Assigner);
         clears = new ClearTracker(Configuration, Tiers, Roster, Party);
@@ -146,6 +148,7 @@ public sealed class Plugin : IDalamudPlugin
         clears.Dispose();
         Scanner.Dispose();
         watcher.Dispose();
+        runner.Dispose();
 
         ECommonsMain.Dispose();
     }

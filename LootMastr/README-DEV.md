@@ -54,26 +54,47 @@ genuinely does not exist yet at that point.
 The loot rule comes from `ContentsFinder.Instance()->LootRules`, not from the caption, which is
 localised.
 
-## What is still missing
+## Handing an item over
 
-`LootAssigner.PerformAssignment` decides correctly and refuses to act. ClientStructs exposes the
-whole read side — `Loot.Instance()->Items`, `RollState`, `RollResult`, `LootMode`, `AgentLoot` —
-but nothing typed for the recipient choice, and `AddonNeedGreed` only offers `NumItems`,
-`SelectedItemIndex` and a `CurrentDropDownOwnerNode`. Firing a guessed `AtkValue` payload at that
-would be guessing with somebody's weekly lockout.
+Three windows, recorded from a live Lootmaster chest rather than guessed:
 
-**Debug → Write capture file** records the party, every loot item, `AgentLoot`, and the addon's
-full `AtkValues` list. Three captures taken in a live Deltascape chest gave all of that — and none
-of the assignment step, because by the time the capture button is pressed the moment has passed.
-The chest and the recipient choice are two different screens and only the first survives to be
-captured.
+| | Window | What it holds |
+|---|---|---|
+| 1 | `NeedGreed` | the chest |
+| 2 | `NeedGreedTargeting` | `[0]` loot index, `[4]` item name, `[6]` candidate count, `[7…]` names |
+| 3 | `SelectYesno` | `[0]` "Allow &lt;player&gt; to claim the &lt;item&gt;?" |
 
-So **Debug → Record windows that open over the loot window** exists for the second. It hooks
-`IAddonLifecycle.PostSetup` for every addon, keeps the ones that appear while `NeedGreed` is up, and
-dumps their values into the capture. One run of: switch it on, open a chest, assign an item to
-someone, write a capture — names the window and shows what it was holding, which is everything the
-click needs. It is off by default because it hooks every window in the game, and it can be deleted
-once the answer is in.
+Two things in there are worth not forgetting.
+
+**The candidate list is not in party order.** In the recording it read *Yuma, Shiori* while the
+party list read *Shiori, Yuma* — the local player came first. Recipients are matched by name.
+
+**The game asks a question in plain words before anything happens**, and that is the safety net the
+whole design leans on. Which callback opens each window is *inferred*, not recorded, so
+`LootAssignmentRunner` tries a short list of payload shapes and **verifies against what the game put
+on screen** after each: the targeting window has to be showing the right loot index and item name,
+and the confirmation has to name both the intended player and the intended item. A wrong shape
+opens the wrong window or none, and the step is abandoned. Nothing is irreversible until the Yes,
+and that is only pressed once the dialog's own text checks out.
+
+`Note()` logs which shape worked, which is what turns the inferred list into a known one — after
+the first successful run the others can go.
+
+Assignment modes map onto the flow directly. **Confirm** does steps 1–2 and leaves the game's own
+Yes/No for the human, which is a better confirmation than anything the plugin could put on screen.
+**Automatic** answers it too. One item at a time, because each walks all three windows.
+
+### It can legitimately fail
+
+Assigning a unique item to someone who already owns one is refused by the game, with an error
+dialog — this happened during the recording. `VerifyGone` therefore waits for the item to actually
+leave the chest and reports if it does not, rather than retrying into the error.
+
+### Debug → Record windows that open over the loot window
+
+`AddonWatcher` hooks `IAddonLifecycle.PostSetup` for every addon and keeps the ones appearing while
+`NeedGreed` is up. It is what produced the table above, and stays for confirming the callback
+shapes or for whenever the flow changes. Off by default, since it hooks every window in the game.
 
 When wiring it up, follow the two rules Sortr learned the hard way: match players **by name**
 against what the window is offering rather than by index, and never judge success by a return

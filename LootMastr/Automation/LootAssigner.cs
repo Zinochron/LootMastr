@@ -28,12 +28,14 @@ public sealed class LootAssigner
     private readonly RosterStore roster;
     private readonly SafetyGuard guard;
     private readonly TierCatalog tiers;
+    private readonly LootAssignmentRunner runner;
 
     private string lastSignature = string.Empty;
     private List<LootDecision> decisions = [];
 
     public LootAssigner(Configuration config, LootWindowReader loot, LootPlanner planner,
-                        RosterStore roster, SafetyGuard guard, TierCatalog tiers)
+                        RosterStore roster, SafetyGuard guard, TierCatalog tiers,
+                        LootAssignmentRunner runner)
     {
         this.config = config;
         this.loot = loot;
@@ -41,6 +43,7 @@ public sealed class LootAssigner
         this.roster = roster;
         this.guard = guard;
         this.tiers = tiers;
+        this.runner = runner;
     }
 
     public IReadOnlyList<LootDecision> Decisions => decisions;
@@ -180,39 +183,24 @@ public sealed class LootAssigner
     }
 
     /// <summary>
-    /// The one thing still missing before LootMastr can hand loot out by itself.
-    ///
-    /// Deciding who gets what is done and verified. Clicking it is not: ClientStructs exposes the
-    /// loot window's state (<c>Loot.Items</c>, <c>RollState</c>, <c>LootMode</c>) but no typed call
-    /// for the leader's "loot recipient" choice, and the dropdown that carries it has to be watched
-    /// in a real duty before anything is fired at it. Guessing at an <c>AtkValue</c> payload here
-    /// would mean guessing with somebody's weekly lockout.
-    ///
-    /// The Debug tab captures exactly what is needed: open it with a loot window up, in a preformed
-    /// party on the Lootmaster rule, and it records the addon's values and the dropdown's rows.
+    /// Hands one item over, through <see cref="LootAssignmentRunner"/>. One at a time: each
+    /// assignment walks three windows and the next cannot start until those are clear.
     /// </summary>
     public bool PerformAssignment(LootDecision decision, out string reason)
     {
-        var verdict = Verdict;
-        if (!verdict.Ok)
-        {
-            reason = verdict.Reason;
-            return false;
-        }
-
         if (decision.Winner == null)
         {
             reason = "No planned recipient for that item.";
             return false;
         }
 
-        Services.Log.Information(
-            $"Would assign {decision.Item.Name} (slot {decision.Item.Index}) to {decision.Winner.DisplayName}.");
-
-        reason = "Assigning is not wired up yet — the loot recipient control still has to be " +
-                 "confirmed in a real duty. Use the Debug tab to capture it, then assign by hand " +
-                 "and press Record.";
-
-        return false;
+        reason = runner.Start(decision.Item, decision.Winner.Name);
+        return runner.IsRunning;
     }
+
+    public bool IsAssigning => runner.IsRunning;
+
+    public string RunnerStatus => runner.Status;
+
+    public void StopAssigning(string reason) => runner.Stop(reason);
 }

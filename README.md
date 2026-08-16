@@ -29,9 +29,9 @@ which has to be set in the duty finder before the party enters and only works fo
 undersized party. Without it LootMastr still ranks every drop — it just cannot apply the result,
 and says so.
 
-> **Assigning is not finished yet.** LootMastr decides correctly and can announce the result in
-> party chat, but does not yet click the game's loot recipient control; that path has to be
-> captured from a live duty first. See `LootMastr/README-DEV.md`.
+With it, LootMastr opens the assignment window, picks the planned player, and leaves the game's own
+"Allow X to claim Y?" for you to answer — or answers that too, if you tell it to. It only ever
+confirms once that dialog names the player and the item it meant.
 
 ## Which tier
 

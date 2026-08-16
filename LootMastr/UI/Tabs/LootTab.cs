@@ -296,23 +296,35 @@ public sealed class LootTab : ITab
     {
         var verdict = assigner.Verdict;
 
-        using (ImRaii.Disabled(!verdict.Ok))
+        // One at a time on purpose: each assignment walks three windows, and the next cannot start
+        // until those are clear. Handing them over one by one also means a refusal stops there.
+        var next = assigner.Decisions.FirstOrDefault(d => d.Winner != null && !d.Item.Decided);
+
+        using (ImRaii.Disabled(!verdict.Ok || assigner.IsAssigning || next == null))
         {
-            if (ImGui.Button("Assign all"))
+            var label = next == null ? "Assign" : $"Assign {next.Item.What} to {next.Winner!.Name}";
+
+            if (ImGui.Button(label) && next != null)
             {
-                foreach (var decision in assigner.Decisions.Where(d => d.Winner != null))
-                {
-                    if (!assigner.PerformAssignment(decision, out var reason))
-                    {
-                        Services.Chat.PrintError($"LootMastr: {reason}");
-                        break;
-                    }
-                }
+                if (!assigner.PerformAssignment(next, out var reason))
+                    Services.Chat.PrintError($"LootMastr: {reason}");
             }
         }
 
-        Widgets.HelpMarker("Hands every item to its planned recipient through the game's loot " +
-                           "recipient control.");
+        Widgets.HelpMarker(config.Mode == AssignmentMode.Automatic
+                               ? "Opens the assignment window, picks the player, and answers the " +
+                                 "game's confirmation — but only once that confirmation names the " +
+                                 "right player and the right item."
+                               : "Opens the assignment window and picks the player, then leaves the " +
+                                 "game's own \"Allow X to claim Y?\" for you to answer.\n\n" +
+                                 "Set Automation to \"Assign automatically\" to have that answered too.");
+
+        if (assigner.IsAssigning)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Stop"))
+                assigner.StopAssigning("Stopped.");
+        }
 
         ImGui.SameLine();
 
@@ -326,6 +338,9 @@ public sealed class LootTab : ITab
             ImGui.SameLine();
             ImGui.TextDisabled(announcer.LastResult);
         }
+
+        if (!string.IsNullOrEmpty(assigner.RunnerStatus))
+            Widgets.Coloured(assigner.IsAssigning ? Widgets.Wanted : Widgets.Muted, assigner.RunnerStatus);
 
         if (!string.IsNullOrEmpty(assigner.Status))
             Widgets.Coloured(Widgets.Muted, assigner.Status);
