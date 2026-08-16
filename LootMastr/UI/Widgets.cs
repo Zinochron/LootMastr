@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
@@ -72,6 +73,53 @@ public static class Widgets
         ImGui.PushStyleColor(ImGuiCol.Text, colour);
         ImGui.TextUnformatted(text);
         ImGui.PopStyleColor();
+    }
+
+    /// <summary>
+    /// Body of a "pick an item" popup: a search box and the matches. Returns true once something
+    /// was chosen. The caller owns the query buffer, so two pickers cannot share a search.
+    ///
+    /// This is how a tier gets its books and materials without anyone typing an exact item name —
+    /// which is what made setting up anything other than the shipped tier so awkward.
+    /// </summary>
+    public static bool ItemSearch(ItemCatalog items, ref string query, out uint picked)
+    {
+        picked = 0;
+
+        ImGui.SetNextItemWidth(320f * ImGuiHelpers.GlobalScale);
+
+        if (ImGui.IsWindowAppearing())
+            ImGui.SetKeyboardFocusHere();
+
+        ImGui.InputTextWithHint("##itemSearch", "Search items…", ref query, 64);
+
+        if (query.Length < 3)
+        {
+            ImGui.TextDisabled("Type at least three characters.");
+            return false;
+        }
+
+        var matches = items.Search(query, 20).ToList();
+        if (matches.Count == 0)
+        {
+            ImGui.TextDisabled("Nothing matches.");
+            return false;
+        }
+
+        foreach (var match in matches)
+        {
+            Icon(match.IconId, 18f);
+            ImGui.SameLine();
+
+            if (!ImGui.Selectable($"{match.Name}##{match.ItemId}"))
+                continue;
+
+            picked = match.ItemId;
+            ImGui.CloseCurrentPopup();
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

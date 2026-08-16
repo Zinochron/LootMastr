@@ -58,8 +58,9 @@ public sealed class DebugTab : ITab
         var items = loot.Read();
 
         Row("Loot window open", loot.WindowOpen.ToString());
+        Row("Items read", items.Count.ToString());
         Row("Party leader", party.LocalPlayerIsLeader() ? "you" : "someone else");
-        Row("Lootmaster mode", loot.LootmasterActive(items).ToString());
+        Row("Lootmaster mode", loot.LootmasterActive().ToString());
         Row("Territory", Services.ClientState.TerritoryType.ToString());
 
         var encounter = tiers.EncounterInTerritory(Services.ClientState.TerritoryType);

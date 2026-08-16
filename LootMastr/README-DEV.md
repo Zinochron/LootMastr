@@ -33,6 +33,27 @@ Consequences:
 - Lootmaster mode is read from the items themselves, not from a party setting. The loot window is
   what actually decides.
 
+## Where the chest is read from
+
+**`AddonNeedGreed`'s AtkValues, not `Loot.Instance()->Items`.** This is not a preference; the first
+version used `Loot.Items` and was blind at exactly the moment that matters.
+
+While the leader still gets to choose between assigning an item and putting it up for greed,
+`Loot.Items` is **empty**. It only fills once that choice has been made — so the plugin registered a
+chest one step too late, after the decision it exists to help with. Captures from a live Deltascape
+Savage chest, in the config directory, show `Loot items:` empty against `AgentLoot.NumItems=9` with
+all nine sitting in the addon's values.
+
+The layout seen there is a seven-value header (`[6]` is the localised `Loot Rule: …` caption) and
+then eight values per item: id, icon, two zeros, name, count, two more. `LootWindowReader` does not
+trust those offsets. It finds each block by its own shape — a `UInt` that resolves to a real item
+whose name appears four values later — and only falls back to the fixed offsets if that finds
+nothing. `Loot.Items` is still read, but purely to enrich what was found with roll state, which
+genuinely does not exist yet at that point.
+
+The loot rule comes from `ContentsFinder.Instance()->LootRules`, not from the caption, which is
+localised.
+
 ## What is still missing
 
 `LootAssigner.PerformAssignment` decides correctly and refuses to act. ClientStructs exposes the
@@ -93,6 +114,15 @@ upgrade materials. Everything else is discovered from the game:
   pools were slightly off — and a coffer with "Head" in its name is not a ring whatever the pools
   say.
 
+  Nothing is guessed from a fight's drop pool. There used to be a "if the pool has one entry, use
+  it" fallback, and since the last fight drops exactly one slot it stamped **Weapon** onto every
+  mount, minion and orchestrion roll that fight's books also buy. Unassigned is the honest answer.
+
+- **Book-for-book trades.** Most of the last fight's shop is its books buying the earlier fights'
+  books, and reading those rows as gear was the other half of why they all came out as "Weapon".
+  A reward that is itself one of the tier's books is recorded as a `TierTokenConversion` instead,
+  which is also how the tier learns its own conversion rates.
+
 ## Classifying gear does not depend on any of that
 
 `TierDefinition.ClassifyByLevel` is the whole rule, and it needs nothing but the item sheet:
@@ -117,10 +147,15 @@ the planner its "can buy with books" arithmetic.
   or more of its drops match one fight's pool — one match could be a slot two fights share.
 
 The json is copied into the config on first use, so corrections made in game survive a plugin
-update. `Reload shipped defaults` throws them away again.
+update. Anything that fails to resolve keeps an id of `0` and is listed in red by
+`TierDefinition.Problems()` instead of throwing.
 
-Item names in the json are the only thing that can rot. Anything that fails to resolve keeps an id
-of `0` and is listed in red by `TierDefinition.Problems()` instead of throwing.
+A tier is fully editable in game and does not have to be one that shipped: **New tier** starts a
+blank four-fight skeleton, books and materials are chosen through a **searchable item picker**
+rather than by typing an exact name, item levels are editable fields, and **Save tier** writes it
+to its own json so it can be loaded again or handed on. That is what makes setting up an old tier
+for testing a five-minute job instead of a text-editor one — only the shipped tier was practical
+before.
 
 ## The one number the plan is built on
 

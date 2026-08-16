@@ -50,7 +50,7 @@ public sealed class SafetyGuard
         if (items.Count == 0)
             return GuardVerdict.Block("Nothing in the loot window.");
 
-        if (!loot.LootmasterActive(items))
+        if (!loot.LootmasterActive())
         {
             return GuardVerdict.Block(
                 "The party is not on the Lootmaster rule. It has to be set in the duty finder " +

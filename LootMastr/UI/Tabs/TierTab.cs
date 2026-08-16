@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -26,17 +27,16 @@ public sealed class TierTab : ITab
     public string Title => "Tier";
     public string Id => "tier";
 
+    /// <summary>Shared by every item picker; only one popup is ever open at a time.</summary>
+    private string query = string.Empty;
+
     public void Draw()
     {
-        var tier = tiers.Tier;
-
-        ImGui.TextUnformatted(tier.Name);
-        ImGui.SameLine();
-        ImGui.TextDisabled($"raid i{tier.RaidItemLevel} / weapon i{tier.RaidWeaponItemLevel} / " +
-                           $"tome i{tier.TomeItemLevel} → i{tier.AugmentedItemLevel}");
-
         DrawToolbar();
         DrawProblems();
+
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawIdentity();
 
         ImGuiHelpers.ScaledDummy(6f);
         DrawEncounters();
@@ -176,19 +176,40 @@ public sealed class TierTab : ITab
                            "including how many books each costs. Slots you have already assigned are kept.");
 
         ImGui.SameLine();
+        if (ImGui.Button("Save tier"))
+            Services.Chat.Print($"LootMastr: {tiers.SaveToFile()}");
 
-        if (ImGui.Button("Reload shipped defaults"))
+        Widgets.HelpMarker("Writes this tier to its own json file, so it can be loaded again later " +
+                           "or handed to someone else. A tier built here is then as durable as one " +
+                           "that shipped with the plugin.");
+
+        ImGui.SameLine();
+        if (ImGui.Button("New tier"))
+        {
+            tiers.CreateBlank();
+            Services.Chat.Print("LootMastr: started a blank tier — fill in the item levels and books.");
+        }
+
+        Widgets.HelpMarker("Four empty fights and three materials to fill in. Use this to set up an " +
+                           "older tier for testing.");
+
+        ImGui.SameLine();
+        if (ImGui.Button("Load tier"))
             ImGui.OpenPopup("##reloadTier");
 
         using var popup = ImRaii.Popup("##reloadTier");
         if (!popup.Success)
             return;
 
-        ImGui.TextUnformatted("This throws away every change made here.");
+        ImGui.TextUnformatted("Loading throws away every change made to the current tier.");
         ImGui.Separator();
+
+        var any = false;
 
         foreach (var id in TierCatalog.ShippedTierIds())
         {
+            any = true;
+
             if (!ImGui.Selectable(id))
                 continue;
 
@@ -197,6 +218,62 @@ public sealed class TierTab : ITab
             else
                 Services.Chat.PrintError($"LootMastr: could not read tier \"{id}\".");
         }
+
+        if (!any)
+            ImGui.TextDisabled("No tier files found.");
+    }
+
+    /// <summary>
+    /// Name and item levels. The levels are editable because they are what gear classification
+    /// actually runs on — a wrong one here is what makes a whole roster read as raid gear.
+    /// </summary>
+    private void DrawIdentity()
+    {
+        var tier = tiers.Tier;
+
+        ImGui.SetNextItemWidth(240f * ImGuiHelpers.GlobalScale);
+        var name = tier.Name;
+        if (ImGui.InputText("Tier name", ref name, 64))
+        {
+            tier.Name = name;
+            config.Save();
+        }
+
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(160f * ImGuiHelpers.GlobalScale);
+        var id = tier.Id;
+        if (ImGui.InputText("Id", ref id, 48))
+        {
+            tier.Id = id.Trim();
+            config.ActiveTierId = tier.Id;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("File name this tier saves to. Lower case, no spaces.");
+
+        Level("Raid gear", () => tier.RaidItemLevel, v => tier.RaidItemLevel = v);
+        ImGui.SameLine();
+        Level("Raid weapon", () => tier.RaidWeaponItemLevel, v => tier.RaidWeaponItemLevel = v);
+        ImGui.SameLine();
+        Level("Tomestone", () => tier.TomeItemLevel, v => tier.TomeItemLevel = v);
+        ImGui.SameLine();
+        Level("Augmented", () => tier.AugmentedItemLevel, v => tier.AugmentedItemLevel = v);
+
+        Widgets.HelpMarker("Item levels decide what belongs to this tier. Raid gear and augmented " +
+                           "tomestone gear normally share one — that is expected, and the " +
+                           "\"Augmented\" in the name is what tells them apart.");
+    }
+
+    private void Level(string label, Func<ushort> get, Action<ushort> set)
+    {
+        ImGui.SetNextItemWidth(70f * ImGuiHelpers.GlobalScale);
+
+        var value = (int)get();
+        if (!ImGui.InputInt($"{label}##ilvl", ref value, 0))
+            return;
+
+        set((ushort)System.Math.Clamp(value, 0, ushort.MaxValue));
+        config.Save();
     }
 
     private void DrawProblems()
@@ -238,10 +315,7 @@ public sealed class TierTab : ITab
             ImGui.TextUnformatted(encounter.Name);
 
             ImGui.TableNextColumn();
-            if (encounter.TokenItemId == 0)
-                Widgets.Coloured(Widgets.Bad, encounter.TokenItemName);
-            else
-                ImGui.TextUnformatted(encounter.TokenItemName);
+            DrawBookPicker(encounter);
 
             ImGui.TableNextColumn();
             DrawSlotToggles(encounter);
@@ -258,6 +332,39 @@ public sealed class TierTab : ITab
                 config.Save();
             }
         }
+    }
+
+    /// <summary>
+    /// Picks the fight's book by searching the item list. Typing an exact name was the old way and
+    /// it only ever worked for the tier that happened to ship.
+    /// </summary>
+    private void DrawBookPicker(TierEncounter encounter)
+    {
+        var label = string.IsNullOrWhiteSpace(encounter.TokenItemName) ? "pick a book…" : encounter.TokenItemName;
+        var unresolved = encounter.TokenItemId == 0;
+
+        using (ImRaii.PushColor(ImGuiCol.Text, unresolved ? Widgets.Bad : Widgets.Done))
+        {
+            if (ImGui.SmallButton($"{label}##book"))
+            {
+                query = string.Empty;
+                ImGui.OpenPopup("##bookPopup");
+            }
+        }
+
+        if (unresolved && !string.IsNullOrWhiteSpace(encounter.TokenItemName))
+            Widgets.Tooltip($"\"{encounter.TokenItemName}\" does not match any item.");
+
+        using var popup = ImRaii.Popup("##bookPopup");
+        if (!popup.Success)
+            return;
+
+        if (!Widgets.ItemSearch(items, ref query, out var picked))
+            return;
+
+        encounter.TokenItemId = picked;
+        encounter.TokenItemName = items.GetItemName(picked);
+        config.Save();
     }
 
     private void DrawSlotToggles(TierEncounter encounter)
@@ -331,13 +438,39 @@ public sealed class TierTab : ITab
 
         foreach (var upgrade in tiers.Tier.Upgrades)
         {
+            using var id = ImRaii.PushId((int)upgrade.Side);
+
             var encounter = tiers.Tier.EncounterForUpgrade(upgrade.Side);
             var from = encounter?.Name ?? "nowhere";
 
-            if (upgrade.ItemId == 0)
-                Widgets.Coloured(Widgets.Bad, $"{SideLabel(upgrade.Side)}: \"{upgrade.ItemName}\" — no such item");
-            else
-                ImGui.TextUnformatted($"{SideLabel(upgrade.Side)}: {upgrade.ItemName} (drops in {from})");
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted($"{SideLabel(upgrade.Side)}:");
+            ImGui.SameLine();
+
+            var label = string.IsNullOrWhiteSpace(upgrade.ItemName) ? "pick a material…" : upgrade.ItemName;
+
+            using (ImRaii.PushColor(ImGuiCol.Text, upgrade.ItemId == 0 ? Widgets.Bad : Widgets.Done))
+            {
+                if (ImGui.SmallButton($"{label}##material"))
+                {
+                    query = string.Empty;
+                    ImGui.OpenPopup("##materialPopup");
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.TextDisabled($"drops in {from}");
+
+            using var popup = ImRaii.Popup("##materialPopup");
+            if (!popup.Success)
+                continue;
+
+            if (!Widgets.ItemSearch(items, ref query, out var picked))
+                continue;
+
+            upgrade.ItemId = picked;
+            upgrade.ItemName = items.GetItemName(picked);
+            config.Save();
         }
     }
 

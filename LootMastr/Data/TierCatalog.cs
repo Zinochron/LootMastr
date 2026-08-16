@@ -87,6 +87,71 @@ public sealed class TierCatalog
     }
 
     /// <summary>
+    /// Writes the active tier out as json so it can be reloaded, kept, or handed to someone else.
+    /// This is what makes a tier built in game as durable as one that shipped.
+    /// </summary>
+    public string SaveToFile()
+    {
+        var tier = Tier;
+
+        if (string.IsNullOrWhiteSpace(tier.Id))
+            return "Give the tier an id first.";
+
+        try
+        {
+            Directory.CreateDirectory(TierDirectory);
+
+            var path = Path.Combine(TierDirectory, $"{tier.Id}.json");
+            File.WriteAllText(path, JsonConvert.SerializeObject(tier, Formatting.Indented));
+
+            Services.Log.Information($"Wrote tier definition to {path}");
+            return $"Saved as {tier.Id}.json.";
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Error(ex, "Could not write the tier definition.");
+            return ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// A blank tier with the usual four fights and three materials, ready to have its books and
+    /// item levels filled in. Everything before this had to be typed into a json file by hand.
+    /// </summary>
+    public void CreateBlank()
+    {
+        var tier = new TierDefinition
+        {
+            Id = "new-tier",
+            Name = "New tier",
+            Upgrades =
+            {
+                new TierUpgrade { Side = GearSide.Right },
+                new TierUpgrade { Side = GearSide.Left },
+                new TierUpgrade { Side = GearSide.Weapon },
+            },
+        };
+
+        for (var index = 1; index <= PlayerPlanEncounters; index++)
+        {
+            tier.Encounters.Add(new TierEncounter
+            {
+                Index = index,
+                Name = $"Fight {index}",
+                DropCount = 2,
+            });
+        }
+
+        config.ActiveTierId = tier.Id;
+        config.Tier = tier;
+        resolved = false;
+        config.Save();
+    }
+
+    /// <summary>Four, in every tier the game has shipped.</summary>
+    private const int PlayerPlanEncounters = 4;
+
+    /// <summary>
     /// Turns the readable names in the definition into item ids. Anything that fails keeps an id of
     /// 0 and is reported by <see cref="TierDefinition.Problems"/> rather than throwing — a tier
     /// definition written for a later patch should still load and show what is wrong.
@@ -134,6 +199,10 @@ public sealed class TierCatalog
         // Keyed by reward item so a piece sold by several NPCs collapses to one line.
         var found = new Dictionary<uint, TierReward>();
 
+        // Books bought with other books. This is where most of the last fight's shop goes, and
+        // reading it as gear is what made every one of those rows come out as "Weapon".
+        var trades = new Dictionary<(int From, int To), int>();
+
         foreach (var shop in Services.Data.GetExcelSheet<SpecialShop>())
         {
             foreach (var entry in shop.Item)
@@ -152,6 +221,21 @@ public sealed class TierCatalog
                         var rewardId = receive.Item.RowId;
                         if (rewardId == 0)
                             continue;
+
+                        // Another book: a trade, not a reward.
+                        if (tokens.TryGetValue(rewardId, out var toEncounter))
+                        {
+                            if (toEncounter == encounterIndex)
+                                continue;
+
+                            var key = (encounterIndex, toEncounter);
+                            var ratio = Math.Max(1, (int)cost.CurrencyCost);
+
+                            if (!trades.TryGetValue(key, out var known) || ratio < known)
+                                trades[key] = ratio;
+
+                            continue;
+                        }
 
                         var reward = new TierReward
                         {
@@ -189,6 +273,7 @@ public sealed class TierCatalog
                             .ThenBy(r => r.ItemName, StringComparer.OrdinalIgnoreCase)
                             .ToList();
 
+        ApplyTrades(tier, trades);
         DiscoverAugments(tier);
         config.Save();
 
@@ -196,6 +281,30 @@ public sealed class TierCatalog
             $"Discovered {tier.Rewards.Count} exchange entries and {tier.Augments.Count} augmented pieces for {tier.Name}.");
 
         return tier.Rewards.Count;
+    }
+
+    /// <summary>
+    /// Folds the book-for-book rows into conversions. Discovering these matters as much as the
+    /// costs do: which books a player can actually spend decides whether they are stuck.
+    /// </summary>
+    private static void ApplyTrades(TierDefinition tier, Dictionary<(int From, int To), int> trades)
+    {
+        if (trades.Count == 0)
+            return;
+
+        var conversions = new List<TierTokenConversion>();
+
+        foreach (var group in trades.GroupBy(t => t.Key.From))
+        {
+            conversions.Add(new TierTokenConversion
+            {
+                FromEncounter = group.Key,
+                ToEncounters = group.Select(t => t.Key.To).Distinct().OrderBy(e => e).ToList(),
+                Ratio = group.Min(t => t.Value),
+            });
+        }
+
+        tier.Conversions = conversions.OrderBy(c => c.FromEncounter).ToList();
     }
 
     /// <summary>
@@ -295,16 +404,12 @@ public sealed class TierCatalog
             return;
         }
 
-        var named = Slots.SlotFromName(reward.ItemName, Slots.All);
-        if (named != null)
-        {
-            reward.Slot = named;
-            return;
-        }
+        reward.Slot = Slots.SlotFromName(reward.ItemName, Slots.All);
 
-        var encounter = tier.Encounter(reward.Encounter);
-        if (encounter is { DropSlots.Count: 1 })
-            reward.Slot = encounter.DropSlots[0];
+        // Nothing is guessed from the fight's drop pool any more. The last fight drops exactly one
+        // slot, so "if the pool has one entry, use it" quietly stamped Weapon onto every mount,
+        // minion and orchestrion roll its books also buy. Unassigned is the honest answer, and the
+        // table below is one click per row to fix.
     }
 
     /// <summary>
