@@ -169,10 +169,23 @@ update. Anything that fails to resolve keeps an id of `0` and is listed in red b
 
 A tier is fully editable in game and does not have to be one that shipped: **New tier** starts a
 blank four-fight skeleton, books and materials are chosen through a **searchable item picker**
-rather than by typing an exact name, item levels are editable fields, and **Save tier** writes it
-to its own json so it can be loaded again or handed on. That is what makes setting up an old tier
-for testing a five-minute job instead of a text-editor one — only the shipped tier was practical
-before.
+rather than by typing an exact name, and **Save tier** writes it to its own json. That is what makes
+setting up an old tier for testing a five-minute job instead of a text-editor one.
+
+Item levels are filled in by `Discover exchange` and only editable for the rare tier it gets wrong.
+They are *measured*, not assumed, wherever the data allows: augmented tomestone gear is equippable
+and carries the raid item level by definition, and the plain piece it is traded from carries the
+tomestone level. Only what is still missing falls back to the usual relationships — weapon is
+raid + 5, tomestone is raid − 10. The mode is used rather than the max, so one stray item cannot
+move a whole tier.
+
+There is no id field. The file name is the tier's name slugified, which removes a field that could
+only ever be got wrong and keeps the two from drifting apart. The load list shows names, not files.
+
+Tiers live in two places: shipped ones next to the assembly, and ones built in game under the
+**config** directory, where a rebuild or a plugin update cannot take them with it. Same id, the
+user's copy wins. Enums are written by name — these files get hand-edited and passed around, and
+`"Side": 2` tells nobody anything.
 
 ## The one number the plan is built on
 

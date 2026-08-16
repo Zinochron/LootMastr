@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Lumina.Excel.Sheets;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace LootMastr.Data;
 
@@ -33,7 +34,7 @@ public sealed class TierCatalog
         get
         {
             if (config.Tier == null)
-                LoadShipped(config.ActiveTierId);
+                Load(config.ActiveTierId);
 
             config.Tier ??= new TierDefinition { Id = config.ActiveTierId };
 
@@ -44,28 +45,109 @@ public sealed class TierCatalog
         }
     }
 
-    private static string TierDirectory =>
+    /// <summary>Tiers that came with the plugin. Replaced wholesale on every update.</summary>
+    private static string ShippedTierDirectory =>
         Path.Combine(Services.PluginInterface.AssemblyLocation.Directory?.FullName ?? ".", "Data", "Tiers");
 
-    public static IEnumerable<string> ShippedTierIds()
-    {
-        if (!Directory.Exists(TierDirectory))
-            return [];
+    /// <summary>
+    /// Tiers built in game. Kept next to the config rather than next to the assembly, so a rebuild
+    /// or a plugin update cannot take them with it.
+    /// </summary>
+    private static string UserTierDirectory =>
+        Path.Combine(Services.PluginInterface.GetPluginConfigDirectory(), "Tiers");
 
-        return Directory.EnumerateFiles(TierDirectory, "*.json")
-                        .Select(Path.GetFileNameWithoutExtension)
-                        .Where(id => !string.IsNullOrEmpty(id))
-                        .Select(id => id!)
-                        .OrderBy(id => id);
+    /// <summary>
+    /// Enum values are written by name. These files get hand-edited and passed around, and
+    /// <c>"Side": 2</c> tells nobody anything.
+    /// </summary>
+    private static readonly JsonSerializerSettings FileFormat = new()
+    {
+        Formatting = Formatting.Indented,
+        Converters = { new StringEnumConverter() },
+    };
+
+    /// <summary>
+    /// Tiers on disk, by file id and readable name. The name is read out of each file rather than
+    /// derived from its filename, so the list shows what the tier calls itself.
+    /// </summary>
+    public static List<(string Id, string Name)> AvailableTiers()
+    {
+        var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Shipped first, so a tier edited in game shadows the one it started from.
+        foreach (var directory in new[] { ShippedTierDirectory, UserTierDirectory })
+        {
+            if (!Directory.Exists(directory))
+                continue;
+
+            foreach (var path in Directory.EnumerateFiles(directory, "*.json"))
+            {
+                var id = Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrEmpty(id))
+                    continue;
+
+                found[id] = ReadNameOf(path) ?? id;
+            }
+        }
+
+        return found.Select(kv => (kv.Key, kv.Value))
+                    .OrderBy(t => t.Value, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+    }
+
+    private static string? ReadNameOf(string path)
+    {
+        try
+        {
+            var definition = JsonConvert.DeserializeObject<TierDefinition>(File.ReadAllText(path));
+            return string.IsNullOrWhiteSpace(definition?.Name) ? null : definition!.Name;
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Warning(ex, $"Could not read the name out of {path}.");
+            return null;
+        }
+    }
+
+    /// <summary>A tier built in game wins over one that shipped under the same id.</summary>
+    private static string? PathFor(string id)
+    {
+        var user = Path.Combine(UserTierDirectory, $"{id}.json");
+        if (File.Exists(user))
+            return user;
+
+        var shipped = Path.Combine(ShippedTierDirectory, $"{id}.json");
+        return File.Exists(shipped) ? shipped : null;
     }
 
     /// <summary>
-    /// Replaces the active tier with the shipped defaults. Also the "I broke it, start over"
-    /// button, which is why it drops every edit rather than merging.
+    /// File name for a tier, derived from what it is called. Keeping the id out of the user's hands
+    /// removes a field that could only ever be got wrong.
     /// </summary>
-    public bool LoadShipped(string id)
+    public static string SlugFor(string name)
     {
-        var path = Path.Combine(TierDirectory, $"{id}.json");
+        var builder = new System.Text.StringBuilder(name.Length);
+
+        foreach (var c in name.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c))
+                builder.Append(c);
+            else if (c is ' ' or '-' or '_' && builder.Length > 0 && builder[^1] != '-')
+                builder.Append('-');
+        }
+
+        return builder.ToString().Trim('-') is { Length: > 0 } slug ? slug : "tier";
+    }
+
+    /// <summary>
+    /// Replaces the active tier with one from disk, shipped or built in game. Also the "I broke it,
+    /// start over" button, which is why it drops every edit rather than merging.
+    /// </summary>
+    public bool Load(string id)
+    {
+        var path = PathFor(id);
+        if (path == null)
+            return false;
 
         try
         {
@@ -94,18 +176,22 @@ public sealed class TierCatalog
     {
         var tier = Tier;
 
-        if (string.IsNullOrWhiteSpace(tier.Id))
-            return "Give the tier an id first.";
+        if (string.IsNullOrWhiteSpace(tier.Name))
+            return "Give the tier a name first.";
+
+        tier.Id = SlugFor(tier.Name);
+        config.ActiveTierId = tier.Id;
 
         try
         {
-            Directory.CreateDirectory(TierDirectory);
+            Directory.CreateDirectory(UserTierDirectory);
 
-            var path = Path.Combine(TierDirectory, $"{tier.Id}.json");
-            File.WriteAllText(path, JsonConvert.SerializeObject(tier, Formatting.Indented));
+            var path = Path.Combine(UserTierDirectory, $"{tier.Id}.json");
+            File.WriteAllText(path, JsonConvert.SerializeObject(tier, FileFormat));
+            config.Save();
 
             Services.Log.Information($"Wrote tier definition to {path}");
-            return $"Saved as {tier.Id}.json.";
+            return $"Saved \"{tier.Name}\".";
         }
         catch (Exception ex)
         {
@@ -402,12 +488,63 @@ public sealed class TierCatalog
 
         ApplyTrades(tier, trades);
         DiscoverAugments(tier);
+        DeriveItemLevels(tier);
         config.Save();
 
         Services.Log.Information(
             $"Discovered {tier.Rewards.Count} exchange entries and {tier.Augments.Count} augmented pieces for {tier.Name}.");
 
         return tier.Rewards.Count;
+    }
+
+    /// <summary>
+    /// Works out the tier's four item levels from what the discovery already read. These are the
+    /// numbers gear classification runs on, so having to type them in was the last thing standing
+    /// between a shop window and a working tier.
+    ///
+    /// Measured where possible: augmented tomestone gear is equippable and carries the raid item
+    /// level by definition, and the plain piece it is traded from carries the tomestone level. The
+    /// weapon level comes off the tier's own weapon if one turned up. Anything still missing falls
+    /// back to the usual relationships — weapon is raid + 5, tomestone is raid - 10.
+    /// </summary>
+    private void DeriveItemLevels(TierDefinition tier)
+    {
+        var augmentedArmour = tier.Augments
+                                  .Where(a => a.Slot != null && a.Slot != GearSlot.Weapon)
+                                  .Select(a => items.GetItem(a.AugmentedItemId).ItemLevel)
+                                  .Where(level => level > 0)
+                                  .ToList();
+
+        if (augmentedArmour.Count == 0)
+            return;
+
+        // The mode rather than the max: one stray item should not move the whole tier.
+        var raid = augmentedArmour.GroupBy(l => l).OrderByDescending(g => g.Count()).First().Key;
+
+        tier.RaidItemLevel = raid;
+        tier.AugmentedItemLevel = raid;
+
+        var weapons = tier.Augments
+                          .Where(a => a.Slot == GearSlot.Weapon)
+                          .Select(a => items.GetItem(a.AugmentedItemId).ItemLevel)
+                          .Where(level => level > raid)
+                          .ToList();
+
+        tier.RaidWeaponItemLevel = weapons.Count > 0 ? weapons.Max() : (ushort)(raid + 5);
+
+        var baseArmour = tier.Augments
+                             .Where(a => a.BaseItemId != 0 && a.Slot != null && a.Slot != GearSlot.Weapon)
+                             .Select(a => items.GetItem(a.BaseItemId).ItemLevel)
+                             .Where(level => level is > 0 && level < raid)
+                             .ToList();
+
+        tier.TomeItemLevel = baseArmour.Count > 0
+                                 ? baseArmour.GroupBy(l => l).OrderByDescending(g => g.Count()).First().Key
+                                 : (ushort)(raid - 10);
+
+        Services.Log.Information(
+            $"Item levels for {tier.Name}: raid {tier.RaidItemLevel}, weapon {tier.RaidWeaponItemLevel}, " +
+            $"tome {tier.TomeItemLevel}, augmented {tier.AugmentedItemLevel}.");
     }
 
     /// <summary>

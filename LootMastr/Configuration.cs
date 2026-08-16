@@ -37,8 +37,11 @@ public class Configuration : IPluginConfiguration
 
     // ---- Tier ------------------------------------------------------------
 
-    /// <summary>File name (without extension) of the tier definition under <c>Data/Tiers</c>.</summary>
-    public string ActiveTierId { get; set; } = "aac-heavyweight";
+    /// <summary>
+    /// File name (without extension) of the tier definition under <c>Data/Tiers</c>. Derived from
+    /// the tier's name rather than typed, so it always matches the file it came from.
+    /// </summary>
+    public string ActiveTierId { get; set; } = "aac-heavyweight-savage";
 
     /// <summary>
     /// The tier actually in use. Seeded from the shipped json the first time and edited from then

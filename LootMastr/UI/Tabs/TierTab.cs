@@ -212,23 +212,24 @@ public sealed class TierTab : ITab
         ImGui.TextUnformatted("Loading throws away every change made to the current tier.");
         ImGui.Separator();
 
-        var any = false;
+        var available = TierCatalog.AvailableTiers();
 
-        foreach (var id in TierCatalog.ShippedTierIds())
+        if (available.Count == 0)
         {
-            any = true;
-
-            if (!ImGui.Selectable(id))
-                continue;
-
-            if (tiers.LoadShipped(id))
-                Services.Chat.Print($"LootMastr: loaded tier \"{id}\".");
-            else
-                Services.Chat.PrintError($"LootMastr: could not read tier \"{id}\".");
+            ImGui.TextDisabled("No tier files found.");
+            return;
         }
 
-        if (!any)
-            ImGui.TextDisabled("No tier files found.");
+        foreach (var (id, name) in available)
+        {
+            if (!ImGui.Selectable(name))
+                continue;
+
+            if (tiers.Load(id))
+                Services.Chat.Print($"LootMastr: loaded \"{name}\".");
+            else
+                Services.Chat.PrintError($"LootMastr: could not read \"{name}\".");
+        }
     }
 
     /// <summary>
@@ -239,7 +240,7 @@ public sealed class TierTab : ITab
     {
         var tier = tiers.Tier;
 
-        ImGui.SetNextItemWidth(240f * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(280f * ImGuiHelpers.GlobalScale);
         var name = tier.Name;
         if (ImGui.InputText("Tier name", ref name, 64))
         {
@@ -248,16 +249,7 @@ public sealed class TierTab : ITab
         }
 
         ImGui.SameLine();
-        ImGui.SetNextItemWidth(160f * ImGuiHelpers.GlobalScale);
-        var id = tier.Id;
-        if (ImGui.InputText("Id", ref id, 48))
-        {
-            tier.Id = id.Trim();
-            config.ActiveTierId = tier.Id;
-            config.Save();
-        }
-
-        Widgets.HelpMarker("File name this tier saves to. Lower case, no spaces.");
+        ImGui.TextDisabled($"saves as {TierCatalog.SlugFor(tier.Name)}.json");
 
         Level("Raid gear", () => tier.RaidItemLevel, v => tier.RaidItemLevel = v);
         ImGui.SameLine();
@@ -269,7 +261,9 @@ public sealed class TierTab : ITab
 
         Widgets.HelpMarker("Item levels decide what belongs to this tier. Raid gear and augmented " +
                            "tomestone gear normally share one — that is expected, and the " +
-                           "\"Augmented\" in the name is what tells them apart.");
+                           "\"Augmented\" in the name is what tells them apart.\n\n" +
+                           "\"Discover exchange\" fills these in on its own; they are editable for " +
+                           "the rare tier it gets wrong.");
     }
 
     private void Level(string label, Func<ushort> get, Action<ushort> set)
