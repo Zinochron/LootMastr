@@ -10,6 +10,9 @@ namespace LootMastr.Automation;
 /// <summary>One window that opened, and what it was holding when it did.</summary>
 public sealed record AddonSighting(DateTime At, string Name, string Values);
 
+/// <summary>One button press inside a loot window, as the game reported it.</summary>
+public sealed record ButtonPress(DateTime At, string What);
+
 /// <summary>
 /// Records every window that opens while the loot window is up.
 ///
@@ -39,7 +42,7 @@ public sealed class AddonWatcher : IDisposable
     private static readonly string[] NoisyEvents = ["MouseMove", "MouseOver", "MouseOut", "Drag", "Focus"];
 
     private readonly List<AddonSighting> sightings = new();
-    private readonly List<string> events = new();
+    private readonly List<ButtonPress> events = new();
 
     public AddonWatcher()
     {
@@ -58,10 +61,14 @@ public sealed class AddonWatcher : IDisposable
     /// are exactly what the button sends, and clicking assign on two different rows shows how the
     /// row is encoded.
     /// </summary>
-    public IReadOnlyList<string> Events => events;
+    public IReadOnlyList<ButtonPress> Events => events;
 
-    /// <summary>Off until it is wanted — it hooks every window in the game.</summary>
-    public bool Enabled { get; set; }
+    /// <summary>
+    /// On by default while the assignment callback is still unknown. The button-press hook is
+    /// scoped to the two loot windows and the window hook does nothing unless a chest is open, so
+    /// the cost is nil — and having to remember a checkbox is what cost a recording session.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
 
     public void Clear()
     {
@@ -82,13 +89,15 @@ public sealed class AddonWatcher : IDisposable
                 return;
         }
 
-        var line = $"{DateTime.Now:HH:mm:ss.fff}  {args.AddonName}  {kind}  param={received.EventParam}";
+        var what = $"{args.AddonName}  {kind}  param={received.EventParam}";
 
-        // Held down buttons repeat the same event; only the distinct ones say anything.
-        if (events.Count > 0 && events[0][23..] == line[23..])
+        // Held buttons repeat the same event; only the distinct ones say anything. Compared on the
+        // event alone — slicing a fixed number of characters off the front assumed every addon
+        // name was the same length, which two of them are not.
+        if (events.Count > 0 && events[0].What == what)
             return;
 
-        events.Insert(0, line);
+        events.Insert(0, new ButtonPress(DateTime.Now, what));
 
         if (events.Count > Limit)
             events.RemoveRange(Limit, events.Count - Limit);
@@ -144,8 +153,8 @@ public sealed class AddonWatcher : IDisposable
         }
         else
         {
-            foreach (var line in Enumerable.Reverse(events))
-                builder.AppendLine($"  {line}");
+            foreach (var press in Enumerable.Reverse(events))
+                builder.AppendLine($"  {press.At:HH:mm:ss.fff}  {press.What}");
         }
 
         builder.AppendLine();

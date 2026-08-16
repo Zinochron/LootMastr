@@ -165,8 +165,8 @@ public sealed class DebugTab : ITab
             ImGuiHelpers.ScaledDummy(4f);
             ImGui.TextDisabled("Button presses, newest first:");
 
-            foreach (var line in watcher.Events)
-                ImGui.TextUnformatted(line);
+            foreach (var press in watcher.Events)
+                ImGui.TextUnformatted($"{press.At:HH:mm:ss}  {press.What}");
         }
 
         if (watcher.Sightings.Count == 0)
