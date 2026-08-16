@@ -173,11 +173,16 @@ rather than by typing an exact name, and **Save tier** writes it to its own json
 setting up an old tier for testing a five-minute job instead of a text-editor one.
 
 Item levels are filled in by `Discover exchange` and only editable for the rare tier it gets wrong.
-They are *measured*, not assumed, wherever the data allows: augmented tomestone gear is equippable
-and carries the raid item level by definition, and the plain piece it is traded from carries the
-tomestone level. Only what is still missing falls back to the usual relationships — weapon is
-raid + 5, tomestone is raid − 10. The mode is used rather than the max, so one stray item cannot
-move a whole tier.
+They come mostly off the **coffers**, whose own item level is zero but whose name carries it —
+"Genji Earring Coffer (IL 340)". `BracketedLevel` matches digits inside brackets rather than the
+"IL", which is localised. Augmented gear, being equippable, contributes a real item level where it
+has been discovered, and the plain piece it is traded from gives the tomestone level.
+
+The first version read *only* the augmented set, which meant it never fired at all: discovering
+augments needs the upgrade materials to be filled in, and a tier being set up for the first time has
+none. Whatever is still missing after all that falls back to the usual relationships — weapon is
+raid + 5, tomestone is raid − 10 — and the mode is used rather than the max, so one stray item
+cannot move a whole tier.
 
 There is no id field. The file name is the tier's name slugified, which removes a field that could
 only ever be got wrong and keeps the two from drifting apart. The load list shows names, not files.

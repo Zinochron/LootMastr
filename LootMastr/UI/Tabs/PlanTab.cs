@@ -152,23 +152,29 @@ public sealed class PlanTab : ITab
                            "Hover a name for the reasoning behind its place.");
         ImGui.Separator();
 
-        using var table = ImRaii.Table("##priorities", 2,
+        using var table = ImRaii.Table("##priorities", 3,
                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
         if (!table.Success)
             return;
 
-        ImGui.TableSetupColumn("Drop", ImGuiTableColumnFlags.WidthFixed, 120f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Fight", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Drop", ImGuiTableColumnFlags.WidthFixed, 110f * ImGuiHelpers.GlobalScale);
         ImGui.TableSetupColumn("Priority");
         ImGui.TableHeadersRow();
 
         foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
         {
+            // The fight is named once per group rather than repeated on every row — the rows below
+            // it belong to it, and a column of the same four letters says nothing.
+            var first = true;
+
             foreach (var slot in encounter.DropSlots)
             {
                 if (!slotRankings.TryGetValue(slot, out var ranking))
                     slotRankings[slot] = ranking = planner.RankForSlot(slot);
 
-                DrawPriorityRow($"{encounter.Name} {slot.Label()}", ranking);
+                DrawPriorityRow(first ? encounter.Name : string.Empty, slot.Label(), ranking);
+                first = false;
             }
 
             foreach (var side in encounter.UpgradeDrops)
@@ -176,16 +182,38 @@ public sealed class PlanTab : ITab
                 if (!upgradeRankings.TryGetValue(side, out var ranking))
                     upgradeRankings[side] = ranking = planner.RankForUpgrade(side);
 
-                DrawPriorityRow($"{encounter.Name} {side} upg.", ranking);
+                DrawPriorityRow(first ? encounter.Name : string.Empty, $"{side} upgrade", ranking);
+                first = false;
             }
+
+            if (first)
+                DrawEmptyFightRow(encounter.Name);
         }
     }
 
-    private static void DrawPriorityRow(string label, IReadOnlyList<Candidate> ranking)
+    private static void DrawEmptyFightRow(string fight)
     {
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
-        ImGui.TextUnformatted(label);
+        ImGui.TextUnformatted(fight);
+
+        ImGui.TableNextColumn();
+        ImGui.TextDisabled("—");
+
+        ImGui.TableNextColumn();
+        Widgets.Coloured(Widgets.Muted, "nothing set up — see the Tier tab");
+    }
+
+    private static void DrawPriorityRow(string fight, string drop, IReadOnlyList<Candidate> ranking)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+
+        if (!string.IsNullOrEmpty(fight))
+            ImGui.TextUnformatted(fight);
+
+        ImGui.TableNextColumn();
+        ImGui.TextUnformatted(drop);
 
         ImGui.TableNextColumn();
 
@@ -225,20 +253,88 @@ public sealed class PlanTab : ITab
             return;
         }
 
-        foreach (var week in result.Awards.GroupBy(a => a.Week).OrderBy(g => g.Key))
+        var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
+        var lastWeek = result.Awards.Max(a => a.Week);
+
+        using var table = ImRaii.Table("##schedule", 4,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("Week", ImGuiTableColumnFlags.WidthFixed, 70f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Fight", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Drop", ImGuiTableColumnFlags.WidthFixed, 130f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Goes to");
+        ImGui.TableHeadersRow();
+
+        for (var week = 1; week <= lastWeek; week++)
         {
-            if (!ImGui.CollapsingHeader($"Week {week.Key}###week{week.Key}"))
-                continue;
+            var weekNamed = false;
 
-            using var indent = ImRaii.PushIndent();
-
-            foreach (var award in week.OrderBy(a => a.Encounter))
+            foreach (var encounter in encounters)
             {
-                var fight = tiers.Tier.Encounter(award.Encounter)?.Name ?? $"#{award.Encounter}";
-                var how = award.Bought ? " (books)" : string.Empty;
-                ImGui.TextUnformatted($"{fight}  {award.What}  →  {award.PlayerName}{how}");
+                var awards = result.Awards
+                                   .Where(a => a.Week == week && a.Encounter == encounter.Index)
+                                   .ToList();
+
+                // Every fight is listed every week, including the ones that hand out nothing —
+                // "this fight gives you nothing next week" is a thing worth being able to see.
+                if (awards.Count == 0)
+                {
+                    ScheduleRow(ref weekNamed, week, encounter.Name, "—", string.Empty, false);
+                    continue;
+                }
+
+                var fightNamed = false;
+
+                foreach (var award in awards)
+                {
+                    ScheduleRow(ref weekNamed, week, fightNamed ? string.Empty : encounter.Name,
+                                award.What, award.PlayerName, award.Bought);
+
+                    fightNamed = true;
+                }
             }
         }
+    }
+
+    private static void ScheduleRow(ref bool weekNamed, int week, string fight, string drop,
+                                    string player, bool bought)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+
+        if (!weekNamed)
+        {
+            ImGui.TextUnformatted($"Week {week}");
+            weekNamed = true;
+        }
+
+        ImGui.TableNextColumn();
+        if (!string.IsNullOrEmpty(fight))
+            ImGui.TextUnformatted(fight);
+
+        ImGui.TableNextColumn();
+        if (drop == "—")
+            ImGui.TextDisabled(drop);
+        else
+            ImGui.TextUnformatted(drop);
+
+        ImGui.TableNextColumn();
+
+        if (string.IsNullOrEmpty(player))
+        {
+            ImGui.TextDisabled("nobody needs it");
+            return;
+        }
+
+        ImGui.TextUnformatted(player);
+
+        if (!bought)
+            return;
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("(books)");
     }
 
     public void Dispose() { }

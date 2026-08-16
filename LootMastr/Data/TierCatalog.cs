@@ -509,43 +509,83 @@ public sealed class TierCatalog
     /// </summary>
     private void DeriveItemLevels(TierDefinition tier)
     {
-        var augmentedArmour = tier.Augments
-                                  .Where(a => a.Slot != null && a.Slot != GearSlot.Weapon)
-                                  .Select(a => items.GetItem(a.AugmentedItemId).ItemLevel)
-                                  .Where(level => level > 0)
-                                  .ToList();
+        var armour = new List<ushort>();
+        var weapons = new List<ushort>();
 
-        if (augmentedArmour.Count == 0)
+        // The rewards themselves, which exist whether or not the upgrade materials were found.
+        // Hanging this on the augmented set was why it never fired: a tier whose materials are not
+        // filled in yet — which is every tier, before it has been set up — discovers no augments.
+        foreach (var reward in tier.Rewards.Where(r => r.Slot != null))
+        {
+            var level = LevelOf(reward);
+            if (level == 0)
+                continue;
+
+            if (reward.Slot == GearSlot.Weapon)
+                weapons.Add(level);
+            else
+                armour.Add(level);
+        }
+
+        // Augmented gear carries the raid level by definition, so it counts as armour evidence.
+        foreach (var augment in tier.Augments.Where(a => a.Slot is not null and not GearSlot.Weapon))
+        {
+            var level = items.GetItem(augment.AugmentedItemId).ItemLevel;
+            if (level > 0)
+                armour.Add(level);
+        }
+
+        if (armour.Count == 0 && weapons.Count == 0)
             return;
 
         // The mode rather than the max: one stray item should not move the whole tier.
-        var raid = augmentedArmour.GroupBy(l => l).OrderByDescending(g => g.Count()).First().Key;
+        var raid = armour.Count > 0 ? Mode(armour) : (ushort)(Mode(weapons) - 5);
 
         tier.RaidItemLevel = raid;
         tier.AugmentedItemLevel = raid;
 
-        var weapons = tier.Augments
-                          .Where(a => a.Slot == GearSlot.Weapon)
-                          .Select(a => items.GetItem(a.AugmentedItemId).ItemLevel)
-                          .Where(level => level > raid)
-                          .ToList();
-
-        tier.RaidWeaponItemLevel = weapons.Count > 0 ? weapons.Max() : (ushort)(raid + 5);
+        var weaponLevels = weapons.Where(l => l >= raid).ToList();
+        tier.RaidWeaponItemLevel = weaponLevels.Count > 0 ? Mode(weaponLevels) : (ushort)(raid + 5);
 
         var baseArmour = tier.Augments
-                             .Where(a => a.BaseItemId != 0 && a.Slot != null && a.Slot != GearSlot.Weapon)
+                             .Where(a => a.BaseItemId != 0 && a.Slot is not null and not GearSlot.Weapon)
                              .Select(a => items.GetItem(a.BaseItemId).ItemLevel)
                              .Where(level => level is > 0 && level < raid)
                              .ToList();
 
-        tier.TomeItemLevel = baseArmour.Count > 0
-                                 ? baseArmour.GroupBy(l => l).OrderByDescending(g => g.Count()).First().Key
-                                 : (ushort)(raid - 10);
+        tier.TomeItemLevel = baseArmour.Count > 0 ? Mode(baseArmour) : (ushort)(raid - 10);
 
         Services.Log.Information(
             $"Item levels for {tier.Name}: raid {tier.RaidItemLevel}, weapon {tier.RaidWeaponItemLevel}, " +
             $"tome {tier.TomeItemLevel}, augmented {tier.AugmentedItemLevel}.");
     }
+
+    /// <summary>
+    /// The number a coffer carries in brackets — "Genji Earring Coffer (IL 340)". Coffers have no
+    /// item level of their own, so for most of a tier's rewards this is the only place the level
+    /// exists. Matched as "digits inside brackets" rather than on the "IL", which is localised.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex BracketedLevel =
+        new(@"\(\D*(\d{2,4})\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Item level of a reward: its own if it is gear, otherwise the one in its name.</summary>
+    private ushort LevelOf(TierReward reward)
+    {
+        if (items.TryGetItem(reward.ItemId, out var info))
+        {
+            if (info.Slot != null && info.ItemLevel > 0)
+                return info.ItemLevel;
+
+            var match = BracketedLevel.Match(info.Name);
+            if (match.Success && ushort.TryParse(match.Groups[1].Value, out var fromName))
+                return fromName;
+        }
+
+        return 0;
+    }
+
+    private static ushort Mode(IReadOnlyCollection<ushort> levels) =>
+        levels.GroupBy(l => l).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key).First().Key;
 
     /// <summary>
     /// Folds the book-for-book rows into conversions. Discovering these matters as much as the
