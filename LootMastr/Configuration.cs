@@ -29,10 +29,11 @@ public class Configuration : IPluginConfiguration
 
     // ---- The static ------------------------------------------------------
 
+    /// <summary>
+    /// The static, in priority order. The order is a real setting: it is the last tiebreak when two
+    /// players are otherwise equal candidates for a drop.
+    /// </summary>
     public List<RosterMember> Roster { get; set; } = new();
-
-    /// <summary>Add party members to the roster automatically the first time they are seen.</summary>
-    public bool AutoSyncRosterFromParty { get; set; } = true;
 
     // ---- Tier ------------------------------------------------------------
 

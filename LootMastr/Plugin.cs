@@ -72,7 +72,7 @@ public sealed class Plugin : IDalamudPlugin
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),
             new DebugTab(Loot, Party, Tiers, tracker),
-            new SettingsTab(Configuration),
+            new SettingsTab(Configuration, Roster, Planner),
         };
 
         mainWindow = new MainWindow(tabs);

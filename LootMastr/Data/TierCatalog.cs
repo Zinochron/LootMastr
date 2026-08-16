@@ -177,6 +177,133 @@ public sealed class TierCatalog
         }
     }
 
+    /// <summary>Addons a token exchange can be sitting in, most likely first.</summary>
+    private static readonly string[] ShopAddons =
+        ["ShopExchangeCurrency", "ShopExchangeItem", "InclusionShop", "Shop", "FreeShop"];
+
+    /// <summary>The lowest item id worth treating as real, to keep small counters out of the scan.</summary>
+    private const uint PlausibleItemId = 1000;
+
+    /// <summary>
+    /// Reads the tier's books off an exchange window that is open in front of you.
+    ///
+    /// Standing at the NPC is by far the most reliable way to say which shop this tier means —
+    /// better than any name matching, because the game is already showing exactly the right one.
+    /// The window's contents are matched against <c>SpecialShop</c> rows, and the currencies those
+    /// rows charge are the books.
+    /// </summary>
+    public string DiscoverBooksFromOpenShop()
+    {
+        var visible = ReadOpenShopItemIds();
+        if (visible.Count == 0)
+            return string.Empty;
+
+        var rows = MatchingShopRows(visible);
+        if (rows.Count == 0)
+            return "A shop is open, but none of its entries matched the game's shop data.";
+
+        var books = CostItemsOf(rows);
+        if (books.Count == 0)
+            return "A shop is open, but nothing in it is paid for with a token.";
+
+        var tier = Tier;
+        var encounters = tier.Encounters.OrderBy(e => e.Index).ToList();
+
+        if (encounters.Count == 0)
+            return "No fights to put those books on — add some first.";
+
+        // Books are created in fight order, so ascending id is the right guess for I, II, III, IV.
+        // It is a guess, which is why it is reported and every one is still editable.
+        var ordered = books.OrderBy(id => id).Take(encounters.Count).ToList();
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            encounters[i].TokenItemId = ordered[i];
+            encounters[i].TokenItemName = items.GetItemName(ordered[i]);
+        }
+
+        config.Save();
+
+        var named = string.Join(", ", ordered.Select((id, i) => $"{encounters[i].Name} = {items.GetItemName(id)}"));
+        return $"Read {ordered.Count} book(s) from the open shop: {named}.";
+    }
+
+    private List<uint> ReadOpenShopItemIds()
+    {
+        foreach (var name in ShopAddons)
+        {
+            var addon = Services.GameGui.GetAddonByName(name);
+            if (addon.IsNull || !addon.IsVisible)
+                continue;
+
+            var found = new List<uint>();
+
+            foreach (var value in addon.AtkValues)
+            {
+                if (!value.TryGet<uint>(out var id) || id < PlausibleItemId)
+                    continue;
+
+                if (items.TryGetItem(id, out var info) && !string.IsNullOrEmpty(info.Name))
+                    found.Add(id);
+            }
+
+            if (found.Count > 0)
+                return found.Distinct().ToList();
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Shop rows that visibly overlap with what is on screen. Several rows can belong to one NPC,
+    /// so this takes every row that shares more than a couple of entries rather than just the best.
+    /// </summary>
+    private static List<SpecialShop> MatchingShopRows(IReadOnlyCollection<uint> visible)
+    {
+        const int minimumOverlap = 3;
+
+        var onScreen = visible.ToHashSet();
+        var result = new List<SpecialShop>();
+
+        foreach (var shop in Services.Data.GetExcelSheet<SpecialShop>())
+        {
+            var overlap = 0;
+
+            foreach (var entry in shop.Item)
+            {
+                foreach (var receive in entry.ReceiveItems)
+                {
+                    if (receive.Item.RowId != 0 && onScreen.Contains(receive.Item.RowId))
+                        overlap++;
+                }
+            }
+
+            if (overlap >= minimumOverlap)
+                result.Add(shop);
+        }
+
+        return result;
+    }
+
+    private static List<uint> CostItemsOf(IEnumerable<SpecialShop> rows)
+    {
+        var costs = new HashSet<uint>();
+
+        foreach (var shop in rows)
+        {
+            foreach (var entry in shop.Item)
+            {
+                foreach (var cost in entry.ItemCosts)
+                {
+                    if (cost.ItemCost.RowId != 0 && cost.CurrencyCost > 0)
+                        costs.Add(cost.ItemCost.RowId);
+                }
+            }
+        }
+
+        return costs.ToList();
+    }
+
     /// <summary>
     /// Walks <c>SpecialShop</c> for everything the tier's books buy. This is why the plugin never
     /// asks anyone to type in exchange costs: the shop rows are the same data the game uses, so
@@ -442,10 +569,24 @@ public sealed class TierCatalog
             return true;
         }
 
-        if (items.TryGetItem(itemId, out var info) && info.Slot != null &&
-            (info.ItemLevel == tier.RaidItemLevel || info.ItemLevel == tier.RaidWeaponItemLevel))
+        if (!items.TryGetItem(itemId, out var info))
+            return false;
+
+        // Gear that drops as itself.
+        if (info.Slot != null && tier.IsTierItemLevel(info.ItemLevel))
         {
             slot = info.Slot;
+            return true;
+        }
+
+        // A coffer, which is the normal case and the one the item level test can never answer:
+        // coffers have no equip category at all, so they were coming out as "not tier loot" even
+        // with the tier set up correctly. Their name says what is inside — "Genji Earring Coffer
+        // (IL 340)" — so that is what decides.
+        var named = Slots.SlotFromName(info.Name, Slots.All);
+        if (named != null)
+        {
+            slot = named;
             return true;
         }
 

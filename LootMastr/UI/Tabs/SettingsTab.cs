@@ -1,33 +1,35 @@
+using System;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+using LootMastr.Planning;
+using LootMastr.Roster;
 
 namespace LootMastr.UI.Tabs;
 
 public sealed class SettingsTab : ITab
 {
-    private readonly Configuration config;
+    private const string DragPayload = "LootMastrPriority";
 
-    public SettingsTab(Configuration config) => this.config = config;
+    private readonly Configuration config;
+    private readonly RosterStore roster;
+    private readonly LootPlanner planner;
+
+    /// <summary>Row currently being dragged; ImGui's payload only has to say that one is.</summary>
+    private int dragIndex = -1;
+
+    public SettingsTab(Configuration config, RosterStore roster, LootPlanner planner)
+    {
+        this.config = config;
+        this.roster = roster;
+        this.planner = planner;
+    }
 
     public string Title => "Settings";
     public string Id => "settings";
 
     public void Draw()
     {
-        ImGui.TextUnformatted("Roster");
-        ImGui.Separator();
-
-        var autoSync = config.AutoSyncRosterFromParty;
-        if (ImGui.Checkbox("Add party members to the roster automatically", ref autoSync))
-        {
-            config.AutoSyncRosterFromParty = autoSync;
-            config.Save();
-        }
-
-        Widgets.HelpMarker("Anyone in your party who is not in the roster gets added the first time " +
-                           "they are seen. Nothing is ever removed automatically.");
-
-        ImGuiHelpers.ScaledDummy(10f);
         ImGui.TextUnformatted("Distribution");
         ImGui.Separator();
 
@@ -86,6 +88,17 @@ public sealed class SettingsTab : ITab
     {
         var rules = config.Rules;
 
+        var last = (float)rules.LastFinisherWeight;
+        if (ImGui.SliderFloat("Weight on the slowest player", ref last, 0f, 3f, "%.2f"))
+        {
+            rules.LastFinisherWeight = last;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("At 1.00 and above the plan optimises for the last person to finish, which " +
+                           "is usually what a static wants. Lowering it lets the plan trade a late tank " +
+                           "for two early damage dealers.");
+
         var dps = (float)rules.DpsWeight;
         if (ImGui.SliderFloat("Damage dealer priority", ref dps, 1f, 3f, "%.2f"))
         {
@@ -109,16 +122,87 @@ public sealed class SettingsTab : ITab
                            "purpose: it breaks ties between equal candidates rather than overriding " +
                            "who actually needs the piece more.");
 
-        var last = (float)rules.LastFinisherWeight;
-        if (ImGui.SliderFloat("Weight on the slowest player", ref last, 0f, 3f, "%.2f"))
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawForecastLine();
+
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawPriorityOrder();
+    }
+
+    /// <summary>
+    /// What the current weights actually produce, right here. Sliders with no visible consequence
+    /// are guesswork — this is the one number they are all in aid of.
+    /// </summary>
+    private void DrawForecastLine()
+    {
+        if (roster.Members.Count == 0)
         {
-            rules.LastFinisherWeight = last;
-            config.Save();
+            Widgets.Coloured(Widgets.Muted, "Add players to see what these settings produce.");
+            return;
         }
 
-        Widgets.HelpMarker("At 1.00 and above the plan optimises for the last person to finish, which " +
-                           "is usually what a static wants. Lowering it lets the plan trade a late tank " +
-                           "for two early damage dealers.");
+        var result = planner.Forecast();
+
+        if (result.BeyondHorizon(result.LastFinishWeek))
+            Widgets.Coloured(Widgets.Bad, $"Not everyone is geared within {result.Horizon} weeks.");
+        else if (result.LastFinishWeek == 0)
+            Widgets.Coloured(Widgets.Done, "Everyone is already geared.");
+        else
+            Widgets.Coloured(Widgets.Done, $"The group is geared after {result.LastFinishWeek} week(s).");
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("— full breakdown on the Plan tab");
+    }
+
+    /// <summary>
+    /// Roster order is the final tiebreak when two players are equal candidates, so it is a real
+    /// setting rather than just how the table happens to be sorted. Drag to reorder.
+    /// </summary>
+    private void DrawPriorityOrder()
+    {
+        ImGui.TextUnformatted("Priority order");
+        Widgets.HelpMarker("Used only when two players come out exactly equal — after the effect on " +
+                           "the group's finish week, after role, after who has won least. Drag a name " +
+                           "to move it.");
+
+        if (roster.Members.Count == 0)
+            return;
+
+        var members = roster.Members;
+
+        for (var i = 0; i < members.Count; i++)
+        {
+            var member = members[i];
+            using var id = ImRaii.PushId(member.Key);
+
+            var role = roster.RoleOf(member);
+            ImGui.Selectable($"{i + 1}.  {member.Name}   ({role})");
+
+            if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.SourceNoPreviewTooltip))
+            {
+                dragIndex = i;
+                ImGui.SetDragDropPayload(DragPayload, ReadOnlySpan<byte>.Empty);
+                ImGui.TextUnformatted(member.Name);
+                ImGui.EndDragDropSource();
+            }
+
+            if (!ImGui.BeginDragDropTarget())
+                continue;
+
+            unsafe
+            {
+                if (!ImGui.AcceptDragDropPayload(DragPayload).IsNull && dragIndex >= 0 && dragIndex != i)
+                {
+                    var moved = members[dragIndex];
+                    members.RemoveAt(dragIndex);
+                    members.Insert(i, moved);
+                    config.Save();
+                    dragIndex = -1;
+                }
+            }
+
+            ImGui.EndDragDropTarget();
+        }
     }
 
     private void DrawModeChoice()

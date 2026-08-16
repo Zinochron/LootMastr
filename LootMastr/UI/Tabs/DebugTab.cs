@@ -187,7 +187,19 @@ public sealed class DebugTab : ITab
 
             builder.AppendLine();
             builder.AppendLine("AddonNeedGreed AtkValues:");
-            AppendAddonValues(builder);
+            AppendAddonValues(builder, "NeedGreed");
+
+            // Captured too, so a shop that failed to read can be diagnosed from the same file.
+            foreach (var name in new[] { "ShopExchangeCurrency", "ShopExchangeItem", "InclusionShop", "Shop" })
+            {
+                var shop = Services.GameGui.GetAddonByName(name);
+                if (shop.IsNull || !shop.IsVisible)
+                    continue;
+
+                builder.AppendLine();
+                builder.AppendLine($"{name} AtkValues:");
+                AppendAddonValues(builder, name);
+            }
 
             var path = Path.Combine(Services.PluginInterface.GetPluginConfigDirectory(),
                                     $"loot-capture-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
@@ -209,9 +221,9 @@ public sealed class DebugTab : ITab
     /// exactly what is needed to finish <see cref="LootAssigner.PerformAssignment"/>: the strings
     /// tell you where the party member rows sit, and the indices tell you what to fire back.
     /// </summary>
-    private static unsafe void AppendAddonValues(StringBuilder builder)
+    private static unsafe void AppendAddonValues(StringBuilder builder, string addonName)
     {
-        var addon = Services.GameGui.GetAddonByName("NeedGreed");
+        var addon = Services.GameGui.GetAddonByName(addonName);
         if (addon.IsNull)
         {
             builder.AppendLine("  addon not found");
@@ -221,9 +233,13 @@ public sealed class DebugTab : ITab
         builder.AppendLine($"  visible={addon.IsVisible} ready={addon.IsReady} " +
                            $"AtkValuesCount={addon.AtkValuesCount}");
 
-        var needGreed = (AddonNeedGreed*)addon.Address;
-        if (needGreed != null)
-            builder.AppendLine($"  NumItems={needGreed->NumItems} SelectedItemIndex={needGreed->SelectedItemIndex}");
+        if (addonName == "NeedGreed")
+        {
+            var needGreed = (AddonNeedGreed*)addon.Address;
+            if (needGreed != null)
+                builder.AppendLine($"  NumItems={needGreed->NumItems} " +
+                                   $"SelectedItemIndex={needGreed->SelectedItemIndex}");
+        }
 
         var index = 0;
 

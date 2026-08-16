@@ -118,6 +118,13 @@ upgrade materials. Everything else is discovered from the game:
   it" fallback, and since the last fight drops exactly one slot it stamped **Weapon** onto every
   mount, minion and orchestrion roll that fight's books also buy. Unassigned is the honest answer.
 
+- **The books themselves**, when a shop is open. Standing at the exchange NPC settles which shop a
+  tier means better than any name matching can, because the game is already showing the right one.
+  `Discover exchange` reads the open window's item ids, finds the `SpecialShop` rows that overlap
+  with them, and takes the currencies those rows charge as the books. Assigning them to fights I–IV
+  goes by ascending item id, which is a guess — books are created in fight order — so it is
+  reported rather than applied silently, and every one stays editable.
+
 - **Book-for-book trades.** Most of the last fight's shop is its books buying the earlier fights'
   books, and reading those rows as gear was the other half of why they all came out as "Weapon".
   A reward that is itself one of the tier's books is recorded as a `TierTokenConversion` instead,
@@ -143,6 +150,16 @@ again.
 Practical consequence worth knowing: the tier's four **item levels** are load-bearing and the shop
 discovery is not. A wrong item level breaks the roster grid; a missing exchange table only costs
 the planner its "can buy with books" arithmetic.
+
+### Coffers are not gear
+
+`TierCatalog.TryMatch` decides whether something in a chest is worth planning around, and item
+level cannot answer that for a **coffer**: coffers have no equip category and no item level at all.
+A correctly configured tier was still calling every coffer "not tier loot" until this was handled
+separately — the name is what says what is inside, so `Slots.SlotFromName` decides for them.
+
+Order in `TryMatch` is: the discovered exchange, then upgrade materials by id, then gear that drops
+as itself (equippable at a tier item level), then coffers by name.
 - **Which zone is which fight** is learned the first time a chest is seen there, and only when two
   or more of its drops match one fight's pool — one match could be a slot two fights share.
 

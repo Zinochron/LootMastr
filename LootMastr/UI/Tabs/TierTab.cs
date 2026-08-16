@@ -166,14 +166,22 @@ public sealed class TierTab : ITab
     {
         if (ImGui.Button("Discover exchange"))
         {
+            // Standing at the NPC settles which shop this tier means, so that is tried first and
+            // the books it finds are what the rest of the discovery then keys on.
+            var fromShop = tiers.DiscoverBooksFromOpenShop();
+            if (!string.IsNullOrEmpty(fromShop))
+                Services.Chat.Print($"LootMastr: {fromShop}");
+
             var count = tiers.DiscoverRewards();
             Services.Chat.Print(count > 0
                                     ? $"LootMastr: found {count} exchange entries."
-                                    : "LootMastr: found nothing — check that the book names below resolve.");
+                                    : "LootMastr: found nothing — check that the books below resolve.");
         }
 
         Widgets.HelpMarker("Reads the game's own shop data for everything this tier's books buy, " +
-                           "including how many books each costs. Slots you have already assigned are kept.");
+                           "including how many books each costs. Slots you have already assigned are kept.\n\n" +
+                           "Do this standing at the exchange NPC with the shop open and it will read " +
+                           "the tier's books off the window first, so nothing has to be set up by hand.");
 
         ImGui.SameLine();
         if (ImGui.Button("Save tier"))
