@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LootMastr.Data;
+using LootMastr.Planning;
 
 namespace LootMastr.Roster;
 
@@ -97,32 +98,16 @@ public sealed class RosterStore
     }
 
     /// <summary>
-    /// Updates the job of members already in the roster, and adds nobody. Swapping job mid-tier is
-    /// meant to be an emergency, but when it happens the role drives the damage-dealer priority and
-    /// a stale job quietly plans for the wrong person — while adding whoever wanders into the party
-    /// is exactly what the roster must not do.
+    /// Changes a member's job. Nothing reads the job directly — everything goes through the role
+    /// it implies — so this is also how the damage-dealer priority moves.
     /// </summary>
-    public int RefreshJobsFromParty(IEnumerable<PartyPlayer> party)
+    public void SetJob(RosterMember member, uint jobId)
     {
-        var changed = 0;
+        if (member.JobId == jobId)
+            return;
 
-        foreach (var player in party)
-        {
-            if (player.JobId == 0)
-                continue;
-
-            var member = Find(player.Name, player.World);
-            if (member == null || member.JobId == player.JobId)
-                continue;
-
-            member.JobId = player.JobId;
-            changed++;
-        }
-
-        if (changed > 0)
-            config.Save();
-
-        return changed;
+        member.JobId = jobId;
+        config.Save();
     }
 
     public RaidRole RoleOf(RosterMember member) => jobs.RoleOf(member.JobId);
@@ -142,19 +127,22 @@ public sealed class RosterStore
             hash.Add(member.JobId);
             hash.Add(member.ItemsReceived);
 
-            foreach (var (slot, need) in member.Needs)
+            // Walked in a fixed order rather than over the dictionaries. Their order is not
+            // guaranteed, and NeedFor inserts on access, so hashing them directly would make the
+            // fingerprint change on its own — recomputing the whole plan every frame for nothing.
+            foreach (var slot in Slots.All)
             {
+                if (!member.Needs.TryGetValue(slot, out var need))
+                    continue;
+
                 hash.Add(slot);
                 hash.Add(need.Source);
                 hash.Add(need.Obtained);
                 hash.Add(need.UpgradeObtained);
             }
 
-            foreach (var (encounter, count) in member.Tokens)
-            {
-                hash.Add(encounter);
-                hash.Add(count);
-            }
+            for (var encounter = 1; encounter <= PlayerPlan.MaxEncounters; encounter++)
+                hash.Add(member.TokensFor(encounter));
         }
 
         return hash.ToHashCode();

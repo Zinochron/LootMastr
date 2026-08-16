@@ -26,7 +26,6 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ClearTracker clears;
     private readonly AddonWatcher watcher;
     private readonly LootAssignmentRunner runner;
-    private readonly RosterSync rosterSync;
 
     public Configuration Configuration { get; }
     public ItemCatalog Items { get; }
@@ -54,7 +53,6 @@ public sealed class Plugin : IDalamudPlugin
         Classifier = new GearClassifier(Tiers, Items);
         Party = new PartyReader();
         Roster = new RosterStore(Configuration, Jobs);
-        rosterSync = new RosterSync(Roster, Party);
         importer = new BisImporter(Configuration, Classifier, Jobs, Tiers, Items);
 
         Planner = new LootPlanner(Configuration, Tiers, Roster);
@@ -151,7 +149,6 @@ public sealed class Plugin : IDalamudPlugin
         Scanner.Dispose();
         watcher.Dispose();
         runner.Dispose();
-        rosterSync.Dispose();
 
         ECommonsMain.Dispose();
     }

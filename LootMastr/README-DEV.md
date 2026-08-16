@@ -364,6 +364,20 @@ Slots are filed from each item's own equip category rather than from its positio
 inventory container and the examine window do not lay out the same. Rings are the exception —
 item data never says which finger — so they go in the order the game listed them.
 
+## Jobs, and how a change reaches the plan
+
+Jobs are **never** pulled from the party on their own. A party picks up strangers and people swap
+for a single pull; the roster is a static, and it only changes when somebody says so. The two ways
+in are the job picker on the roster's job icon and the explicit *Sync from party* button.
+
+Getting a change to arrive is `RosterStore.Signature()`, a fingerprint of everything the planner
+reads — jobs included. `PlanTab` and `LootAssigner` both recompute when it moves, so nothing has to
+be told about anything.
+
+It walks `Slots.All` and encounters 1–4 in a fixed order rather than iterating the dictionaries.
+Dictionary order is not guaranteed and `NeedFor` inserts on access, so hashing them directly would
+have let the fingerprint change on its own — quietly recomputing the whole plan every frame.
+
 ## Ticking things off
 
 Two independent paths, because neither is reliable alone:

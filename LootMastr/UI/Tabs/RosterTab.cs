@@ -285,14 +285,20 @@ public sealed class RosterTab : ITab
         var job = jobs.Get(member.JobId);
 
         Widgets.Icon(job.IconId, 18f);
+
+        if (ImGui.IsItemClicked())
+            ImGui.OpenPopup("##job");
+
+        var role = roster.RoleOf(member);
+        Widgets.Tooltip($"{job.Name} ({role})\n\nClick to change job.");
+
+        DrawJobPicker(member);
+
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted(member.Name);
 
-        var role = roster.RoleOf(member);
-        var summary = SummaryOf(member);
-
-        Widgets.Tooltip($"{member.DisplayName}\n{job.Name} ({role})\n\n{summary}");
+        Widgets.Tooltip($"{member.DisplayName}\n{job.Name} ({role})\n\n{SummaryOf(member)}");
 
         if (role == RaidRole.Dps)
         {
@@ -405,6 +411,43 @@ public sealed class RosterTab : ITab
 
             member.Tokens[encounter.Index] = Math.Max(0, held);
             config.Save();
+        }
+    }
+
+    /// <summary>
+    /// Changing someone's job by hand. Jobs are never pulled from the party on their own — a party
+    /// picks up strangers and people swap for a pull — so this and "Sync from party" are the only
+    /// two ways the roster's idea of a job moves.
+    ///
+    /// Everything downstream keys off the roster's fingerprint, which includes the job, so the plan
+    /// and the schedule follow a change here without being told.
+    /// </summary>
+    private void DrawJobPicker(RosterMember member)
+    {
+        using var popup = ImRaii.Popup("##job");
+        if (!popup.Success)
+            return;
+
+        ImGui.TextUnformatted($"{member.Name} — job");
+        ImGui.Separator();
+
+        foreach (var group in jobs.All.Values
+                                  .Where(j => j.Role != RaidRole.Unknown)
+                                  .GroupBy(j => j.Role)
+                                  .OrderBy(g => g.Key))
+        {
+            ImGui.TextDisabled(group.Key.ToString());
+
+            foreach (var job in group.OrderBy(j => j.Abbreviation, StringComparer.Ordinal))
+            {
+                Widgets.Icon(job.IconId, 18f);
+                ImGui.SameLine();
+
+                if (!ImGui.Selectable($"{job.Abbreviation}  {job.Name}##{job.Id}", member.JobId == job.Id))
+                    continue;
+
+                roster.SetJob(member, job.Id);
+            }
         }
     }
 
