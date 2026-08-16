@@ -101,6 +101,18 @@ public sealed class LootAssignmentRunner : IDisposable
     /// <summary>True when the last run finished with the item actually gone from the chest.</summary>
     public bool LastSucceeded { get; private set; }
 
+    /// <summary>What the last successful run handed over, for the caller to write down once.</summary>
+    public LiveLootItem? Completed { get; private set; }
+
+    public string CompletedRecipient { get; private set; } = string.Empty;
+
+    /// <summary>Called by the caller once it has recorded <see cref="Completed"/>.</summary>
+    public void ClearCompleted()
+    {
+        Completed = null;
+        CompletedRecipient = string.Empty;
+    }
+
     public string Start(LiveLootItem target, string playerName)
     {
         // Off unless switched on, because an earlier version of this crashed the client. The list
@@ -298,6 +310,8 @@ public sealed class LootAssignmentRunner : IDisposable
             return;
 
         LastSucceeded = true;
+        Completed = item;
+        CompletedRecipient = recipient;
         Status = $"{item.Name} → {recipient}.";
         phase = Phase.Done;
     }

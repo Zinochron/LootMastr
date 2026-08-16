@@ -258,11 +258,17 @@ public sealed class LootTab : ITab
 
     private void DrawDecisions()
     {
-        using var table = ImRaii.Table("##decisions", 4,
+        var verdict = assigner.Verdict;
+
+        using var table = ImRaii.Table("##decisions", 5,
                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
         if (!table.Success)
             return;
 
+        // One button per box rather than a single "next": which coffer is being handed over is the
+        // leader's call, and a list that decides for you goes wrong the moment it thinks an item is
+        // still open when it is not.
+        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 62f * ImGuiHelpers.GlobalScale);
         ImGui.TableSetupColumn("Item");
         ImGui.TableSetupColumn("Goes to", ImGuiTableColumnFlags.WidthFixed, 130f * ImGuiHelpers.GlobalScale);
         ImGui.TableSetupColumn("Then", ImGuiTableColumnFlags.WidthStretch);
@@ -274,6 +280,28 @@ public sealed class LootTab : ITab
             using var id = ImRaii.PushId(decision.Item.Index);
 
             ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+
+            if (decision.AlreadyAssigned)
+            {
+                ImGui.AlignTextToFramePadding();
+                Widgets.Coloured(Widgets.Done, "done");
+            }
+            else
+            {
+                using (ImRaii.Disabled(!verdict.Ok || assigner.IsAssigning || decision.Winner == null))
+                {
+                    if (ImGui.SmallButton("Assign"))
+                    {
+                        if (!assigner.PerformAssignment(decision, out var reason))
+                            Services.Chat.PrintError($"LootMastr: {reason}");
+                    }
+                }
+
+                if (!verdict.Ok)
+                    Widgets.Tooltip(verdict.Reason);
+            }
+
             ImGui.TableNextColumn();
             Widgets.Icon(decision.Item.IconId, 18f);
             ImGui.SameLine();
@@ -325,30 +353,11 @@ public sealed class LootTab : ITab
 
     private void DrawActions()
     {
-        var verdict = assigner.Verdict;
-
-        // One at a time on purpose: each assignment walks three windows, and the next cannot start
-        // until those are clear. Handing them over one by one also means a refusal stops there.
-        var next = assigner.Decisions.FirstOrDefault(d => d.Winner != null && !d.Item.Decided);
-
-        using (ImRaii.Disabled(!verdict.Ok || assigner.IsAssigning || next == null))
-        {
-            var label = next == null ? "Assign" : $"Assign {next.Item.What} to {next.Winner!.Name}";
-
-            if (ImGui.Button(label) && next != null)
-            {
-                if (!assigner.PerformAssignment(next, out var reason))
-                    Services.Chat.PrintError($"LootMastr: {reason}");
-            }
-        }
-
-        Widgets.HelpMarker(config.Mode == AssignmentMode.Automatic
-                               ? "Opens the assignment window, picks the player, and answers the " +
-                                 "game's confirmation — but only once that confirmation names the " +
-                                 "right player and the right item."
-                               : "Opens the assignment window and picks the player, then leaves the " +
-                                 "game's own \"Allow X to claim Y?\" for you to answer.\n\n" +
-                                 "Set Automation to \"Assign automatically\" to have that answered too.");
+        ImGui.TextDisabled(config.Mode == AssignmentMode.Automatic
+                               ? "Assign opens the window, picks the player, and answers the game's " +
+                                 "confirmation once it names the right player and item."
+                               : "Assign opens the window and picks the player, then leaves the game's " +
+                                 "own \"Allow X to claim Y?\" for you.");
 
         if (assigner.IsAssigning)
         {
@@ -356,8 +365,6 @@ public sealed class LootTab : ITab
             if (ImGui.Button("Stop"))
                 assigner.StopAssigning("Stopped.");
         }
-
-        ImGui.SameLine();
 
         if (ImGui.Button("Announce in /p"))
             announcer.Announce(assigner.Decisions);

@@ -12,7 +12,8 @@ public sealed record LootDecision(
     LiveLootItem Item,
     RosterMember? Winner,
     string Reason,
-    IReadOnlyList<Candidate> Ranking);
+    IReadOnlyList<Candidate> Ranking,
+    bool AlreadyAssigned = false);
 
 /// <summary>
 /// Works out who each item in the open loot window should go to, and is the single place that would
@@ -32,6 +33,15 @@ public sealed class LootAssigner
 
     private string lastSignature = string.Empty;
     private List<LootDecision> decisions = [];
+
+    /// <summary>
+    /// Items handed over since this chest opened, keyed by their slot and id.
+    ///
+    /// The game's own <c>RollResult</c> cannot answer this: in Lootmaster mode <c>Loot.Items</c> is
+    /// empty, so every item reads as undecided however many have been given away. Without this an
+    /// assigned coffer stayed top of the list and got offered again, and again.
+    /// </summary>
+    private readonly HashSet<string> assigned = [];
 
     public LootAssigner(Configuration config, LootWindowReader loot, LootPlanner planner,
                         RosterStore roster, SafetyGuard guard, TierCatalog tiers,
@@ -56,12 +66,17 @@ public sealed class LootAssigner
     /// </summary>
     public void Refresh(bool force = false)
     {
+        CollectCompleted();
+
         if (!loot.WindowOpen)
         {
             if (decisions.Count > 0)
             {
                 decisions = [];
                 lastSignature = string.Empty;
+
+                // A new chest is a clean slate; what was handed out of the last one is history.
+                assigned.Clear();
             }
 
             return;
@@ -99,8 +114,33 @@ public sealed class LootAssigner
         LearnTerritory(items);
     }
 
+    private static string KeyOf(LiveLootItem item) => $"{item.Index}:{item.ItemId}";
+
+    /// <summary>
+    /// Writes down what the runner just handed over: remembers it so it is not offered twice, and
+    /// ticks it off the recipient's list without waiting for the chat message.
+    /// </summary>
+    private void CollectCompleted()
+    {
+        if (runner.Completed is not { } item)
+            return;
+
+        var member = roster.Members.FirstOrDefault(m => m.Name == runner.CompletedRecipient);
+        if (member != null)
+            Record(member, item);
+
+        assigned.Add(KeyOf(item));
+        runner.ClearCompleted();
+
+        // Force the next Refresh to recompute: the chest reads the same, but one item is spoken for.
+        lastSignature = string.Empty;
+    }
+
     private LootDecision Decide(LiveLootItem item, IReadOnlyList<PendingAward> pending)
     {
+        if (assigned.Contains(KeyOf(item)))
+            return new LootDecision(item, null, "Already handed over.", [], AlreadyAssigned: true);
+
         if (!item.IsTierLoot)
             return new LootDecision(item, null, "Not part of this tier — free for all.", []);
 
@@ -158,6 +198,11 @@ public sealed class LootAssigner
             return;
 
         Record(decision.Winner, decision.Item);
+
+        // Also out of the running: recording it by hand means it has been handed over.
+        assigned.Add(KeyOf(decision.Item));
+        lastSignature = string.Empty;
+
         Status = $"{decision.Item.What} recorded for {decision.Winner.Name}.";
     }
 

@@ -106,6 +106,21 @@ unique, so the second cannot go to whoever is taking the first. `LootAssigner.Re
 decides the window in order, feeding each decision the ones above it as `PendingAward`s, instead of
 ranking every item against the same untouched roster.
 
+### Knowing what has already been handed over
+
+The game cannot tell you. `RollResult` lives in `Loot.Items`, which is **empty** in Lootmaster mode
+— so every item in the chest reads as undecided however many have been given away. The first
+version had a single "assign the next one" button keyed on that, so after a successful assignment it
+picked the same coffer again, and again.
+
+`LootAssigner.assigned` remembers what has gone, keyed by slot and item id, cleared when the chest
+closes. A successful run also ticks the recipient's list without waiting for the chat message, and
+recording something by hand counts too.
+
+The button is per row now rather than one for "next". Which coffer is being handed over is the
+leader's call, and a list that decides for you goes wrong the moment it believes an item is still
+open when it is not.
+
 ### It can legitimately fail
 
 Assigning a unique item to someone who already owns one is refused by the game, with an error
