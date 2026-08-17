@@ -9,7 +9,26 @@ using Newtonsoft.Json.Linq;
 
 namespace LootMastr.Import;
 
-public sealed record ImportedSet(string Name, string Job, IReadOnlyDictionary<GearSlot, uint> Items);
+public sealed record ImportedSet(
+    string Name,
+    string Job,
+    IReadOnlyDictionary<GearSlot, uint> Items,
+    IReadOnlyDictionary<GearSlot, IReadOnlyList<uint>> Materia,
+    uint FoodItemId)
+{
+    public int MateriaCount
+    {
+        get
+        {
+            var total = 0;
+
+            foreach (var melds in Materia.Values)
+                total += melds.Count;
+
+            return total;
+        }
+    }
+}
 
 public sealed record ImportResult(bool Ok, string Message, IReadOnlyList<ImportedSet> Sets)
 {
@@ -17,8 +36,16 @@ public sealed record ImportResult(bool Ok, string Message, IReadOnlyList<Importe
 }
 
 /// <summary>
-/// Pulls a gear set out of XIVGear or Etro. Only the item ids matter here — materia and stats are
-/// somebody else's problem; LootMastr just needs to know which slot wants which piece.
+/// Pulls a gear set out of XIVGear or Etro: which slot wants which piece, what is melded into it,
+/// and what the set is eating.
+///
+/// Materia and food are read because a target set is the one thing that cannot be measured — the
+/// equipped side comes off the character with its melds already in the totals, but a set nobody is
+/// wearing has to be added up from parts.
+///
+/// Both planners have changed their json shape before, so the readers here are deliberately
+/// tolerant and the import <b>says how much it found</b>. "12 pieces, 25 materia" is a sentence you
+/// can check against the page you copied the link from; a silent zero is not.
 /// </summary>
 public sealed class GearPlannerImport : IDisposable
 {
@@ -146,6 +173,7 @@ public sealed class GearPlannerImport : IDisposable
     private static ImportedSet ReadXivGearSet(JObject set, string job, string? sheetName)
     {
         var items = new Dictionary<GearSlot, uint>();
+        var materia = new Dictionary<GearSlot, IReadOnlyList<uint>>();
 
         if (set["items"] is JObject slots)
         {
@@ -155,8 +183,14 @@ public sealed class GearPlannerImport : IDisposable
                     continue;
 
                 var id = value?["id"]?.Value<long>() ?? 0;
-                if (id > 0)
-                    items[slot] = (uint)id;
+                if (id <= 0)
+                    continue;
+
+                items[slot] = (uint)id;
+
+                var melds = ReadIds(value?["materia"]);
+                if (melds.Count > 0)
+                    materia[slot] = melds;
             }
         }
 
@@ -164,7 +198,51 @@ public sealed class GearPlannerImport : IDisposable
         if (string.IsNullOrWhiteSpace(name))
             name = sheetName ?? "Imported set";
 
-        return new ImportedSet(name, job, items);
+        return new ImportedSet(name, job, items, materia, FoodOf(set));
+    }
+
+    /// <summary>
+    /// A list of item ids out of whatever shape the planner used: bare numbers, or objects with an
+    /// <c>id</c>. Empty meld slots come through as 0 or -1 and are dropped.
+    /// </summary>
+    private static List<uint> ReadIds(JToken? token)
+    {
+        var result = new List<uint>();
+
+        if (token is not JArray array)
+            return result;
+
+        foreach (var entry in array)
+        {
+            var id = entry.Type switch
+            {
+                JTokenType.Integer => entry.Value<long>(),
+                JTokenType.Object => entry["id"]?.Value<long>() ?? 0,
+                _ => 0,
+            };
+
+            if (id > 0)
+                result.Add((uint)id);
+        }
+
+        return result;
+    }
+
+    /// <summary>The set's food, spelled three ways across the two planners and their old versions.</summary>
+    private static uint FoodOf(JObject set)
+    {
+        foreach (var key in new[] { "food", "foodId" })
+        {
+            var token = set[key];
+            if (token == null || token.Type == JTokenType.Null)
+                continue;
+
+            var id = token.Type == JTokenType.Object ? token["id"]?.Value<long>() ?? 0 : token.Value<long>();
+            if (id > 0)
+                return (uint)id;
+        }
+
+        return 0;
     }
 
     private async Task<ImportResult> FetchEtro(string uuid, CancellationToken token)
@@ -196,9 +274,69 @@ public sealed class GearPlannerImport : IDisposable
         var set = new ImportedSet(
             root.Value<string>("name") ?? "Imported set",
             root.Value<string>("jobAbbrev") ?? string.Empty,
-            items);
+            items,
+            EtroMateria(root, items),
+            FoodOf(root));
 
         return new ImportResult(true, "Read 1 set from Etro.", [set]);
+    }
+
+    /// <summary>
+    /// Etro keeps melds in one table off to the side rather than on the piece, keyed by whichever
+    /// handle that version used — the piece's item id, or the slot name. Both are tried, because
+    /// which one it is has changed and the cost of checking is one dictionary lookup.
+    /// </summary>
+    private static Dictionary<GearSlot, IReadOnlyList<uint>> EtroMateria(
+        JObject root, IReadOnlyDictionary<GearSlot, uint> items)
+    {
+        var result = new Dictionary<GearSlot, IReadOnlyList<uint>>();
+
+        if (root["materia"] is not JObject table)
+            return result;
+
+        foreach (var (slot, itemId) in items)
+        {
+            var entry = table[itemId.ToString()] ?? table[SlotKeyOf(slot)];
+            if (entry == null)
+                continue;
+
+            // The inner shape is slot-number → materia item id, so the values are what matter and
+            // their keys are only the meld position.
+            var melds = new List<uint>();
+
+            switch (entry)
+            {
+                case JObject slots:
+                    foreach (var (_, value) in slots)
+                    {
+                        var id = value?.Type == JTokenType.Integer ? value.Value<long>() : 0;
+                        if (id > 0)
+                            melds.Add((uint)id);
+                    }
+
+                    break;
+
+                case JArray:
+                    melds.AddRange(ReadIds(entry));
+                    break;
+            }
+
+            if (melds.Count > 0)
+                result[slot] = melds;
+        }
+
+        return result;
+    }
+
+    private static string SlotKeyOf(GearSlot slot)
+    {
+        foreach (var (key, value) in EtroSlots)
+        {
+            if (value == slot)
+                return key;
+        }
+
+        return string.Empty;
     }
 
     public void Dispose() => http.Dispose();

@@ -38,6 +38,7 @@ public sealed class Plugin : IDalamudPlugin
     public LootWindowReader Loot { get; }
     public LootAssigner Assigner { get; }
     public EquipmentReader Equipment { get; }
+    public AttributeReader Attributes { get; }
     public GearScanner Scanner { get; }
 
     public Plugin(IDalamudPluginInterface pluginInterface)
@@ -66,7 +67,8 @@ public sealed class Plugin : IDalamudPlugin
         clears = new ClearTracker(Configuration, Tiers, Roster, Party);
 
         Equipment = new EquipmentReader(Items);
-        Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Classifier);
+        Attributes = new AttributeReader();
+        Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Attributes, Classifier);
         watcher = new AddonWatcher();
 
         var tabs = new List<ITab>
@@ -75,7 +77,7 @@ public sealed class Plugin : IDalamudPlugin
             new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, Scanner, Items),
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),
-            new DebugTab(Loot, Party, Tiers, tracker, watcher),
+            new DebugTab(Loot, Party, Tiers, tracker, watcher, Items, Jobs),
             new SettingsTab(Configuration, Roster, Planner),
         };
 

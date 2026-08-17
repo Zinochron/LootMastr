@@ -505,6 +505,56 @@ pane is an `ImRaii.Child` so a long name clips instead of shoving the other colu
 Editing a need goes through **`DrawNeedPopup`**, shared with the simple grid. Two views with their
 own idea of how a need is edited is how you end up with two subtly different sets of rules.
 
+### Measured stats, not reconstructed ones
+
+**The game will tell you another player's finished attributes, and it will not tell you their
+melds.** `AgentInspect.ItemData` carries an item id, an icon and nothing else — no materia, no high
+quality flag. But `UIState.Inspect.BaseParams` is a span of 74 totals the game itself computed,
+indexed by `BaseParam` row id, with materia, food and every trait already in them.
+
+That one fact decides the whole shape of the damage estimate:
+
+> Measured stats are the truth. Arithmetic is only ever used for the **difference** a swapped item
+> would make.
+
+`AttributeReader` reads those totals for the local player (`PlayerState.GetAttributeByIndex`) and
+for whoever the examine window is showing. `GearScanner` stores them on the roster row as a plain
+`BaseParam` id → value map, because for anybody but the local player they exist **only while that
+window is open** — closing it takes them with it.
+
+`BaseParam` row ids and `PlayerAttribute` values are the same list. That is not a coincidence worth
+relying on blindly, but it was verified column by column across all 73 entries, and it is what lets
+one set of constants serve both readers. They live in `Data/Attributes`.
+
+Two consequences worth stating, because they simplify a lot:
+
+- **Equipped materia is never stored.** It is already inside the measured totals. Only
+  `SlotNeed.BisMateria` exists, for the target set — the one thing that cannot be measured, because
+  nobody is wearing it.
+- **Food is the same.** Only `RosterMember.TargetFoodItemId`, from the import.
+
+### The four things a schema could not answer
+
+`Debug → Write stat probe`. Four pieces of game data were readable as *shapes* and not as values,
+and a damage model built on a plausible reading of each would be wrong by some percentage nobody
+could ever find. The probe prints them next to something checkable:
+
+1. **`ParamGrow` has no MAIN/SUB/DIV columns.** The formula needs those three numbers per level and
+   the sheet's columns are called `BaseSpeed`, `LevelModifier`, `HpModifier` and so on. Until the
+   mapping is confirmed the level table is hardcoded, and the probe dumps the columns for 80/90/100
+   so the community numbers can be matched against them.
+2. **`BaseParamSpecial` — HQ bonus, or HQ totals?** Printed beside the normal values on a craftable
+   piece, where a delta is small and a total is not.
+3. **`ClassJob.PrimaryStat` — a `BaseParam` row id, or its own enum?** If it is the former, a
+   paladin reads 1 and a black mage 4.
+4. **`InventoryItem.Materia[i]` — materia sheet row, or item id?** The catalogue's reverse table is
+   keyed by item id; the probe says which it got.
+
+It also tries `InventoryType.Examine`, which *might* hold an inspected character's real
+`InventoryItem`s, melds included. If it does, the one remaining gap closes — the gain of a new piece
+is otherwise computed without its materia, which makes it slightly conservative. Worth a look, not
+worth depending on.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

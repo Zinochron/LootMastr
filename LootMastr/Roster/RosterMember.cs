@@ -60,6 +60,16 @@ public sealed class SlotNeed
     /// <summary>Item id from the imported gear set, 0 when the slot was set by hand.</summary>
     public uint BisItemId { get; set; }
 
+    /// <summary>
+    /// Materia melded into the target piece, as materia <b>item</b> ids — which is how both gear
+    /// planners spell them.
+    ///
+    /// Only the target side is stored. What somebody currently has melded does not need to be:
+    /// their finished attributes are read straight off the character and already contain it. This
+    /// is for the set nobody is wearing yet, where there is nothing to measure.
+    /// </summary>
+    public List<uint> BisMateria { get; set; } = [];
+
     /// <summary>Actual: item id last seen equipped on the character. 0 when never seen.</summary>
     public uint EquippedItemId { get; set; }
 
@@ -155,7 +165,27 @@ public sealed class RosterMember
     /// <summary>Average item level as the game reported it at the last scan. 0 when never read.</summary>
     public int AverageItemLevel { get; set; }
 
+    /// <summary>
+    /// The character's finished attributes at the last scan, keyed by <c>BaseParam</c> row id.
+    ///
+    /// Stored rather than recomputed, because they cannot be recomputed: they are the totals the
+    /// game itself worked out, materia and food included, and for anyone but the local player they
+    /// only exist while the examine window is open. Kept as a plain id → value map so a stat the
+    /// damage model does not use yet is still there when it does.
+    /// </summary>
+    public Dictionary<uint, int> Attributes { get; set; } = new();
+
+    /// <summary>Job and level the attributes above were read on — not necessarily the roster's job.</summary>
+    public uint MeasuredJobId { get; set; }
+
+    public int MeasuredLevel { get; set; }
+
+    /// <summary>Food the target set assumes, as an item id. 0 for none.</summary>
+    public uint TargetFoodItemId { get; set; }
+
     public bool HasBeenScanned => LastScannedUtc != null;
+
+    public bool HasMeasuredStats => Attributes.Count > 0 && MeasuredLevel > 0;
 
     public string Key => RosterKey.For(Name, World);
 

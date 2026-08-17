@@ -23,17 +23,22 @@ public sealed class DebugTab : ITab
     private readonly TierCatalog tiers;
     private readonly ObtainTracker tracker;
     private readonly AddonWatcher watcher;
+    private readonly ItemCatalog catalog;
+    private readonly JobCatalog jobs;
 
     private string lastCapture = string.Empty;
+    private string lastProbe = string.Empty;
 
     public DebugTab(LootWindowReader loot, PartyReader party, TierCatalog tiers, ObtainTracker tracker,
-                    AddonWatcher watcher)
+                    AddonWatcher watcher, ItemCatalog items, JobCatalog jobs)
     {
         this.loot = loot;
         this.party = party;
         this.tiers = tiers;
         this.tracker = tracker;
         this.watcher = watcher;
+        this.catalog = items;
+        this.jobs = jobs;
     }
 
     public string Title => "Debug";
@@ -202,6 +207,58 @@ public sealed class DebugTab : ITab
         {
             ImGui.SameLine();
             ImGui.TextDisabled(lastCapture);
+        }
+
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawStatProbe();
+    }
+
+    /// <summary>
+    /// The game data behind the damage estimate, dumped next to something checkable.
+    ///
+    /// Four things about the stat sheets could only be read as shapes, not values — most of all
+    /// which <c>ParamGrow</c> columns are the damage formula's level constants, which have no
+    /// column names at all. Every one of them is a single look away from settled, and a damage
+    /// model built on a plausible reading instead would be quietly wrong by some percentage nobody
+    /// could find.
+    /// </summary>
+    private void DrawStatProbe()
+    {
+        ImGui.TextUnformatted("Probe the stat data");
+        Widgets.HelpMarker("Writes the level table, job modifiers, your own measured attributes and " +
+                           "your melds to a file, so they can be held against the character window.\n\n" +
+                           "Two of the answers only exist in the right moment: run it once normally, " +
+                           "and once with somebody's examine window open.");
+        ImGui.Separator();
+
+        if (ImGui.Button("Write stat probe"))
+            lastProbe = WriteProbe();
+
+        if (string.IsNullOrEmpty(lastProbe))
+            return;
+
+        ImGui.SameLine();
+        ImGui.TextDisabled(lastProbe);
+    }
+
+    private string WriteProbe()
+    {
+        try
+        {
+            var path = Path.Combine(Services.PluginInterface.GetPluginConfigDirectory(),
+                                    $"stat-probe-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+
+            var report = StatProbe.Run(catalog, jobs);
+
+            File.WriteAllText(path, report);
+            Services.Log.Information(report);
+
+            return Path.GetFileName(path);
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Error(ex, "Could not write the stat probe.");
+            return ex.Message;
         }
     }
 

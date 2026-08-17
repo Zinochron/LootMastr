@@ -133,19 +133,35 @@ public sealed class BisImporter : IDisposable
                 // the set is re-imported after a correction.
                 need.Source = GearSource.None;
                 need.BisItemId = 0;
+                need.BisMateria = [];
                 continue;
             }
 
             need.BisItemId = itemId;
             need.Source = classifier.Classify(itemId);
+            need.BisMateria = set.Materia.TryGetValue(slot, out var melds) ? [..melds] : [];
 
             if (need.Source.NeedsRaidResource())
                 fromRaid++;
         }
 
+        member.TargetFoodItemId = set.FoodItemId;
+
         Choosing = null;
         Choices = [];
-        Status = $"{member.Name}: {set.Name} — {fromRaid} piece(s) come out of the raid.";
+
+        // The materia and food counts are in the message on purpose: both planners have changed
+        // their json shape before, and "25 materia" against a page you can see is the cheapest
+        // possible check that the reader still understands it.
+        var extras = new List<string> { $"{fromRaid} piece(s) come out of the raid" };
+
+        if (set.MateriaCount > 0)
+            extras.Add($"{set.MateriaCount} materia");
+
+        if (set.FoodItemId != 0)
+            extras.Add($"food: {items.GetItemName(set.FoodItemId)}");
+
+        Status = $"{member.Name}: {set.Name} — {string.Join(", ", extras)}.";
         config.Save();
     }
 

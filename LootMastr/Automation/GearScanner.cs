@@ -47,6 +47,7 @@ public sealed class GearScanner : IDisposable
     private readonly JobCatalog jobs;
     private readonly PartyReader party;
     private readonly EquipmentReader equipment;
+    private readonly AttributeReader attributes;
     private readonly GearClassifier classifier;
 
     private readonly Queue<PartyPlayer> queue = new();
@@ -64,13 +65,14 @@ public sealed class GearScanner : IDisposable
     private DateTime pendingAt;
 
     public GearScanner(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
-                       EquipmentReader equipment, GearClassifier classifier)
+                       EquipmentReader equipment, AttributeReader attributes, GearClassifier classifier)
     {
         this.config = config;
         this.roster = roster;
         this.jobs = jobs;
         this.party = party;
         this.equipment = equipment;
+        this.attributes = attributes;
         this.classifier = classifier;
 
         Services.Framework.Update += OnUpdate;
@@ -279,7 +281,9 @@ public sealed class GearScanner : IDisposable
             var member = roster.Find(local.Name, local.World);
             if (member != null)
             {
-                Apply(member, equipment.ReadLocal(), 0);
+                Apply(member, equipment.ReadLocal(), 0,
+                      attributes.TryReadLocal(out var measured) ? measured : null);
+
                 scanned++;
             }
         }
@@ -336,7 +340,10 @@ public sealed class GearScanner : IDisposable
                 var member = roster.Find(current.Name, current.World);
                 if (member != null)
                 {
-                    Apply(member, gear, equipment.InspectedItemLevel());
+                    // Read while the window is up: these totals do not exist once it closes.
+                    Apply(member, gear, equipment.InspectedItemLevel(),
+                          attributes.TryReadInspected(out var measured) ? measured : null);
+
                     scanned++;
                 }
 
@@ -376,7 +383,8 @@ public sealed class GearScanner : IDisposable
     /// Writes one character's equipment onto their roster row. Slots the scan did not see are
     /// cleared, so taking a piece off shows up; the obtained flags are only ever turned on.
     /// </summary>
-    private void Apply(RosterMember member, IReadOnlyDictionary<GearSlot, uint> gear, int itemLevel)
+    private void Apply(RosterMember member, IReadOnlyDictionary<GearSlot, uint> gear, int itemLevel,
+                       MeasuredStats? measured)
     {
         foreach (var slot in Slots.All)
         {
@@ -407,6 +415,15 @@ public sealed class GearScanner : IDisposable
 
         if (itemLevel > 0)
             member.AverageItemLevel = itemLevel;
+
+        // Kept only when the read worked. Half a stat block is worse than none: the damage model
+        // would rather say "no estimate" than quietly rate somebody on a missing critical hit.
+        if (measured is { IsUsable: true } stats)
+        {
+            member.Attributes = new Dictionary<uint, int>(stats.Values);
+            member.MeasuredJobId = stats.JobId;
+            member.MeasuredLevel = stats.Level;
+        }
 
         config.Save();
     }
