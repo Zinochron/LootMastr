@@ -1122,9 +1122,44 @@ var rules = new PriorityRules();
           Math.Abs(DamageModel.Estimate(set, blm with { Trait = 1.0 }, level)!.Value.DamagePer100Potency
                    - (13161.4 / 1.30)) < 0.1);
 
-    Check("a magical job's trait is 1.30 and a physical one's 1.20",
-          Math.Abs(JobProfile.TraitFor(magical: true) - 1.30) < 1e-9 &&
-          Math.Abs(JobProfile.TraitFor(magical: false) - 1.20) < 1e-9);
+    Check("a magical job's trait is 1.30",
+          Math.Abs(JobProfile.TraitFor(magical: true) - 1.30) < 1e-9);
+}
+
+{
+    // etro.gg/gearset/1dde8dd8-0953-4760-a5a4-1710a023f064 — paladin, i790, 2.50 GCD.
+    //
+    // The second anchor, and it corrected the first. A physical trait of 1.20 was the conventional
+    // reading and this set says 1.00000 exactly — so every physical job had been overstated by a
+    // fifth. It also settles the tank attack power multiplier at 190, which had been a guess: no
+    // other value reproduces Etro's strength multiplier of 2834%.
+    var level = LevelTable.Known(100)!.Value;
+
+    var pld = new JobProfile("PLD",
+                             PotencyPerGcd: 290, OgcdPotencyPerSecond: 35, AutoAttackShare: 0.12,
+                             UsesSpellSpeed: false, UsesTenacity: true,
+                             Trait: 1.00, AttackPowerMultiplier: 190);
+
+    var set = new StatBlock(
+        Level: 100, JobModifier: 100, MainStat: 6772, WeaponDamage: 158, WeaponDelayMs: 2240,
+        CriticalHit: 3595, DirectHit: 1230, Determination: 3066,
+        SkillSpeed: 420, SpellSpeed: 420, Tenacity: 622);
+
+    var estimate = DamageModel.Estimate(set, pld, level)!.Value;
+
+    Check("Etro's paladin set: 7979.5 damage per 100 potency",
+          Math.Abs(estimate.DamagePer100Potency - 7979.5) < 0.1,
+          estimate.DamagePer100Potency.ToString("0.0"));
+
+    Check("Etro's paladin set: a 2.50 second recast", Math.Abs(estimate.Gcd - 2.50) < 0.001);
+
+    Check("a physical job's trait is 1.00, not the conventional 1.20",
+          Math.Abs(JobProfile.TraitFor(magical: false) - 1.00) < 1e-9);
+
+    // No other multiplier reproduces Etro's figure, which is what makes 190 a measurement.
+    Check("only 190 gives a tank Etro's strength multiplier",
+          Math.Abs(DamageModel.Estimate(set, pld with { AttackPowerMultiplier = 237 }, level)!
+                       .Value.DamagePer100Potency - 7979.5) > 100);
 }
 
 {

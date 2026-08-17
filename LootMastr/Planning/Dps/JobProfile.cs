@@ -44,15 +44,28 @@ public sealed record JobProfile(
             AttackPowerMultiplier: tank ? 190 : 237);
 
     /// <summary>
-    /// The job's damage trait — Magick and Mastery on a magical job, Maim and Mastery on a physical
-    /// one. A flat multiplier on everything the job does, and the single easiest term to forget:
-    /// leaving it at 1.0 made every number 23% low, which looks like a plausible number and is not.
+    /// The job's damage trait: a flat multiplier on everything it does, and the single easiest term to
+    /// forget. Leaving it at 1.0 for every job made every magical number 23% low, which looks like a
+    /// plausible number and is not.
     ///
-    /// <b>1.30 for magical is verified</b> — it is exactly the factor between this formula and the
-    /// figure Etro publishes for a black mage set, to one decimal place. 1.20 for physical is the
-    /// convention and has not been checked against a planner yet.
+    /// Both values are now measured against Etro rather than assumed, and the second one corrected
+    /// the first attempt:
+    ///
+    /// <list type="bullet">
+    /// <item><b>Magical: 1.30.</b> Exactly the factor between this formula and Etro's figure for a
+    /// black mage set.</item>
+    /// <item><b>Physical: 1.00.</b> A paladin set came out at exactly 1.00000. The conventional
+    /// wisdom of a 1.20 "Maim and Mastery" was wrong here, and would have overstated every physical
+    /// job by a fifth.</item>
+    /// </list>
+    ///
+    /// The two are not as asymmetric as they look: physical jobs already scale differently through
+    /// <see cref="AttackPowerMultiplier"/>, which is 190 for a tank against 237 for a caster. What
+    /// remains unverified is whether a <i>melee or ranged physical</i> job sits at 1.00 like the tank
+    /// or carries a trait of its own — that wants a third set to settle, and 1.00 is now the reading
+    /// with evidence behind it rather than the one without.
     /// </summary>
-    public static double TraitFor(bool magical) => magical ? 1.30 : 1.20;
+    public static double TraitFor(bool magical) => magical ? 1.30 : 1.00;
 
     public bool IsDefaulted { get; init; } = true;
 

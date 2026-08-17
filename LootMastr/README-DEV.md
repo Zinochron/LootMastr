@@ -678,14 +678,34 @@ fixture the model is pinned to, and Etro is generous enough to publish its own i
 | **100 potency** | **13161.4** | **13161.4** |
 
 Every intermediate matched on the first try. The total was **23% low**, and the missing factor was
-exactly 1.30000: the **job's damage trait**, which had been left at 1.0 for every job. Magick and
-Mastery is 1.30 on a magical job, Maim and Mastery 1.20 on a physical one. The 1.30 is now verified;
-the 1.20 is the convention and still wants a physical set to confirm, along with the tank attack
-power multiplier of 190.
+exactly 1.30000: the **job's damage trait**, which had been left at 1.0 for every job.
 
 Magical means the job's primary stat is intelligence or mind — which the game says, so there is no
 list to maintain. Deriving it from the *role* had every caster falling through as physical, because
 a black mage's role is simply "dps".
+
+#### And a second set corrected the first fix
+
+`etro.gg/gearset/1dde8dd8-0953-4760-a5a4-1710a023f064` — a level 100 paladin. Filling in the magical
+trait had come with a physical one of **1.20**, on the strength of the conventional "Maim and
+Mastery". This set says the implied trait is **1.00000**, exactly. Every physical job had been
+overstated by a fifth for one commit.
+
+It also settled the **tank attack power multiplier at 190**, which had been a guess: no other value
+in a hundred reproduces Etro's published strength multiplier of 2834%.
+
+| | Attack power multiplier | Trait |
+|---|---|---|
+| Magical (INT or MND) | 237 ✓ | 1.30 ✓ |
+| Tank | 190 ✓ | 1.00 ✓ |
+| Melee and physical ranged | 237 | 1.00, **unverified** |
+
+The asymmetry is smaller than it looks: physical jobs already scale differently through the attack
+power multiplier. What is still open is whether a melee or ranged physical job sits at 1.00 like the
+tank or carries a trait of its own. 1.00 is now the reading with evidence behind it rather than the
+one without, which is the only reason to prefer it — a third set would settle it.
+
+Both sets are harness fixtures, each asserted to a tenth.
 
 #### Three mistakes worth keeping written down
 
@@ -702,6 +722,12 @@ first version multiplied by 100 on top of that. Again invisible in every ranking
 took a user noticing that Etro said something else. A wrong ranking looks perfectly plausible; a
 number 23% low looks perfectly plausible too. What separates them is an outside source, which is
 worth more here than any amount of internal consistency.
+
+**Then every physical number was 20% high**, from filling that trait in with the convention instead
+of a measurement. One outside source is enough to find an error and not enough to fix one — the fix
+was a guess, and it took a second set to catch it. Two anchors, two different jobs; the third would
+be a melee or physical ranged set, and until one turns up that row of the table stays marked
+unverified rather than quietly assumed.
 
 The harness asserts all of it: the 2.50 recast exactly, the Etro total to one decimal, and the
 magnitudes as bands wide enough not to be brittle.
