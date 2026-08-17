@@ -42,6 +42,7 @@ public sealed class Plugin : IDalamudPlugin
     public GearScanner Scanner { get; }
     public JobProfileCatalog Profiles { get; }
     public StatBlockBuilder Stats { get; }
+    public GearComparer Gear { get; }
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -73,12 +74,13 @@ public sealed class Plugin : IDalamudPlugin
         Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Attributes, Classifier);
         Profiles = new JobProfileCatalog(Jobs);
         Stats = new StatBlockBuilder(Items, Jobs);
+        Gear = new GearComparer(Items, Jobs, Stats, Profiles);
         watcher = new AddonWatcher();
 
         var tabs = new List<ITab>
         {
             new LootTab(Configuration, Assigner, announcer, Roster, Tiers, Planner, clears),
-            new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, Scanner, Items, Stats, Profiles),
+            new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, Scanner, Items, Gear, Planner),
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),
             new DebugTab(Loot, Party, Tiers, tracker, watcher, Items, Jobs),

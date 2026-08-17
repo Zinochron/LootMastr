@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility.Raii;
 using LootMastr.Automation;
 using LootMastr.Data;
 using LootMastr.Import;
+using LootMastr.Planning;
 using LootMastr.Planning.Dps;
 using LootMastr.Roster;
 
@@ -27,8 +28,11 @@ public sealed class RosterTab : ITab
     private readonly TierCatalog tiers;
     private readonly GearScanner scanner;
     private readonly ItemCatalog items;
-    private readonly StatBlockBuilder stats;
-    private readonly JobProfileCatalog profiles;
+    private readonly GearComparer gear;
+    private readonly LootPlanner planner;
+
+    /// <summary>Whose preview is open, and the plan it was built from. Empty means none.</summary>
+    private string previewFor = string.Empty;
 
     private string newName = string.Empty;
     private string newWorld = string.Empty;
@@ -37,7 +41,7 @@ public sealed class RosterTab : ITab
 
     public RosterTab(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
                      BisImporter importer, TierCatalog tiers, GearScanner scanner,
-                     ItemCatalog items, StatBlockBuilder stats, JobProfileCatalog profiles)
+                     ItemCatalog items, GearComparer gear, LootPlanner planner)
     {
         this.config = config;
         this.roster = roster;
@@ -47,8 +51,8 @@ public sealed class RosterTab : ITab
         this.tiers = tiers;
         this.scanner = scanner;
         this.items = items;
-        this.stats = stats;
-        this.profiles = profiles;
+        this.gear = gear;
+        this.planner = planner;
     }
 
     public string Title => "Roster";
@@ -233,11 +237,7 @@ public sealed class RosterTab : ITab
     /// </summary>
     private void DrawEstimate(RosterMember member)
     {
-        if (stats.For(member) is not { } block || stats.LevelFor(block.Level) is not { } level)
-            return;
-
-        var profile = profiles.For(member.MeasuredJobId);
-        if (DamageModel.Estimate(block, profile, level) is not { } estimate)
+        if (gear.Estimate(member) is not { } estimate)
             return;
 
         Widgets.Coloured(Widgets.Done, $"~{estimate.EstimatedDps:N0} dps");
@@ -248,10 +248,78 @@ public sealed class RosterTab : ITab
         Widgets.Tooltip(
             $"{estimate.DamagePer100Potency:N0} damage per 100 potency — exact, straight out of the stats.\n" +
             $"{estimate.Gcd:0.00} second global cooldown.\n\n" +
-            $"~{estimate.EstimatedDps:N0} dps converts that with a rotation profile for " +
-            $"{profile.Abbreviation}.\n" +
+            $"~{estimate.EstimatedDps:N0} dps converts that with a rotation profile.\n" +
             (estimate.Caveat ?? "That profile has been checked against a gear planner.") +
             "\n\nMeasured off the character, so materia and food are already in it.");
+
+        DrawPreview(member);
+    }
+
+    /// <summary>
+    /// What the next planned pieces would do for this player.
+    ///
+    /// Behind a button rather than always on: it costs a plan and an estimate per drop, and it is a
+    /// question you ask once before a raid night rather than every frame the tab is open.
+    /// </summary>
+    private void DrawPreview(RosterMember member)
+    {
+        var open = previewFor == member.Key;
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton(open ? "Hide what is coming" : "What is coming"))
+            previewFor = open ? string.Empty : member.Key;
+
+        Widgets.Tooltip("The pieces this week's plan has for them, and what each one is worth.");
+
+        if (!open)
+            return;
+
+        var coming = planner.ComingWeek().Awards
+                            .Where(a => a.PlayerKey == member.Key)
+                            .ToList();
+
+        using var indent = ImRaii.PushIndent();
+
+        if (coming.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "Nothing planned for them this week.");
+            return;
+        }
+
+        foreach (var award in coming)
+        {
+            var slot = award.Slot;
+            if (slot == null)
+                continue;
+
+            var target = member.NeedFor(slot.Value).BisItemId;
+            var gain = target == 0 ? null : gear.Gain(member, slot.Value, target);
+
+            ImGui.TextUnformatted($"{award.What}{(award.Bought ? " (books)" : string.Empty)}");
+            ImGui.SameLine();
+
+            if (gain is not { } change)
+            {
+                Widgets.Coloured(Widgets.Muted, "— nothing to compare it against");
+                continue;
+            }
+
+            var colour = change.IsUpgrade ? Widgets.Done : Widgets.Muted;
+            Widgets.Coloured(colour, $"{change.Percent:+0.00;-0.00;0.00}%");
+
+            ImGui.SameLine();
+            ImGui.TextDisabled($"{change.Before.EstimatedDps:N0} → {change.After.EstimatedDps:N0} dps" +
+                               (Math.Abs(change.After.Gcd - change.Before.Gcd) > 0.001
+                                    ? $", GCD {change.Before.Gcd:0.00} → {change.After.Gcd:0.00}"
+                                    : string.Empty));
+
+            Widgets.Tooltip($"{items.GetItemName(target)}\n\n" +
+                            $"{change.Before.DamagePer100Potency:N0} → " +
+                            $"{change.After.DamagePer100Potency:N0} per 100 potency.\n\n" +
+                            "Counted on the item's own stats. Whatever is melded into the piece they " +
+                            "are wearing now is assumed to carry over, so a piece with more meld " +
+                            "slots than the old one is worth a little more than this says.");
+        }
     }
 
     private void DrawCurrentColumn(RosterMember member)
@@ -312,17 +380,24 @@ public sealed class RosterTab : ITab
             if (need.BisItemId != 0)
             {
                 var item = items.GetItem(need.BisItemId);
+                var gain = gear.GainOfTarget(member, slot);
 
                 Widgets.Icon(item.IconId, 18f);
                 ImGui.SameLine(0f, 4f);
 
+                // The gain goes in the label rather than after it, so it cannot be pushed off the
+                // edge of the pane by a long item name — which most of these are.
+                var suffix = gain is { } change && Math.Abs(change.Percent) >= 0.005
+                                 ? $"   {change.Percent:+0.00;-0.00}%"
+                                 : string.Empty;
+
                 using (ImRaii.PushColor(ImGuiCol.Text, colour))
                 {
-                    if (ImGui.Selectable($"{item.Name}{mark}##{slot}"))
+                    if (ImGui.Selectable($"{item.Name}{mark}{suffix}##{slot}"))
                         ImGui.OpenPopup($"##need{slot}");
                 }
 
-                Widgets.Tooltip(DescribeCell(member, slot, need, state));
+                Widgets.Tooltip(DescribeCell(member, slot, need, state) + GainNote(gain));
             }
             else
             {
@@ -338,6 +413,31 @@ public sealed class RosterTab : ITab
 
             DrawNeedPopup(member, slot, need);
         }
+    }
+
+    /// <summary>
+    /// The gain, spelled out for the tooltip.
+    ///
+    /// The one assumption in it is stated rather than left implicit: the melds on the piece they are
+    /// wearing are taken to carry over, because what would go into a piece nobody owns is not
+    /// knowable. That errs low on an upgrade with more meld slots, and saying so is the difference
+    /// between an estimate and a claim.
+    /// </summary>
+    private static string GainNote(GearGain? gain)
+    {
+        if (gain is not { } change)
+            return string.Empty;
+
+        var lines = $"\n\n{change.Before.EstimatedDps:N0} → {change.After.EstimatedDps:N0} dps " +
+                    $"({change.Percent:+0.00;-0.00;0.00}%)\n" +
+                    $"{change.Before.DamagePer100Potency:N0} → {change.After.DamagePer100Potency:N0} " +
+                    "per 100 potency";
+
+        if (Math.Abs(change.After.Gcd - change.Before.Gcd) > 0.001)
+            lines += $"\nGCD {change.Before.Gcd:0.00} → {change.After.Gcd:0.00}";
+
+        return lines + "\n\nCounted on the items' own stats. The melds on the piece they are wearing " +
+               "now are assumed to carry over.";
     }
 
     /// <summary>The slot's name at a fixed width, so both columns line up without being a table.</summary>

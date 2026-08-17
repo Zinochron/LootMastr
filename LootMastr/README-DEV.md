@@ -657,6 +657,39 @@ worth more here than any amount of internal consistency.
 The harness asserts all of it: the 2.50 recast exactly, the Etro total to one decimal, and the
 magnitudes as bands wide enough not to be brittle.
 
+### What a piece would be worth
+
+`GearDelta` (pure) and `GearComparer` (the game-facing half). One rule holds the whole thing
+together:
+
+> **Only the items' own stats change hands.** Materia is left out of the difference entirely.
+
+That is a decision, not an omission. The current set's melds are already inside the measured totals
+the comparison starts from, and what somebody would meld into a piece they do not own yet is not
+knowable. Leaving materia out of the delta *is* the assumption that the melds carry over — the
+closest thing to true, and it errs **low** on a piece with more meld slots than the old one. Every
+tooltip that shows a gain says so, because an estimate whose one assumption is on the screen is a
+different thing from one that has quietly made it.
+
+Two details that are easy to get wrong and silent when you do:
+
+**A sidegrade has to count what was lost.** Walking only the new piece's stats makes a dropped stat
+invisible, and then every sidegrade reads as a pure gain. `GearDelta.Between` therefore walks both
+lists and emits a negative change for anything the old piece had and the new one does not.
+
+**The main stat is job-dependent.** A strength ring is worth a great deal to a paladin and nothing at
+all to a black mage, so `StatBlock.With` routes a change into `MainStat` only when its `BaseParam`
+matches the job's own `PrimaryStat` — which the game says, and which the probe confirmed is a
+`BaseParam` row id.
+
+The **high quality bonus is included whenever an item can have one**. Nobody wears normal quality
+crafted gear in a savage set, and since `BaseParamSpecial` turned out to be the bonus rather than the
+total, adding it is arithmetic rather than a guess about which of two numbers to use.
+
+Percentages run on **DPS**, not on damage per 100 potency. The exact half cannot see a speed stat at
+all — a piece that buys a shorter recast changes nothing in it — so the headline percentage uses the
+number that accounts for everything, with both exact figures beside it in the tooltip.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

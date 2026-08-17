@@ -31,17 +31,33 @@ public readonly record struct StatBlock(
     /// <summary>The speed stat this job actually scales its recast with.</summary>
     public int SpeedFor(bool spellSpeed) => spellSpeed ? SpellSpeed : SkillSpeed;
 
-    /// <summary>The same set with one stat moved, for weighing a swap.</summary>
-    public StatBlock With(uint baseParam, int delta) => baseParam switch
+    /// <summary>
+    /// The same set with one stat moved, for weighing a swap.
+    ///
+    /// <paramref name="primaryStat"/> says which of the four main stats this job actually uses, so a
+    /// piece's strength is a real change for a paladin and nothing at all for a black mage — which
+    /// is the correct reading of a strength ring in a caster's set.
+    /// </summary>
+    public StatBlock With(uint baseParam, int delta, uint primaryStat = 0)
     {
-        Attributes.CriticalHit => this with { CriticalHit = CriticalHit + delta },
-        Attributes.DirectHitRate => this with { DirectHit = DirectHit + delta },
-        Attributes.Determination => this with { Determination = Determination + delta },
-        Attributes.SkillSpeed => this with { SkillSpeed = SkillSpeed + delta },
-        Attributes.SpellSpeed => this with { SpellSpeed = SpellSpeed + delta },
-        Attributes.Tenacity => this with { Tenacity = Tenacity + delta },
-        _ => this,
-    };
+        if (baseParam != 0 && baseParam == primaryStat)
+            return this with { MainStat = MainStat + delta };
+
+        return baseParam switch
+        {
+            Attributes.CriticalHit => this with { CriticalHit = CriticalHit + delta },
+            Attributes.DirectHitRate => this with { DirectHit = DirectHit + delta },
+            Attributes.Determination => this with { Determination = Determination + delta },
+            Attributes.SkillSpeed => this with { SkillSpeed = SkillSpeed + delta },
+            Attributes.SpellSpeed => this with { SpellSpeed = SpellSpeed + delta },
+            Attributes.Tenacity => this with { Tenacity = Tenacity + delta },
+            _ => this,
+        };
+    }
+
+    /// <summary>The same set holding a different weapon.</summary>
+    public StatBlock WithWeapon(int damage, int delayMs) =>
+        this with { WeaponDamage = damage, WeaponDelayMs = delayMs > 0 ? delayMs : WeaponDelayMs };
 
     /// <summary>
     /// The <c>BaseParam</c> row ids this cares about. Duplicated from the data layer on purpose —

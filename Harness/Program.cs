@@ -1143,6 +1143,81 @@ var rules = new PriorityRules();
           stats.With(StatBlock.Attributes.Strength, 500) == stats);
 }
 
+// --- swapping one piece for another --------------------------------------------------------------
+
+{
+    const uint crt = StatBlock.Attributes.CriticalHit;
+    const uint det = StatBlock.Attributes.Determination;
+    const uint dh = StatBlock.Attributes.DirectHitRate;
+    const uint str = StatBlock.Attributes.Strength;
+
+    List<StatChange> Piece(params (uint Stat, int Value)[] stats) =>
+        stats.Select(s => new StatChange(s.Stat, s.Value)).ToList();
+
+    // A straight upgrade: same stats, more of them.
+    var worse = Piece((str, 400), (crt, 300), (det, 200));
+    var better = Piece((str, 450), (crt, 340), (det, 230));
+
+    var upgrade = GearDelta.Between(worse, better);
+    Check("a straight upgrade is all gains", upgrade.All(c => c.Delta > 0),
+          string.Join(", ", upgrade.Select(c => $"[{c.BaseParam}]{c.Delta:+0;-0}")));
+
+    // A sidegrade. This is the case that goes wrong quietly: counting only what the new piece has
+    // makes losing a stat invisible, and every sidegrade then reads as a pure gain.
+    var sideways = GearDelta.Between(Piece((str, 400), (crt, 300)), Piece((str, 400), (det, 300)));
+
+    Check("a sidegrade counts the stat that was lost",
+          sideways.Any(c => c.BaseParam == crt && c.Delta == -300),
+          string.Join(", ", sideways.Select(c => $"[{c.BaseParam}]{c.Delta:+0;-0}")));
+
+    Check("and the one that was gained", sideways.Any(c => c.BaseParam == det && c.Delta == 300));
+    Check("and leaves what did not move at zero", sideways.Any(c => c.BaseParam == str && c.Delta == 0));
+
+    // An empty slot: everything the new piece has is a gain, which is what a first-week coffer is.
+    var fromNothing = GearDelta.Between([], better);
+    Check("filling an empty slot gains the whole piece",
+          fromNothing.Count == 3 && fromNothing.All(c => c.Delta > 0));
+}
+
+{
+    var level = LevelTable.Known(100)!.Value;
+    var pld = JobProfile.Default("PLD", magical: false, tank: true);
+
+    var stats = new StatBlock(100, 100, 6278, 150, 2240, 3016, 420, 2700, 420, 420, 1005);
+
+    // The main stat is job-dependent, and this is the check that a strength ring is worth nothing to
+    // a black mage. Routing it by name instead of by the job's own primary stat would have every
+    // caster valuing tank gear.
+    var withStrength = GearDelta.Apply(stats, primaryStat: StatBlock.Attributes.Strength,
+                                       [new StatChange(StatBlock.Attributes.Strength, 200)]);
+
+    Check("a paladin's main stat moves with strength", withStrength.MainStat == 6478);
+
+    var casterStats = GearDelta.Apply(stats, primaryStat: StatBlock.Attributes.Intelligence,
+                                      [new StatChange(StatBlock.Attributes.Strength, 200)]);
+
+    Check("and a caster's does not", casterStats.MainStat == 6278);
+
+    // A weapon carries damage and delay, which are not stats and would otherwise be dropped.
+    var rearmed = GearDelta.Apply(stats, StatBlock.Attributes.Strength, [], weaponDamage: 158, weaponDelayMs: 2960);
+    Check("a weapon swap carries its damage", rearmed.WeaponDamage == 158);
+    Check("and its delay", rearmed.WeaponDelayMs == 2960);
+
+    var before = DamageModel.Estimate(stats, pld, level)!.Value;
+    var after = DamageModel.Estimate(rearmed, pld, level)!.Value;
+    var gain = new GearGain(before, after);
+
+    Check("a better weapon is an upgrade", gain.IsUpgrade, $"{gain.Percent:+0.00;-0.00;0.00}%");
+    Check("the percentage is signed the same way as the dps",
+          Math.Sign(gain.Percent) == Math.Sign(gain.Dps));
+
+    var downgrade = new GearGain(after, before);
+    Check("and the other way round is not an upgrade", !downgrade.IsUpgrade,
+          $"{downgrade.Percent:+0.00;-0.00;0.00}%");
+
+    Check("no change is no gain", Math.Abs(new GearGain(before, before).Percent) < 1e-9);
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;
