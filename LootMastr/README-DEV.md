@@ -161,22 +161,20 @@ it is not.
 The fallback if a client's obtain line ever arrives on a channel `ObtainTracker` is not listening to:
 the Record button on the row, and the Debug tab lists every line it considered.
 
-### Acting is opt-in, because an earlier version crashed the client
-
-`Configuration.EnableAssignment`, off by default.
+### It crashed the client once, and what fixed it
 
 The version that crashed synthesised **all four** steps as raw events, including the two list
 clicks, and passed a null `AtkEventData`. A list handler reads that data to work out which row was
 hit — knowing *which* events a click sends turned out not to be the same as being able to send them.
 
-`AtkComponentList.SelectItem(index, dispatchEvent)` is the game's own method for picking a row, and
-it builds whatever the list needs internally. That is the part that could not be reconstructed from
-outside, so both list steps now go through it and no list event is hand-made any more. What is left
-is two button presses, and those get a real event *and* real event data rather than a null.
+No list event is hand-made any more. `AtkComponentList.DispatchItemEvent` has the game build it,
+index and all, which is precisely the part that could not be reconstructed from outside. What is
+left is two button presses, and those get a real event *and* real event data rather than a null.
 
-That is a specific fix for a specific cause, not a retry — but it is not proof, so it stays behind a
-switch and the first run belongs somewhere disposable. With it off the plugin still decides and
-verifies, and the clicking is yours.
+This lived behind `Configuration.EnableAssignment`, off by default, for as long as that was one
+explanation rather than a tested one. It has since been driven through enough live chests to drop
+the switch. Keep the shape of the argument though: a specific fix for a specific cause is worth
+more than a retry, and neither is worth much until somebody has watched it work.
 
 ### What a click actually sends
 
@@ -284,6 +282,16 @@ upgrade materials. Everything else is discovered from the game:
   with them, and takes the currencies those rows charge as the books. Assigning them to fights I–IV
   goes by ascending item id, which is a guess — books are created in fight order — so it is
   reported rather than applied silently, and every one stays editable.
+
+  **Those matched rows then bound the rest of the read.** `DiscoverRewards` used to walk every
+  `SpecialShop` row in the game, keyed only on the book item. That is fine for an old tier whose
+  books nothing else wants, and wrong for a current one: the same books turn up in another NPC's
+  rows and the tier came back full of entries from a shop nobody had opened. With no shop open it
+  still falls back to the whole sheet — that is the only thing it can do — but it says so in chat,
+  because the two answers are trustworthy to very different degrees.
+
+  `DiscoverAugments` is deliberately *not* bound this way. Augmenting is a different NPC, so
+  restricting it to the coffer shop would find nothing.
 
 - **Book-for-book trades.** Most of the last fight's shop is its books buying the earlier fights'
   books, and reading those rows as gear was the other half of why they all came out as "Weapon".
@@ -579,13 +587,17 @@ way, which says nothing twenty times.
 
 ### Whether every coffer drops
 
-`TierDefinition.AllCoffersDrop`. On, a fight puts up one of each slot it can — all four accessories
-every week — and drop counts are ignored. Off, it drops `DropCount` out of its pool and the same
-coffer can come up twice.
+`TierDefinition.AllCoffersDrop`, **on by default** — that is how savage tiers have worked for years.
+A fight puts up one of each slot it can, all four accessories every week, and drop counts are
+ignored. Off, it drops `DropCount` out of its pool and the same coffer can come up twice; the pool
+is then walked round-robin, which reproduces each slot's average rate without pretending to roll
+dice.
 
-This is not cosmetic: four guaranteed accessories a week and two random ones out of four are
-different tiers to gear through, and the forecast says so. With it off the pool is walked
-round-robin, which reproduces each slot's average rate without pretending to roll dice.
+It only affects weeks the projection has to guess at. **The coming week always lists every coffer a
+fight can put up**, whatever the setting says. A drop count is a rate — it can tell you that two of
+the four accessories will turn up, and it cannot tell you *which* two. Answering "the first two in
+the pool" made the table wrong and useless at once: the whole point of it is to know who each coffer
+is for before it drops.
 
 ### Trading books in
 
@@ -612,9 +624,16 @@ have to be worth trusting. `Loot → Books` puts all of it in one grid:
   is impossible, so the cell turns red.
 - **Books per player per fight**, editable. This is what people are holding *now*, after anything
   already spent, which is why it cannot simply be derived from kills.
-- **What that buys right now**, from `LootPlanner.AffordableNow`. This is the question the counts
-  exist to answer: someone who can already buy the piece outright does not need to compete for the
-  coffer.
+- **What to spend them on this week**, from `LootPlanner.ShouldBuyNow` — the plan's own week-1
+  purchases, not everything the books would stretch to. The first version listed the latter, which
+  for anyone mid-tier is most of their remaining list: it reads as a shopping list rather than an
+  instruction, and two of the entries are usually alternatives where buying one puts the other out
+  of reach. The plan already decides; this reports the decision.
+
+Those purchases happen **before** the coming week's drops in `Forecast`, and they are fed into the
+same `PendingAward` list the drops are ranked against. Books in hand were earned by clears that have
+already happened, so spending them is not something to model at the end of the week — and a player
+about to buy the body piece should not also be handed the body coffer.
 
 `+1 <fight>` raises the kill count and gives every roster member a book. The Roster tab's clear
 prompt is the accurate path — it only counts the people who were actually in the party — and this
@@ -629,14 +648,15 @@ is the catch-up for the clears nobody confirmed in time.
 2a. **Roster** → *Read gear* while standing in a party. Your own row should fill immediately; the
    others should follow one at a time. Check a glamoured character reads as their real gear, and
    that a slot you have already ticked off but are not wearing shows `✓!` rather than reverting.
-3. **Plan** → the forecast should give plausible week numbers, and the priority rows should list
-   the people who actually still need each slot.
+3. **Plan** → the forecast should give plausible week numbers, and *Next drops* should list every
+   coffer each fight can put up, each named for someone who actually still needs it.
 4. Form a two person party, set **Lootmaster** in the duty finder, enter an old dungeon undersized.
    The loot window behaves identically and nothing is on a weekly lockout.
 5. **Debug** → live state should say leader `you` and lootmaster `True`. Write a capture file.
 6. **Loot** → the ranking should appear. Assign by hand in the game window and confirm the tracker
    ticks it off; if not, the reason is in the chat probe.
-7. Only then wire up `PerformAssignment`, and test it in the same dungeon before a raid night.
+7. Then the row's own *Assign* button, in that same dungeon, more than once in a row — the failures
+   that mattered all showed up on the second assignment, not the first.
 
 ## Known loose end
 

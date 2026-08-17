@@ -10,8 +10,14 @@ using LootMastr.Roster;
 namespace LootMastr.UI.Tabs;
 
 /// <summary>
-/// What the rest of the tier looks like, and who should take each kind of drop. Recomputed on
-/// demand rather than every frame: a simulation per candidate per slot is cheap but not free.
+/// What the rest of the tier looks like, and who each drop goes to. Recomputed on demand rather
+/// than every frame: the forecast is cheap but not free.
+///
+/// There used to be a second table underneath, "If it dropped right now", ranking every kind of
+/// drop on its own with nothing handed out. It existed because it was the only view using the
+/// ranking directly while everything else went through a different rule. One rule later, it was
+/// the same list as the one above with the week's earlier drops ignored — a second answer to a
+/// question already answered, which is how a plan loses the reader's trust.
 /// </summary>
 public sealed class PlanTab : ITab
 {
@@ -22,8 +28,6 @@ public sealed class PlanTab : ITab
 
     private SimulationResult? forecast;
     private int cachedSignature;
-    private readonly Dictionary<GearSlot, IReadOnlyList<Candidate>> slotRankings = new();
-    private readonly Dictionary<GearSide, IReadOnlyList<Candidate>> upgradeRankings = new();
 
     public PlanTab(Configuration config, RosterStore roster, LootPlanner planner, TierCatalog tiers)
     {
@@ -37,12 +41,7 @@ public sealed class PlanTab : ITab
     public string Id => "plan";
 
     /// <summary>Called when the roster or the tier changed under us.</summary>
-    public void Invalidate()
-    {
-        forecast = null;
-        slotRankings.Clear();
-        upgradeRankings.Clear();
-    }
+    public void Invalidate() => forecast = null;
 
     public void Draw()
     {
@@ -81,9 +80,6 @@ public sealed class PlanTab : ITab
 
         ImGuiHelpers.ScaledDummy(10f);
         DrawSchedule(forecast);
-
-        ImGuiHelpers.ScaledDummy(10f);
-        DrawPriorities();
     }
 
     private void DrawForecast(SimulationResult result)
@@ -153,8 +149,12 @@ public sealed class PlanTab : ITab
     private void DrawNextDrops(SimulationResult result)
     {
         ImGui.TextUnformatted("Next drops");
-        Widgets.HelpMarker("The coming week, in fight order. The same thing week 1 of the schedule " +
-                           "says, with who else was in the running.");
+        Widgets.HelpMarker("Every coffer the coming week can put up, in fight order, and who it is " +
+                           "for. All four accessories are listed whether or not the tier expects " +
+                           "four of them to drop — which two turn up is not something a drop rate " +
+                           "can answer, and the point of this table is to know before it does.\n\n" +
+                           "Each drop is decided with the ones above it already given away, so the " +
+                           "same player is not named twice for a piece they can only wear once.");
 
         ImGui.SameLine();
         var onlyNext = config.ShowOnlyNextRecipient;
@@ -261,99 +261,6 @@ public sealed class PlanTab : ITab
         ImGui.SameLine();
         ImGui.TextDisabled($"> {string.Join(" > ", ranking.Skip(1).Take(3).Select(c => c.Name))}");
         Widgets.Tooltip(string.Join("\n", ranking.Select((c, i) => $"{i + 1}. {c.Name} — {c.Reason}")));
-    }
-
-    private IReadOnlyList<Candidate> Slot(GearSlot slot)
-    {
-        if (!slotRankings.TryGetValue(slot, out var ranking))
-            slotRankings[slot] = ranking = planner.RankForSlot(slot);
-
-        return ranking;
-    }
-
-    private IReadOnlyList<Candidate> Upgrade(GearSide side)
-    {
-        if (!upgradeRankings.TryGetValue(side, out var ranking))
-            upgradeRankings[side] = ranking = planner.RankForUpgrade(side);
-
-        return ranking;
-    }
-
-    /// <summary>
-    /// The answer to "this just dropped, who takes it" for every kind of drop in the tier, computed
-    /// up front so the call during a raid is a glance rather than a wait.
-    /// </summary>
-    private void DrawPriorities()
-    {
-        ImGui.TextUnformatted("If it dropped right now");
-        Widgets.HelpMarker("Every kind of drop the tier has, each judged on its own with nothing " +
-                           "else handed out yet — for when something turns up that the week above " +
-                           "did not expect.\n\n" +
-                           "It can name someone other than the table above, and that is not a " +
-                           "disagreement: up there the earlier drops of the week have already been " +
-                           "given away, and here they have not.");
-        ImGui.Separator();
-
-        // A table per fight, for the same reason as the drops above: nesting one table inside
-        // another never lined up, and it was the layout the fight column was fighting against.
-        foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
-        {
-            using var id = ImRaii.PushId(encounter.Index);
-
-            if (encounter.DropSlots.Count == 0 && encounter.UpgradeDrops.Count == 0)
-            {
-                ImGui.TextUnformatted(encounter.Name);
-                ImGui.SameLine();
-                Widgets.Coloured(Widgets.Muted, "— nothing set up, see the Tier tab");
-                continue;
-            }
-
-            using var table = ImRaii.Table("##priorities", 2,
-                                           ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
-            if (!table.Success)
-                continue;
-
-            ImGui.TableSetupColumn(encounter.Name, ImGuiTableColumnFlags.WidthFixed, 150f * ImGuiHelpers.GlobalScale);
-            ImGui.TableSetupColumn("Priority");
-            ImGui.TableHeadersRow();
-
-            foreach (var slot in encounter.DropSlots)
-                DrawPriorityRow(slot.CofferLabel(), Slot(slot));
-
-            foreach (var side in encounter.UpgradeDrops)
-                DrawPriorityRow($"{side} upgrade", Upgrade(side));
-        }
-    }
-
-    private static void DrawPriorityRow(string drop, IReadOnlyList<Candidate> ranking)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableNextColumn();
-        ImGui.TextUnformatted(drop);
-
-        ImGui.TableNextColumn();
-
-        if (ranking.Count == 0)
-        {
-            Widgets.Coloured(Widgets.Muted, "nobody needs it — greed");
-            return;
-        }
-
-        for (var i = 0; i < ranking.Count; i++)
-        {
-            var candidate = ranking[i];
-
-            if (i > 0)
-            {
-                ImGui.SameLine(0f, 4f);
-                ImGui.TextDisabled(">");
-                ImGui.SameLine(0f, 4f);
-            }
-
-            var colour = i == 0 ? Widgets.Done : Widgets.Muted;
-            Widgets.Coloured(colour, candidate.Member.Name);
-            Widgets.Tooltip($"{candidate.Member.Name}\n{candidate.Reason}");
-        }
     }
 
     private void DrawSchedule(SimulationResult result)

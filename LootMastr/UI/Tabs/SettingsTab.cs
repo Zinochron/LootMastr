@@ -50,24 +50,6 @@ public sealed class SettingsTab : ITab
         ImGui.TextUnformatted("Automation");
         ImGui.Separator();
 
-        var enable = config.EnableAssignment;
-        if (ImGui.Checkbox("Let the plugin drive the loot window", ref enable))
-        {
-            config.EnableAssignment = enable;
-            config.Save();
-        }
-
-        Widgets.HelpMarker("Off by default because an earlier version of this crashed the game. The " +
-                           "part that most likely caused it is gone — row selection now goes through " +
-                           "the game's own method instead of a hand-made click — but try it first in " +
-                           "a duty nobody minds losing.\n\n" +
-                           "With it off, LootMastr still works out who gets what and leaves the " +
-                           "clicking to you.");
-
-        if (!enable)
-            Widgets.Coloured(Widgets.Muted, "Assigning is off — the plugin decides, you click.");
-
-        ImGuiHelpers.ScaledDummy(4f);
         DrawModeChoice();
 
         var announce = config.AnnounceInPartyChat;

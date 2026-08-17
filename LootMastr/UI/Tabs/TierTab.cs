@@ -172,10 +172,22 @@ public sealed class TierTab : ITab
             if (!string.IsNullOrEmpty(fromShop))
                 Services.Chat.Print($"LootMastr: {fromShop}");
 
+            var bound = tiers.OpenShopRowCount > 0;
             var count = tiers.DiscoverRewards();
-            Services.Chat.Print(count > 0
-                                    ? $"LootMastr: found {count} exchange entries."
-                                    : "LootMastr: found nothing — check that the books below resolve.");
+
+            if (count == 0)
+                Services.Chat.Print("LootMastr: found nothing — check that the books below resolve.");
+            else if (bound)
+                Services.Chat.Print($"LootMastr: found {count} exchange entries in the open shop.");
+            else
+            {
+                // Worth saying out loud. Without a shop in front of it this reads every NPC in the
+                // game that takes those books, and for a current tier that is how entries from a
+                // shop nobody opened ended up in the list.
+                Services.Chat.Print($"LootMastr: found {count} exchange entries by searching all of " +
+                                    "the game's shop data — no shop was open. Redo this standing at " +
+                                    "the exchange NPC if anything looks wrong.");
+            }
         }
 
         ImGui.SameLine();

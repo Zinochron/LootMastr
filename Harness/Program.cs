@@ -331,9 +331,11 @@ var rules = new PriorityRules();
 }
 
 {
-    // Same need, but the coffer is taken away: eight books at one a week means week 8.
+    // Same need, but the coffer is taken away: eight books at one a week means week 8. The pool is
+    // emptied rather than the drop count zeroed, because every coffer drops by default now and a
+    // count of zero says nothing in that mode.
     var noDrops = Tier();
-    noDrops.Encounter(4)!.DropCount = 0;
+    noDrops.Encounter(4)!.DropSlots.Clear();
 
     var m = Member("A", (GearSlot.Weapon, GearSource.Raid));
     var result = new WeekSimulator(noDrops, rules, 12).Run([Plan(m, RaidRole.Dps, noDrops)]);
@@ -344,13 +346,47 @@ var rules = new PriorityRules();
 {
     // Starting with books already in hand pulls that in.
     var noDrops = Tier();
-    noDrops.Encounter(4)!.DropCount = 0;
+    noDrops.Encounter(4)!.DropSlots.Clear();
 
     var m = Member("A", (GearSlot.Weapon, GearSource.Raid));
     m.Tokens[4] = 6;
 
     var result = new WeekSimulator(noDrops, rules, 12).Run([Plan(m, RaidRole.Dps, noDrops)]);
     Check("books already held count", result.LastFinishWeek == 2, $"week {result.LastFinishWeek}");
+}
+
+{
+    // Books in hand were earned by clears that have already happened, so they can be spent before
+    // this week's fights — and something bought is something that no longer needs to be won.
+    var m = Member("A", (GearSlot.Weapon, GearSource.Raid));
+    m.Tokens[4] = 8;
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+    var bought = new WeekSimulator(tier, rules, 12).SpendNow([plan], 1);
+
+    Check("books already in hand are spent before the coming week", bought.Count == 1,
+          string.Join(", ", bought.Select(a => a.What)));
+
+    Check("and what they bought is marked as bought, in week 1",
+          bought.Count == 1 && bought[0] is { Bought: true, Week: 1, Slot: GearSlot.Weapon });
+
+    Check("leaving nothing left to win", plan.IsDone);
+}
+
+// --- every coffer drops, by default --------------------------------------------------------------
+
+{
+    Check("a fresh tier has every coffer dropping", new TierDefinition().AllCoffersDrop);
+
+    // Four accessories in the pool and a drop count of two: the count is what the projection uses
+    // for a tier that says otherwise, and is ignored while this is on.
+    var pool = WeekSimulator.DropsFor(tier, tier.Encounter(1)!, 1).ToList();
+    Check("so a fight puts up its whole pool", pool.Count == 4, string.Join(", ", pool));
+
+    var rationed = Tier();
+    rationed.AllCoffersDrop = false;
+    Check("turned off, the drop count is what drops",
+          WeekSimulator.DropsFor(rationed, rationed.Encounter(1)!, 1).Count() == 2);
 }
 
 // --- book costs come from the rules ---------------------------------------------------------------

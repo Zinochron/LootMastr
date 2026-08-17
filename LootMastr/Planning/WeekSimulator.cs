@@ -114,6 +114,24 @@ public sealed class WeekSimulator
         return new SimulationResult(last, finishWeeks, [..awards], horizon);
     }
 
+    /// <summary>
+    /// Spends what the players can already afford, without simulating a week around it.
+    ///
+    /// The books someone is holding came from clears that have already happened, so they can be
+    /// spent before this week's fights rather than after them. Running it that way round matters for
+    /// more than the shopping list: a player about to buy the body piece should not also be handed
+    /// the body coffer.
+    /// </summary>
+    public List<PlannedAward> SpendNow(IReadOnlyList<PlayerPlan> players, int week)
+    {
+        awards.Clear();
+        currentWeek = week;
+
+        SpendTokens(players);
+
+        return [..awards];
+    }
+
     /// <summary>What a fight is expected to put up in a given week.</summary>
     public static IEnumerable<GearSlot> DropsFor(TierDefinition tier, TierEncounter encounter, int week)
     {

@@ -37,8 +37,12 @@ public sealed class TierDefinition
     /// With it off, a fight drops <see cref="TierEncounter.DropCount"/> coffers out of its pool and
     /// the same one can come up more than once. The difference is not cosmetic: four guaranteed
     /// accessories a week and two random ones out of four are different tiers to gear through.
+    ///
+    /// On by default, because that is how savage tiers have worked for years now. It only affects
+    /// the weeks the projection has to guess at — the coming week always lists every coffer a fight
+    /// can put up, since "what could turn up on Friday" is not a question about drop rates.
     /// </summary>
-    public bool AllCoffersDrop { get; set; }
+    public bool AllCoffersDrop { get; set; } = true;
 
     /// <summary>
     /// What the shop actually sells, discovered from <c>SpecialShop</c>. Used to show the exchange

@@ -48,27 +48,40 @@ public sealed class LootPlanner
     public SimulationResult Forecast()
     {
         var plans = BuildPlans();
-        var thisWeek = AssignComingWeek(plans);
+        var pending = new List<PendingAward>();
 
+        // Books first. They were earned in weeks that have already happened, so they are spendable
+        // before this week's fights — and something bought is something that no longer needs to be
+        // won, which the drops below have to know about.
+        var bought = NewSimulator().SpendNow(plans, 1);
+
+        foreach (var award in bought)
+            pending.Add(new PendingAward(award.PlayerKey, award.Slot, award.Upgrade));
+
+        var thisWeek = AssignComingWeek(plans, pending);
         var rest = NewSimulator().Run(plans, startWeek: 2);
 
-        return rest with { Awards = [..thisWeek, ..rest.Awards] };
+        return rest with { Awards = [..bought, ..thisWeek, ..rest.Awards] };
     }
 
     /// <summary>
-    /// Hands out the coming week's expected drops by ranking, applying each to the plans before
-    /// deciding the next — the same order-of-decision the loot window uses, so a chest holding two
-    /// of a kind does not name the same player twice.
+    /// Hands out the coming week's drops by ranking, applying each to the plans before deciding the
+    /// next — the same order-of-decision the loot window uses, so a chest holding two of a kind does
+    /// not name the same player twice.
+    ///
+    /// Every coffer a fight can put up is listed, not the number the tier says drops. A drop count
+    /// is a rate for the projection to average over; it cannot say <em>which</em> two of the four
+    /// accessories turn up on Friday, and answering "the first two in the pool" made the table both
+    /// wrong and useless — the point of it is to know who each coffer is for before it drops.
     /// </summary>
-    private List<PlannedAward> AssignComingWeek(List<PlayerPlan> plans)
+    private List<PlannedAward> AssignComingWeek(List<PlayerPlan> plans, List<PendingAward> pending)
     {
         var tier = tiers.Tier;
         var awards = new List<PlannedAward>();
-        var pending = new List<PendingAward>();
 
         foreach (var encounter in tier.Encounters.OrderBy(e => e.Index))
         {
-            foreach (var slot in WeekSimulator.DropsFor(tier, encounter, 1))
+            foreach (var slot in encounter.DropSlots)
             {
                 var coffer = Slots.CofferSlot(slot);
                 var ranking = RankForSlot(slot, pending);
@@ -167,36 +180,50 @@ public sealed class LootPlanner
     }
 
     /// <summary>
-    /// What this player's books would buy right now, cheapest first. Answers the question the book
-    /// counts are actually for: whether someone needs to compete for a coffer at all.
+    /// What this player should spend their books on this week, straight out of the plan.
+    ///
+    /// It used to list everything they <em>could</em> afford, which for anyone mid-tier is most of
+    /// their remaining list and reads as a shopping list rather than an instruction. Two of those
+    /// entries are usually alternatives — buying one puts the other out of reach — and nothing on
+    /// screen said which. The plan already decides, so this reports that decision and stops.
     /// </summary>
-    public IReadOnlyList<string> AffordableNow(RosterMember member)
+    public IReadOnlyList<string> ShouldBuyNow(SimulationResult forecast, RosterMember member)
     {
         var tier = tiers.Tier;
-        var plan = PlayerPlan.From(member, roster.RoleOf(member), tier);
-        var result = new List<(int Cost, string Text)>();
+        var result = new List<string>();
 
-        foreach (var need in plan.Open)
+        foreach (var award in forecast.Awards)
         {
-            var cost = BookLedger.CostOf(tier, need);
-            if (cost == null || !BookLedger.CanAfford(tier, plan, cost))
+            if (!award.Bought || award.Week != 1 || award.PlayerKey != member.Key)
                 continue;
 
+            var cost = award.Upgrade != null
+                           ? tier.CostForUpgrade(award.Upgrade.Value)
+                           : award.Slot != null
+                               ? tier.CostForSlot(award.Slot.Value)
+                               : null;
+
+            if (cost == null)
+            {
+                result.Add(award.What);
+                continue;
+            }
+
             var fight = tier.Encounter(cost.Encounter)?.Name ?? $"#{cost.Encounter}";
-            var text = $"{need.Describe()} for {cost.Cost} {fight} book(s)";
+            var text = $"{award.What} for {cost.Cost} {fight} book(s)";
 
             // Say so when it only works by trading books in — it is not obvious from the counts.
-            if (plan.Tokens[Math.Clamp(cost.Encounter, 0, PlayerPlan.MaxEncounters)] < cost.Cost)
+            if (member.TokensFor(cost.Encounter) < cost.Cost)
             {
                 var source = tier.ConvertibleSourceFor(cost.Encounter);
                 if (source != null)
                     text += $" (trading in {tier.Encounter(source.Value)?.Name ?? "later"} books)";
             }
 
-            result.Add((cost.Cost, text));
+            result.Add(text);
         }
 
-        return result.OrderBy(r => r.Cost).Select(r => r.Text).ToList();
+        return result;
     }
 
     /// <summary>

@@ -280,8 +280,22 @@ public sealed class TierCatalog
     /// The window's contents are matched against <c>SpecialShop</c> rows, and the currencies those
     /// rows charge are the books.
     /// </summary>
+    /// <summary>
+    /// The shop rows the last <see cref="DiscoverBooksFromOpenShop"/> matched against the window in
+    /// front of the player, so <see cref="DiscoverRewards"/> can be held to the same NPC.
+    /// </summary>
+    private List<uint> openShopRows = [];
+
+    /// <summary>
+    /// How many shop rows the last read was held to, or 0 if it had to search the whole game's shop
+    /// data. Worth showing: the two answers are trustworthy to very different degrees.
+    /// </summary>
+    public int OpenShopRowCount => openShopRows.Count;
+
     public string DiscoverBooksFromOpenShop()
     {
+        openShopRows = [];
+
         var visible = ReadOpenShopItemIds();
         if (visible.Count == 0)
             return string.Empty;
@@ -289,6 +303,8 @@ public sealed class TierCatalog
         var rows = MatchingShopRows(visible);
         if (rows.Count == 0)
             return "A shop is open, but none of its entries matched the game's shop data.";
+
+        openShopRows = rows.Select(r => r.RowId).ToList();
 
         var books = CostItemsOf(rows);
         if (books.Count == 0)
@@ -393,13 +409,24 @@ public sealed class TierCatalog
     }
 
     /// <summary>
-    /// Walks <c>SpecialShop</c> for everything the tier's books buy. This is why the plugin never
+    /// Reads <c>SpecialShop</c> for everything the tier's books buy. This is why the plugin never
     /// asks anyone to type in exchange costs: the shop rows are the same data the game uses, so
     /// they cannot disagree with it.
+    ///
+    /// <b>Held to the shop that is open in front of you</b> whenever there is one. It used to read
+    /// the whole game's shop data, keyed only on the book item — which is fine for an old tier
+    /// whose books nothing else wants, and wrong for a current one, where the same books turn up in
+    /// another NPC's rows and the tier came back full of entries from a shop nobody had opened.
+    ///
+    /// With no shop open it still falls back to the whole sheet, because that is the only thing it
+    /// can do and it is right often enough to be worth offering — but it says so.
     /// </summary>
     public int DiscoverRewards()
     {
         var tier = Tier;
+
+        // The rows matched against the open window, if the books were just read from one.
+        var only = openShopRows.ToHashSet();
 
         var tokens = tier.Encounters
                          .Where(e => e.TokenItemId != 0)
@@ -420,6 +447,9 @@ public sealed class TierCatalog
 
         foreach (var shop in Services.Data.GetExcelSheet<SpecialShop>())
         {
+            if (only.Count > 0 && !only.Contains(shop.RowId))
+                continue;
+
             foreach (var entry in shop.Item)
             {
                 foreach (var cost in entry.ItemCosts)

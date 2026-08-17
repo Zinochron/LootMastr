@@ -24,6 +24,9 @@ public sealed class LootTab : ITab
     private readonly LootPlanner planner;
     private readonly ClearTracker clears;
 
+    private SimulationResult? forecast;
+    private int forecastSignature;
+
     public LootTab(Configuration config, LootAssigner assigner, ChatAnnouncer announcer,
                    RosterStore roster, TierCatalog tiers, LootPlanner planner, ClearTracker clears)
     {
@@ -96,7 +99,7 @@ public sealed class LootTab : ITab
         foreach (var encounter in encounters)
             ImGui.TableSetupColumn(encounter.Name, ImGuiTableColumnFlags.WidthFixed, 78f * ImGuiHelpers.GlobalScale);
 
-        ImGui.TableSetupColumn("Can buy now", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Should buy now", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableHeadersRow();
 
         DrawKillsRow(encounters);
@@ -199,12 +202,29 @@ public sealed class LootTab : ITab
 
         ImGui.TableNextColumn();
 
-        var affordable = planner.AffordableNow(member);
+        var buy = planner.ShouldBuyNow(Forecast(), member);
 
-        if (affordable.Count == 0)
+        if (buy.Count == 0)
             ImGui.TextDisabled("—");
         else
-            Widgets.Coloured(Widgets.Done, string.Join(", ", affordable));
+            Widgets.Coloured(Widgets.Done, string.Join(", ", buy));
+    }
+
+    /// <summary>
+    /// The plan, kept until something it reads changes. The book column needs it every frame and it
+    /// is far too much work to redo at that rate.
+    /// </summary>
+    private SimulationResult Forecast()
+    {
+        var signature = roster.Signature();
+
+        if (forecast == null || signature != forecastSignature)
+        {
+            forecastSignature = signature;
+            forecast = planner.Forecast();
+        }
+
+        return forecast;
     }
 
     /// <summary>

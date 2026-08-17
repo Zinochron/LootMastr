@@ -125,17 +125,6 @@ public sealed class LootAssignmentRunner : IDisposable
 
     public string Start(LiveLootItem target, string playerName)
     {
-        // Off unless switched on, because an earlier version of this crashed the client. The list
-        // clicks that most likely caused it are gone, but "most likely" is not something to turn on
-        // behind somebody's back.
-        if (!config.EnableAssignment)
-        {
-            Status = $"{target.Name} → {playerName}. Assign it in game, or switch assigning on in " +
-                     "Settings once you have somewhere safe to try it.";
-
-            return Status;
-        }
-
         if (IsRunning)
             return "Already assigning something.";
 
