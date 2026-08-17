@@ -399,10 +399,21 @@ public sealed class GearScanner : IDisposable
 
             need.EquippedItemId = itemId;
             need.EquippedSource = classifier.Classify(itemId);
+        }
+
+        // Before anything is compared, not after. The game reports the ring pair in its own order and
+        // a gear planner in whichever the set was built in, so a player wearing both target rings the
+        // other way round would otherwise be read as wearing neither — and two finished slots would
+        // stay in the distribution.
+        member.AlignRings();
+
+        foreach (var slot in Slots.All)
+        {
+            var need = member.NeedFor(slot);
 
             // Wearing it is proof of owning it, and catches everything picked up before the plugin
             // was ever opened. The reverse is not proof of anything, so nothing is turned off here.
-            if (!need.IsWearingTarget)
+            if (need.EquippedItemId == 0 || !need.IsWearingTarget)
                 continue;
 
             if (need.Source == GearSource.Raid)

@@ -726,6 +726,17 @@ to get wrong and invisible when you do:
 - **There is one ring coffer**, so drop-facing views say "Ring" rather than "Ring 1" —
   `Slots.CofferLabel`. The roster grid keeps both columns, because a gear set really does have two
   ring slots.
+- **Which finger a ring is on carries no information**, and comparing the pair slot for slot was
+  wrong because of it. The game reports the equipped pair in its own order; a gear planner puts them
+  in whichever slot the set happened to be built in. A player wearing both target rings the other way
+  round therefore read as wearing **neither** — two misses on a finished pair, which kept two slots
+  in the distribution and showed a gain for a piece already owned.
+
+  `RosterMember.AlignRings` crosses the pair when doing so matches more targets, and is called after
+  a scan, after an import, and from *Re-file imports* to repair rosters stored before it existed.
+  Only the equipped ids ever move — the target set stays exactly as imported, since its order is
+  what the plan and the sheets are written against. A pair that matches nothing either way round is
+  left as read, so a scan's output never depends on the last one.
 
 An assignment can also be refused for exactly this reason: handing someone a unique item they
 already own fails, which is why success is the item leaving the chest rather than the click landing.

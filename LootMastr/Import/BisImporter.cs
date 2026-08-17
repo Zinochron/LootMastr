@@ -147,6 +147,10 @@ public sealed class BisImporter : IDisposable
 
         member.TargetFoodItemId = set.FoodItemId;
 
+        // The targets just changed, so a pair that lined up against the old set may not against this
+        // one. Rings are interchangeable and only the worn ids move, never the imported set.
+        member.AlignRings();
+
         Choosing = null;
         Choices = [];
 
@@ -190,6 +194,11 @@ public sealed class BisImporter : IDisposable
                 need.Source = source;
                 changed++;
             }
+
+            // Catches rosters scanned before this existed, where a crossed ring pair was stored as
+            // read and has been reading as two misses ever since.
+            if (member.AlignRings())
+                changed++;
         }
 
         Status = changed == 0

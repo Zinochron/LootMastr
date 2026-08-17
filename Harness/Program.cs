@@ -1143,6 +1143,67 @@ var rules = new PriorityRules();
           stats.With(StatBlock.Attributes.Strength, 500) == stats);
 }
 
+// --- a ring is a ring, whichever finger it is on --------------------------------------------------
+
+{
+    const uint raidRing = 100;
+    const uint tomeRing = 200;
+
+    static RosterMember Rings(uint target1, uint target2, uint worn1, uint worn2)
+    {
+        var m = new RosterMember { Name = "R", World = "Test" };
+
+        m.NeedFor(GearSlot.Ring1).BisItemId = target1;
+        m.NeedFor(GearSlot.Ring2).BisItemId = target2;
+        m.NeedFor(GearSlot.Ring1).EquippedItemId = worn1;
+        m.NeedFor(GearSlot.Ring2).EquippedItemId = worn2;
+
+        return m;
+    }
+
+    // Both target rings, worn the other way round. Compared slot for slot this is two misses on a
+    // finished pair — which would keep two slots in the distribution and show a gain for a piece
+    // already owned. Which finger a ring is on carries no information.
+    var crossed = Rings(raidRing, tomeRing, tomeRing, raidRing);
+    Check("a crossed pair is misread before aligning",
+          !crossed.NeedFor(GearSlot.Ring1).IsWearingTarget &&
+          !crossed.NeedFor(GearSlot.Ring2).IsWearingTarget);
+
+    Check("aligning reports that it moved something", crossed.AlignRings());
+
+    Check("and then both rings are on target",
+          crossed.NeedFor(GearSlot.Ring1).IsWearingTarget &&
+          crossed.NeedFor(GearSlot.Ring2).IsWearingTarget);
+
+    // A pair already in order is left alone, or aligning would flap back and forth every scan.
+    var straight = Rings(raidRing, tomeRing, raidRing, tomeRing);
+    Check("a pair already in order is not touched", !straight.AlignRings());
+    Check("and stays on target",
+          straight.NeedFor(GearSlot.Ring1).IsWearingTarget &&
+          straight.NeedFor(GearSlot.Ring2).IsWearingTarget);
+
+    // One of the two, on the other finger: crossing gets one match instead of none.
+    var half = Rings(raidRing, tomeRing, 0, raidRing);
+    Check("one ring on the wrong finger is still moved", half.AlignRings());
+    Check("and lands on its own target", half.NeedFor(GearSlot.Ring1).IsWearingTarget);
+
+    // Nothing matching either way round keeps the order the game reported — there is no reason to
+    // prefer one arrangement, and moving it would make a scan's output depend on the last scan.
+    var neither = Rings(raidRing, tomeRing, 300, 400);
+    Check("a pair matching nothing is left as read", !neither.AlignRings());
+    Check("and the order is unchanged", neither.NeedFor(GearSlot.Ring1).EquippedItemId == 300);
+
+    // The classification travels with the item, or a swapped pair would keep the other's source.
+    var sources = Rings(raidRing, tomeRing, tomeRing, raidRing);
+    sources.NeedFor(GearSlot.Ring1).EquippedSource = GearSource.TomeAugmented;
+    sources.NeedFor(GearSlot.Ring2).EquippedSource = GearSource.Raid;
+    sources.AlignRings();
+
+    Check("the source follows the ring",
+          sources.NeedFor(GearSlot.Ring1).EquippedSource == GearSource.Raid &&
+          sources.NeedFor(GearSlot.Ring2).EquippedSource == GearSource.TomeAugmented);
+}
+
 // --- swapping one piece for another --------------------------------------------------------------
 
 {

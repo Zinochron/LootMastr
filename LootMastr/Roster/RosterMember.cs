@@ -199,6 +199,42 @@ public sealed class RosterMember
         return need;
     }
 
+    /// <summary>
+    /// Lines the two ring slots up with the two ring targets, whichever way round they sit.
+    ///
+    /// Which finger a ring is on carries no information: the game reports the equipped pair in its
+    /// own order, and a gear planner puts them in whichever slot the set was built in. Compared
+    /// slot for slot, a player wearing both target rings the other way round reads as wearing
+    /// <b>neither</b> — two misses, on a set that is finished. That in turn keeps two ring slots in
+    /// the distribution and shows a gain for a piece already owned.
+    ///
+    /// Only the equipped ids ever move. The target set stays exactly as it was imported, because the
+    /// order in that is what the plan and the sheets are written against.
+    /// </summary>
+    public bool AlignRings()
+    {
+        var first = NeedFor(GearSlot.Ring1);
+        var second = NeedFor(GearSlot.Ring2);
+
+        var straight = Matches(first.EquippedItemId, first.BisItemId) +
+                       Matches(second.EquippedItemId, second.BisItemId);
+
+        var crossed = Matches(first.EquippedItemId, second.BisItemId) +
+                      Matches(second.EquippedItemId, first.BisItemId);
+
+        // Only when crossing them is strictly better, so a pair that already lines up is left alone
+        // and one that matches neither way round keeps the order the game reported.
+        if (crossed <= straight)
+            return false;
+
+        (first.EquippedItemId, second.EquippedItemId) = (second.EquippedItemId, first.EquippedItemId);
+        (first.EquippedSource, second.EquippedSource) = (second.EquippedSource, first.EquippedSource);
+
+        return true;
+
+        static int Matches(uint worn, uint target) => worn != 0 && worn == target ? 1 : 0;
+    }
+
     public int TokensFor(int encounter) => Tokens.GetValueOrDefault(encounter);
 
     public int UpgradesFor(GearSide side) => Upgrades.GetValueOrDefault(side);
