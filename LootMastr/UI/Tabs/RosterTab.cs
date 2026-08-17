@@ -428,8 +428,10 @@ public sealed class RosterTab : ITab
         if (gain is not { } change)
             return string.Empty;
 
+        // The flat number as well as the share, because the plan ranks on the flat one: a percentage
+        // of one player's output is not comparable with the same percentage of another's.
         var lines = $"\n\n{change.Before.EstimatedDps:N0} → {change.After.EstimatedDps:N0} dps " +
-                    $"({change.Percent:+0.00;-0.00;0.00}%)\n" +
+                    $"({change.Dps:+#,##0;-#,##0} dps, {change.Percent:+0.00;-0.00;0.00}%)\n" +
                     $"{change.Before.DamagePer100Potency:N0} → {change.After.DamagePer100Potency:N0} " +
                     "per 100 potency";
 

@@ -145,10 +145,15 @@ public sealed class PlanTab : ITab
             "Whoever has won least. A rule about people, and the one that needs no gear read at all."),
         (NeedBasis.DpsGain, "By damage gain",
             "Whoever the piece is worth most to, and nothing else. Somebody who has already had four " +
-            "pieces keeps getting them if that is where the damage is."),
+            "pieces keeps getting them if that is where the damage is.\n\n" +
+            "Measured in flat damage per second, not as a share of what they already do — a healer " +
+            "gaining a lot of their own output is fewer points of raid damage than a melee gaining a " +
+            "little of theirs, and the group only feels the points.\n\n" +
+            "The catch: comparing two different jobs leans on their rotation profiles, which are " +
+            "modelled rather than measured. Two players of the same job are compared exactly."),
         (NeedBasis.Both, "By both",
-            "On one scale: a point of damage percent and an item already won weigh the same. Somebody " +
-            "who has had four pieces needs to gain four percent more than the next player to stay ahead."),
+            "On one scale: a hundred points of damage and an item already won weigh the same. Somebody " +
+            "who has had four pieces needs to gain four hundred more than the next player to stay ahead."),
     ];
 
     /// <summary>

@@ -292,7 +292,7 @@ public sealed class LootPlanner
     }
 
     /// <summary>
-    /// What each open need would be worth to each player, in damage percent.
+    /// What each open need would be worth to each player, in <b>flat</b> damage per second.
     ///
     /// Measured once here rather than inside the simulator's inner loop, and held constant for the
     /// run. Taking the body piece does slightly change what the legs would be worth, through the
@@ -322,14 +322,17 @@ public sealed class LootPlanner
                 if (gear.Gain(member, need.Slot, target) is not { } change)
                     continue;
 
+                // Flat, not percent. Maximising the group's damage means maximising the sum of what
+                // its players do, and a percentage of a healer's output is not the same number of
+                // points as the same percentage of a melee's.
                 if (need.IsUpgrade)
                 {
                     var best = plan.UpgradeGains.GetValueOrDefault(need.Side);
-                    plan.UpgradeGains[need.Side] = Math.Max(best, change.Percent);
+                    plan.UpgradeGains[need.Side] = Math.Max(best, change.Dps);
                 }
                 else
                 {
-                    plan.SlotGains[Slots.CofferSlot(need.Slot)] = change.Percent;
+                    plan.SlotGains[Slots.CofferSlot(need.Slot)] = change.Dps;
                 }
             }
         }

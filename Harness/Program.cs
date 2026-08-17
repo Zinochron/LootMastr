@@ -1220,11 +1220,14 @@ var rules = new PriorityRules();
     static string Won(PriorityRules with, params Contender[] candidates) =>
         DropOrder.Rank(with, candidates)[0].Who.Key;
 
+    // The gains are flat damage per second, not percentages. One hundred points is worth one place
+    // in the order, so 500 against 100 is four places of advantage.
+    //
     // Somebody who has had four pieces and would gain a great deal, against somebody who has had
     // none and would gain a little. This is the case the three rankings genuinely disagree about,
     // and a group is entitled to either answer.
-    var served = new Contender("Served", RaidRole.Dps, 0, 4, 3, DpsGain: 5.0);
-    var empty = new Contender("Empty", RaidRole.Dps, 1, 0, 3, DpsGain: 1.0);
+    var served = new Contender("Served", RaidRole.Dps, 0, 4, 3, DpsGain: 500);
+    var empty = new Contender("Empty", RaidRole.Dps, 1, 0, 3, DpsGain: 100);
 
     Check("by missing gear, whoever has had least",
           Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.MissingGear }, served, empty) == "Empty");
@@ -1232,18 +1235,28 @@ var rules = new PriorityRules();
     Check("by damage, whoever gains most",
           Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.DpsGain }, served, empty) == "Served");
 
-    // Both, on one scale: four items won against four percent more damage. Five beats four, just.
-    Check("by both, four percent overtakes four items won",
+    // Both, on one scale: four items won against four hundred more points of damage. Just enough.
+    Check("by both, four hundred points overtakes four items won",
           Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.Both }, served, empty) == "Served");
 
-    var closer = empty with { DpsGain = 1.5 };
-    Check("and three and a half does not",
+    var closer = empty with { DpsGain = 150 };
+    Check("and three hundred and fifty does not",
           Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.Both }, served, closer) == "Empty");
+
+    // The whole reason for flat rather than percent. A healer gaining a large share of a small output
+    // is fewer points of raid damage than a melee gaining a smaller share of a big one — and the
+    // group only feels the points. With the role gate off so the two actually meet.
+    var bigShareSmallOutput = new Contender("Healer", RaidRole.Healer, 0, 0, 3, DpsGain: 850);
+    var smallShareBigOutput = new Contender("Melee", RaidRole.Dps, 1, 0, 3, DpsGain: 1300);
+
+    Check("the bigger flat gain wins, whatever share of their own damage it is",
+          Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.DpsGain, UseRoleOrder = false },
+              bigShareSmallOutput, smallShareBigOutput) == "Melee");
 
     // The role gate still sits above all three, or the whole point of it is lost the moment somebody
     // switches the ranking over.
-    var healer = new Contender("Healer", RaidRole.Healer, 0, 0, 6, DpsGain: 9.0);
-    var dps = new Contender("Dps", RaidRole.Dps, 1, 4, 1, DpsGain: 0.1);
+    var healer = new Contender("Healer", RaidRole.Healer, 0, 0, 6, DpsGain: 900);
+    var dps = new Contender("Dps", RaidRole.Dps, 1, 4, 1, DpsGain: 10);
 
     foreach (var basis in new[] { NeedBasis.MissingGear, NeedBasis.DpsGain, NeedBasis.Both })
     {

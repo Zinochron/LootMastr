@@ -40,7 +40,7 @@ public sealed class PlayerPlan
     public int[] Tokens { get; init; } = new int[MaxEncounters + 1];
 
     /// <summary>
-    /// What each kind of drop would be worth to this player, as a percentage of their damage.
+    /// What each kind of drop would be worth to this player, in flat damage per second.
     ///
     /// Worked out once before a projection starts and then held constant, which is an approximation
     /// worth naming: taking the body piece does slightly change what the legs would be worth, through
@@ -76,7 +76,7 @@ public sealed class PlayerPlan
         UpgradeGains = UpgradeGains,
     };
 
-    /// <summary>What a coffer for this slot would be worth, as a percentage. 0 when not known.</summary>
+    /// <summary>What a coffer for this slot would be worth, in damage per second. 0 when not known.</summary>
     public double GainFor(GearSlot slot) => SlotGains.GetValueOrDefault(Slots.CofferSlot(slot));
 
     /// <summary>What a material for this side would be worth, on the best piece it could go into.</summary>

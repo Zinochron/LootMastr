@@ -434,10 +434,29 @@ finished, which is its own question and the one the Plan tab's top table asks.
 | `DpsGain` | Who the piece is worth most to, and nothing else. |
 | `Both` | Both, on one scale. |
 
-**One scale for everything: one place in the order, one item already won, and one percent of damage
-all weigh the same.** That is what makes `Both` addable rather than arbitrary, and it is the same
-calibration the slider already rested on. Somebody who has had four pieces needs to gain four percent
-more than the next player to stay ahead of them.
+**One scale for everything: one place in the order, one item already won, and a hundred points of
+damage all weigh the same.** That is what makes `Both` addable rather than arbitrary. A geared player
+does something like ten thousand, so a hundred points is about one percent of what they do — which
+keeps the calibration continuous with the one it replaced.
+
+#### Flat damage, not a percentage
+
+`Contender.DpsGain` is **flat damage per second**. The first version used percent, and percent
+maximises the wrong thing: a healer gaining 12% of their own output is fewer points of raid damage
+than a melee gaining 10% of theirs, and a party only feels the points. "Maximise damage increases"
+means maximise the *sum*, and sums are of flat numbers.
+
+There is a cost to this and it is worth stating. A percentage very nearly cancels the rotation
+profile out — the modelled half of the damage estimate — so it was robust to a profile being wrong. A
+flat number is directly proportional to it. So:
+
+- **Two players of the same job** are compared exactly, profile and all, because it divides out.
+- **Two different jobs** are compared through their profiles, which are modelled rather than
+  measured. The help text says so.
+
+That is the honest trade: the measure that answers the question, computed with the half of the model
+that is least certain. It is also the strongest argument for eventually calibrating the profiles
+against a planner, which is what the `calibrated` flag in `dps-profiles.json` is there to record.
 
 The role gate sits above all three — the harness asserts that for each basis, because the whole point
 of gearing damage first is lost the moment switching the ranking quietly overturns it.

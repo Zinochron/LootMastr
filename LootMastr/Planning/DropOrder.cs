@@ -8,8 +8,13 @@ namespace LootMastr.Planning;
 /// <summary>
 /// What the rule needs to know about one player in the running for one drop.
 ///
-/// <paramref name="DpsGain"/> is a percentage, and 0 means "not known" as much as it means "worth
-/// nothing" — which is why the rule only reads it when the group has asked it to.
+/// <paramref name="DpsGain"/> is <b>flat damage per second</b>, not a percentage. That is the
+/// difference between maximising the group's damage and maximising somebody's personal improvement:
+/// a healer gaining 12% of their own output is fewer points of raid damage than a melee gaining 10%
+/// of theirs, and the group only feels the points.
+///
+/// 0 means "not known" as much as it means "worth nothing", which is why the rule only reads it when
+/// the group has asked it to.
 /// </summary>
 public readonly record struct Contender(
     string Key, RaidRole Role, int Order, int ItemsReceived, int OpenNeeds, double DpsGain = 0);
@@ -100,15 +105,26 @@ public static class DropOrder
     /// Open needs break ties inside a whole item — a player level with another on items won, but
     /// with more still to get, is the needier of the two, and never by enough to outweigh a win.
     /// </summary>
+    /// <summary>
+    /// Damage per second worth one place in the order.
+    ///
+    /// A geared player does something like ten thousand, so a hundred points is about one percent of
+    /// what they do — which keeps this continuous with the calibration it replaced, while measuring
+    /// the thing that actually adds up across a party.
+    /// </summary>
+    private const double DpsPerPlace = 100;
+
     private static double Served(PriorityRules rules, Contender candidate, IReadOnlyList<Contender> field)
     {
-        // One scale for everything: **one place in the order, one item already won, and one percent
-        // of damage all weigh the same.** That is the calibration the whole slider rests on, and it
-        // is the reason the two need measures can be added together at all.
+        // One scale for everything: **one place in the order, one item already won, and a hundred
+        // points of damage all weigh the same.** That is the calibration the whole slider rests on,
+        // and it is the reason the two need measures can be added together at all.
+        var damage = candidate.DpsGain / DpsPerPlace;
+
         return rules.Basis switch
         {
-            NeedBasis.DpsGain => -candidate.DpsGain,
-            NeedBasis.Both => ByItems(candidate, field) - candidate.DpsGain,
+            NeedBasis.DpsGain => -damage,
+            NeedBasis.Both => ByItems(candidate, field) - damage,
             _ => ByItems(candidate, field),
         };
 
@@ -150,7 +166,7 @@ public static class DropOrder
         {
             parts.Add(placing.Who.DpsGain == 0
                           ? "no damage gain known"
-                          : $"{placing.Who.DpsGain:+0.00;-0.00}% damage");
+                          : $"{placing.Who.DpsGain:+#,##0;-#,##0} dps");
         }
 
         return string.Join("; ", parts);
