@@ -293,9 +293,8 @@ public sealed class PlanTab : ITab
             if (drops.Success)
             {
                 Widgets.HelpMarker("The whole tier played forward: every fight cleared every week, " +
-                                   "every coffer handed to whoever the rules put first. Anything " +
-                                   "bought with books is marked and sits under the fight whose " +
-                                   "books pay for it; the next tab has what each one costs.");
+                                   "every coffer handed to whoever the rules put first, and what " +
+                                   "the week's books buy at the end of it.");
 
                 DrawScheduleWeeks(result);
             }
@@ -328,7 +327,7 @@ public sealed class PlanTab : ITab
             foreach (var encounter in encounters)
             {
                 var awards = result.Awards
-                                   .Where(a => a.Week == week && a.Encounter == encounter.Index)
+                                   .Where(a => a.Week == week && a.Encounter == encounter.Index && !a.Bought)
                                    .ToList();
 
                 ImGui.TextUnformatted(encounter.Name);
@@ -344,21 +343,70 @@ public sealed class PlanTab : ITab
                 }
 
                 foreach (var award in awards)
-                {
                     ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
-
-                    // A purchase sits under the fight whose books pay for it, which is where you
-                    // want to see it — but it is not something that has to drop, and the whole
-                    // point of this list is what the week has to produce.
-                    if (!award.Bought)
-                        continue;
-
-                    ImGui.SameLine();
-                    Widgets.Coloured(Widgets.Augment, "(books)");
-                    Widgets.Tooltip("Bought with books rather than won — the next tab has what it costs.");
-                }
             }
+
+            DrawWeeksExchanges(result, week);
         }
+    }
+
+    /// <summary>
+    /// The week's purchases, gathered at the end of it rather than filed under the fight whose
+    /// books pay for them.
+    ///
+    /// Filing them by fight put them where the books come from, which is true and unhelpful: a fight
+    /// heading in this list means "go and clear this", and a purchase is not that. Nobody has to be
+    /// anywhere for it except an NPC, and it happens once the week's clears are done — which is
+    /// exactly where it now sits.
+    /// </summary>
+    private void DrawWeeksExchanges(SimulationResult result, int week)
+    {
+        var bought = result.Awards.Where(a => a.Week == week && a.Bought).ToList();
+
+        Widgets.Coloured(Widgets.Augment, "Book exchange");
+
+        using var inner = ImRaii.PushIndent();
+
+        if (bought.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "nothing");
+            return;
+        }
+
+        var tier = tiers.Tier;
+
+        foreach (var award in bought)
+        {
+            ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
+
+            ImGui.SameLine();
+            ImGui.TextDisabled(CostOf(tier, award));
+        }
+    }
+
+    /// <summary>What a purchase costs, including the part that has to be traded for first.</summary>
+    private static string CostOf(TierDefinition tier, PlannedAward award)
+    {
+        var text = PriceOf(tier, award);
+
+        if (award.Traded is not { } trade)
+            return text;
+
+        var source = tier.Encounter(trade.FromEncounter)?.Name ?? $"#{trade.FromEncounter}";
+        return $"{text} (exchange {trade.Books} × {source})";
+    }
+
+    /// <summary>Books and fight, without the trade. Shared so the two views cannot price differently.</summary>
+    private static string PriceOf(TierDefinition tier, PlannedAward award)
+    {
+        var cost = award.Upgrade != null
+                       ? tier.CostForUpgrade(award.Upgrade.Value)
+                       : award.Slot != null
+                           ? tier.CostForSlot(award.Slot.Value)
+                           : null;
+
+        var fight = tier.Encounter(award.Encounter)?.Name ?? $"#{award.Encounter}";
+        return cost == null ? $"{fight} books" : $"{cost.Cost} × {fight}";
     }
 
     private void DrawExchangeWeeks(SimulationResult result)
@@ -398,19 +446,7 @@ public sealed class PlanTab : ITab
                 ImGui.TextUnformatted(award.What);
 
                 ImGui.TableNextColumn();
-
-                var cost = award.Upgrade != null
-                               ? tier.CostForUpgrade(award.Upgrade.Value)
-                               : award.Slot != null
-                                   ? tier.CostForSlot(award.Slot.Value)
-                                   : null;
-
-                var fight = tier.Encounter(award.Encounter)?.Name ?? $"#{award.Encounter}";
-
-                if (cost == null)
-                    ImGui.TextDisabled($"{fight} books");
-                else
-                    ImGui.TextUnformatted($"{cost.Cost} × {fight}");
+                ImGui.TextUnformatted(PriceOf(tier, award));
 
                 // Say when part of it has to be traded for first. "Three second-fight books" is a
                 // different instruction depending on whether you have three, and nothing in the
@@ -423,8 +459,8 @@ public sealed class PlanTab : ITab
                 ImGui.SameLine();
                 Widgets.Coloured(Widgets.Augment, $"(exchange {trade.Books} × {source})");
 
-                Widgets.Tooltip($"{trade.Covered} of those {cost?.Cost ?? trade.Covered} come from " +
-                                $"trading in {trade.Books} × {source}, which this player has spare.");
+                Widgets.Tooltip($"{trade.Covered} of them come from trading in {trade.Books} × " +
+                                $"{source}, which this player has spare.");
             }
         }
     }
