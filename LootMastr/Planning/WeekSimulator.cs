@@ -13,14 +13,15 @@ public readonly record struct PlannedAward(
     GearSide? Upgrade,
     string PlayerKey,
     string PlayerName,
-    bool Bought)
+    bool Bought,
+    IReadOnlyList<AwardCandidate>? Considered = null,
+    string? Why = null)
 {
     public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.CofferLabel() ?? "?";
 }
 
 public sealed record SimulationResult(
     int LastFinishWeek,
-    double WeightedFinish,
     IReadOnlyDictionary<string, int> FinishWeeks,
     IReadOnlyList<PlannedAward> Awards,
     int Horizon)
@@ -101,29 +102,16 @@ public sealed class WeekSimulator
 
         var beyond = horizon + 1;
         var finishWeeks = new Dictionary<string, int>(players.Count);
-        var weighted = 0d;
         var last = 0;
 
         foreach (var player in players)
         {
             var week = player.FinishedWeek < 0 ? beyond : player.FinishedWeek;
             finishWeeks[player.Key] = week;
-            weighted += rules.WeightFor(player.Role) * week;
             last = Math.Max(last, week);
         }
 
-        return new SimulationResult(last, weighted, finishWeeks, [..awards], horizon);
-    }
-
-    /// <summary>
-    /// A single number to compare two candidate assignments by. The last finisher dominates, with
-    /// the weighted average breaking ties — that is what lets a damage dealer win a coin flip
-    /// without ever letting the group as a whole finish later.
-    /// </summary>
-    public double Score(SimulationResult result, int playerCount)
-    {
-        var average = playerCount == 0 ? 0 : result.WeightedFinish / playerCount;
-        return (rules.LastFinisherWeight * result.LastFinishWeek) + average;
+        return new SimulationResult(last, finishWeeks, [..awards], horizon);
     }
 
     /// <summary>What a fight is expected to put up in a given week.</summary>
@@ -175,16 +163,22 @@ public sealed class WeekSimulator
     }
 
     /// <summary>
-    /// Inside the simulation, the drop goes to whoever is furthest from done. Handing it to anyone
-    /// else can only push the last finisher out, which is the thing being minimised.
+    /// Who takes the drop — through <see cref="DropOrder"/>, the same rule the loot window and the
+    /// coming week use. The simulator used to have a rule of its own here, and that is exactly how
+    /// the plan and the chest came to name different people for the same coffer.
     /// </summary>
-    private PlayerPlan? Best(IEnumerable<PlayerPlan> candidates) =>
-        candidates.OrderBy(p => rules.StrictRoleOrder ? rules.RankOf(p.Role) : 0)
-                  .ThenByDescending(p => p.Open.Count)
-                  .ThenByDescending(p => rules.WeightFor(p.Role))
-                  .ThenBy(p => p.ItemsReceived)
-                  .ThenBy(p => p.Key, StringComparer.Ordinal)
-                  .FirstOrDefault();
+    private PlayerPlan? Best(IEnumerable<PlayerPlan> candidates)
+    {
+        var list = candidates.ToList();
+        if (list.Count == 0)
+            return null;
+
+        var ranked = DropOrder.Rank(rules, list.Select(Contend).ToList());
+        return ranked.Count == 0 ? null : list.First(p => p.Key == ranked[0].Who.Key);
+    }
+
+    private static Contender Contend(PlayerPlan plan) =>
+        new(plan.Key, plan.Role, plan.Order, plan.ItemsReceived, plan.Open.Count);
 
     /// <summary>
     /// Books are spent as soon as they cover something, on whatever is most contested — that is

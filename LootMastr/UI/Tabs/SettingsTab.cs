@@ -99,43 +99,56 @@ public sealed class SettingsTab : ITab
     }
 
     /// <summary>
-    /// The weights the ranking is built from. They are exposed because "damage dealers first" means
-    /// something different in every static, and because a suggestion is only worth following if the
-    /// rule behind it can be read.
+    /// The whole loot policy: which roles come first, which players come first, and how much of the
+    /// loot to share out rather than funnel. Everything the plan shows follows from these three, so
+    /// they are worth a paragraph of explanation each.
     /// </summary>
     private void DrawWeights()
     {
-        var rules = config.Rules;
-
         DrawRoleOrder();
 
-        var last = (float)rules.LastFinisherWeight;
-        if (ImGui.SliderFloat("Weight on the slowest player", ref last, 0f, 3f, "%.2f"))
-        {
-            rules.LastFinisherWeight = last;
-            config.Save();
-        }
-
-        Widgets.HelpMarker("At 1.00 and above the plan optimises for the last person to finish, which " +
-                           "is usually what a static wants. At 0.00 it only balances the average, " +
-                           "which is a different thing — worth knowing you have asked for it.");
-
-        var fairness = (float)rules.FairnessWeight;
-        if (ImGui.SliderFloat("Spread the loot around", ref fairness, 0f, 0.5f, "%.3f"))
-        {
-            rules.FairnessWeight = fairness;
-            config.Save();
-        }
-
-        Widgets.HelpMarker("Weeks of simulated delay one already-won item is worth. Kept small on " +
-                           "purpose: it breaks ties between equal candidates rather than overriding " +
-                           "who actually needs the piece more.");
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawSpread();
 
         ImGuiHelpers.ScaledDummy(6f);
         DrawForecastLine();
 
         ImGuiHelpers.ScaledDummy(6f);
         DrawPriorityOrder();
+    }
+
+    /// <summary>
+    /// The one slider. It replaced four weights that fed a simulation, none of which could be
+    /// pointed at when someone asked why the plan had chosen a particular person.
+    /// </summary>
+    private void DrawSpread()
+    {
+        var rules = config.Rules;
+
+        var spread = (float)rules.Spread;
+        if (ImGui.SliderFloat("Share the loot out", ref spread, 0f, 1f, "%.2f"))
+        {
+            rules.Spread = spread;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Left: the top of the order takes everything it can use — one player " +
+                           "geared as fast as the raid allows.\n\n" +
+                           "Right: every drop goes to whoever is furthest behind, wherever they sit " +
+                           "in the list.\n\n" +
+                           "In between, the two are mixed: someone near the top wins unless a player " +
+                           "below them is a long way further back.\n\n" +
+                           "The role order above is a gate on top of this, so sharing the loot out " +
+                           "shares it within a role rather than handing it past one.");
+
+        Widgets.Coloured(Widgets.Muted, spread switch
+        {
+            <= 0.05f => "Everything to the top of the order.",
+            <= 0.35f => "Mostly to the top of the order.",
+            < 0.65f => "Position and need, evenly weighed.",
+            < 0.95f => "Mostly to whoever is furthest behind.",
+            _ => "Always to whoever is furthest behind.",
+        });
     }
 
     /// <summary>
@@ -190,28 +203,18 @@ public sealed class SettingsTab : ITab
             config.Save();
         }
 
-        var strict = rules.StrictRoleOrder;
-        if (ImGui.Checkbox("Follow that order strictly", ref strict))
+        var useRoles = rules.UseRoleOrder;
+        if (ImGui.Checkbox("Gear by role order", ref useRoles))
         {
-            rules.StrictRoleOrder = strict;
+            rules.UseRoleOrder = useRoles;
             config.Save();
         }
 
-        Widgets.HelpMarker("On: a healer waits while a tank still wants the same piece, whatever the " +
-                           "forecast would prefer. This is what a group means when it says it gears " +
-                           "damage first, and it is the default.\n\n" +
-                           "Off: role becomes a nudge inside the arithmetic instead, and a big enough " +
-                           "gain for someone further down the list can outweigh it.");
-
-        if (strict)
-            return;
-
-        var step = (float)rules.RoleStep;
-        if (ImGui.SliderFloat("How much one step down is worth", ref step, 0f, 2f, "%.2f"))
-        {
-            rules.RoleStep = step;
-            config.Save();
-        }
+        Widgets.HelpMarker("On: the order above is a gate. A healer waits while a tank still wants " +
+                           "the same piece, whatever else the rules would prefer — which is what a " +
+                           "group means when it says it gears damage first. This is the default.\n\n" +
+                           "Off: role is ignored entirely, and the player order and the slider below " +
+                           "decide on their own.");
     }
 
     /// <summary>
@@ -240,18 +243,32 @@ public sealed class SettingsTab : ITab
     }
 
     /// <summary>
-    /// Roster order is the final tiebreak when two players are equal candidates, so it is a real
-    /// setting rather than just how the table happens to be sorted. Drag to reorder.
+    /// The player order. With the slider left of centre this is what decides most drops, so it is a
+    /// real setting rather than just how the table happens to be sorted. Drag to reorder.
     /// </summary>
     private void DrawPriorityOrder()
     {
-        ImGui.TextUnformatted("Priority order");
-        Widgets.HelpMarker("Used only when two players come out exactly equal — after the effect on " +
-                           "the group's finish week, after role, after who has won least. Drag a name " +
-                           "to move it.");
+        var rules = config.Rules;
+
+        ImGui.TextUnformatted("Player order");
+        Widgets.HelpMarker("Who comes first inside a role. How much it counts is the slider above: " +
+                           "at the left it decides outright, at the right it only breaks ties. Drag a " +
+                           "name to move it.");
+
+        var usePlayers = rules.UsePlayerOrder;
+        if (ImGui.Checkbox("Gear in this order", ref usePlayers))
+        {
+            rules.UsePlayerOrder = usePlayers;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Off: everyone inside a role is equal, and drops go by who has won least " +
+                           "and has most left. The slider then has nothing to weigh position against.");
 
         if (roster.Members.Count == 0)
             return;
+
+        using var faded = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * 0.5f, !usePlayers);
 
         var members = roster.Members;
 

@@ -25,6 +25,9 @@ public sealed class PlayerPlan
     public required string Name { get; init; }
     public required RaidRole Role { get; init; }
 
+    /// <summary>Position in the roster, which is the player order the rules can be told to follow.</summary>
+    public int Order { get; init; }
+
     public int ItemsReceived { get; set; }
 
     public List<OpenNeed> Open { get; init; } = new();
@@ -42,6 +45,7 @@ public sealed class PlayerPlan
         Key = Key,
         Name = Name,
         Role = Role,
+        Order = Order,
         ItemsReceived = ItemsReceived,
         Open = [..Open],
         Tokens = (int[])Tokens.Clone(),
@@ -52,13 +56,14 @@ public sealed class PlayerPlan
     /// Reads a roster member's need list against a tier. Slots whose source costs the raid nothing
     /// never appear, so a player whose whole set is crafted is simply done.
     /// </summary>
-    public static PlayerPlan From(RosterMember member, RaidRole role, TierDefinition tier)
+    public static PlayerPlan From(RosterMember member, RaidRole role, TierDefinition tier, int order = 0)
     {
         var plan = new PlayerPlan
         {
             Key = member.Key,
             Name = member.Name,
             Role = role,
+            Order = order,
             ItemsReceived = member.ItemsReceived,
         };
 

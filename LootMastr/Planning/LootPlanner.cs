@@ -13,17 +13,16 @@ public readonly record struct PendingAward(string PlayerKey, GearSlot? Slot, Gea
 public sealed record Candidate(
     RosterMember Member,
     RaidRole Role,
-    double Score,
-    int GroupFinish,
-    int OwnFinish,
+    int Order,
     int ItemsReceived,
-    int WeeksSaved,
+    int OpenNeeds,
+    int FinishWeek,
     string Reason);
 
 /// <summary>
-/// Turns the roster into an answer to "who should get this". Every candidate is judged by playing
-/// the rest of the tier forward with that player holding the item, so the ranking is about what the
-/// assignment does to the group's finish date rather than about who shouted first.
+/// Turns the roster into an answer to "who should get this", by the group's own rule — see
+/// <see cref="DropOrder"/>. The simulator is still run, but only to say when each player would be
+/// finished; it no longer picks anybody.
 /// </summary>
 public sealed class LootPlanner
 {
@@ -41,14 +40,10 @@ public sealed class LootPlanner
     /// <summary>
     /// The forecast as things stand.
     ///
-    /// The coming week is decided by the same ranking the loot window uses — one full simulation per
-    /// candidate — and only the weeks after it are projected with the simulator's cheap greedy rule.
-    /// That matters: the two rules genuinely disagree, and having the plan and the chest recommend
-    /// different people was not a display quirk but two different algorithms answering the same
-    /// question.
-    ///
-    /// Anything acted on is therefore the ranking's answer; the greedy only shapes weeks nobody is
-    /// standing in front of yet.
+    /// The coming week is worked out here rather than inside the simulator, so that each award can
+    /// carry the ranking that produced it — the plan used to show a winner from one calculation
+    /// beside runners-up from another, which is exactly how a table comes to contradict itself. The
+    /// weeks after it are projected by the simulator, which now applies the same rule.
     /// </summary>
     public SimulationResult Forecast()
     {
@@ -76,8 +71,9 @@ public sealed class LootPlanner
             foreach (var slot in WeekSimulator.DropsFor(tier, encounter, 1))
             {
                 var coffer = Slots.CofferSlot(slot);
+                var ranking = RankForSlot(slot, pending);
 
-                var winner = WinnerOf(plans, RankForSlot(slot, pending));
+                var winner = WinnerOf(plans, ranking);
                 if (winner == null)
                     continue;
 
@@ -85,12 +81,15 @@ public sealed class LootPlanner
                 pending.Add(new PendingAward(winner.Key, coffer, null));
 
                 awards.Add(new PlannedAward(1, encounter.Index, coffer, null,
-                                            winner.Key, winner.Name, Bought: false));
+                                            winner.Key, winner.Name, Bought: false,
+                                            Considered: Considered(ranking), Why: ranking[0].Reason));
             }
 
             foreach (var side in encounter.UpgradeDrops)
             {
-                var winner = WinnerOf(plans, RankForUpgrade(side, pending));
+                var ranking = RankForUpgrade(side, pending);
+
+                var winner = WinnerOf(plans, ranking);
                 if (winner == null)
                     continue;
 
@@ -98,95 +97,73 @@ public sealed class LootPlanner
                 pending.Add(new PendingAward(winner.Key, null, side));
 
                 awards.Add(new PlannedAward(1, encounter.Index, null, side,
-                                            winner.Key, winner.Name, Bought: false));
+                                            winner.Key, winner.Name, Bought: false,
+                                            Considered: Considered(ranking), Why: ranking[0].Reason));
             }
         }
 
         return awards;
     }
 
+    /// <summary>
+    /// The ranking as the award carries it. Names and reasons only — the table shows exactly the
+    /// list the winner came off, rather than a fresh one computed without the earlier drops of the
+    /// same week applied, which is what used to make the two disagree.
+    /// </summary>
+    private static List<AwardCandidate> Considered(IReadOnlyList<Candidate> ranking) =>
+        ranking.Select(c => new AwardCandidate(c.Member.Name, c.Reason)).ToList();
+
     private static PlayerPlan? WinnerOf(List<PlayerPlan> plans, IReadOnlyList<Candidate> ranking) =>
         ranking.Count == 0 ? null : plans.FirstOrDefault(p => p.Key == ranking[0].Member.Key);
 
     public IReadOnlyList<Candidate> RankForSlot(GearSlot slot, IEnumerable<PendingAward>? applied = null) =>
-        Rank(plan => plan.Wants(slot), plan => plan.TakeSlot(slot), slot.CofferLabel(), applied);
+        Rank(plan => plan.Wants(slot), applied);
 
     public IReadOnlyList<Candidate> RankForUpgrade(GearSide side, IEnumerable<PendingAward>? applied = null) =>
-        Rank(plan => plan.WantsUpgrade(side), plan => plan.TakeUpgrade(side), $"{side} upgrade", applied);
+        Rank(plan => plan.WantsUpgrade(side), applied);
 
-    private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, Func<PlayerPlan, bool> take, string what,
-                                          IEnumerable<PendingAward>? applied = null)
+    /// <summary>
+    /// Everyone who still needs this drop, in the group's own order.
+    ///
+    /// One projection is run, shared by the whole ranking, and it decides nothing — it only says how
+    /// long each candidate is currently waiting, which is worth seeing beside a queue that might be
+    /// making one of them wait a long time. The previous version ran a full simulation <i>per
+    /// candidate</i> and ordered by the result, which was both slower and impossible to explain.
+    /// </summary>
+    private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, IEnumerable<PendingAward>? applied)
     {
         var basePlans = BuildPlans(applied);
-        var eligible = basePlans.Where(wants).Select(p => p.Key).ToList();
+        var eligible = basePlans.Where(wants).ToList();
         if (eligible.Count == 0)
             return [];
 
-        var simulator = NewSimulator();
-        var baseline = simulator.Run(Clone(basePlans));
-        var baselineGroup = baseline.LastFinishWeek;
+        var baseline = NewSimulator().Run(Clone(basePlans));
+
+        var contenders = eligible
+                         .Select(p => new Contender(p.Key, p.Role, p.Order, p.ItemsReceived, p.Open.Count))
+                         .ToList();
 
         var results = new List<Candidate>(eligible.Count);
 
-        foreach (var key in eligible)
+        foreach (var placing in DropOrder.Rank(config.Rules, contenders))
         {
-            var plans = Clone(basePlans);
-            var self = plans.First(p => p.Key == key);
-            take(self);
+            var member = roster.Members.FirstOrDefault(m => m.Key == placing.Who.Key);
+            if (member == null)
+                continue;
 
-            var run = NewSimulator().Run(plans);
-            var member = roster.Members.First(m => m.Key == key);
-            var role = roster.RoleOf(member);
+            var finish = baseline.FinishWeeks.GetValueOrDefault(placing.Who.Key, baseline.Horizon + 1);
 
-            var ownFinish = run.FinishWeeks.GetValueOrDefault(key, run.Horizon + 1);
-            var saved = baselineGroup - run.LastFinishWeek;
-
-            // The fairness term is deliberately tiny: it settles ties without ever outweighing a
-            // real week. Received items push the score up, so fewer is better.
-            var score = NewSimulator().Score(run, plans.Count) +
-                        (member.ItemsReceived * config.Rules.FairnessWeight);
-
-            var ownBefore = baseline.FinishWeeks.GetValueOrDefault(key, baseline.Horizon + 1);
+            var waiting = baseline.BeyondHorizon(finish)
+                              ? $"not done inside {baseline.Horizon} weeks as things stand"
+                              : $"on track for W{finish}";
 
             results.Add(new Candidate(
-                            member, role, score, run.LastFinishWeek, ownFinish, member.ItemsReceived, saved,
-                            Reason(run, saved, ownFinish, ownBefore, role, member.ItemsReceived)));
+                            member, placing.Who.Role, placing.Who.Order, placing.Who.ItemsReceived,
+                            placing.Who.OpenNeeds, finish,
+                            $"{DropOrder.Explain(config.Rules, placing)}; {waiting}"));
         }
 
-        // Role first when the order is strict: a healer waits while a tank still wants the piece,
-        // however much the simulation would rather hand it over. That is the whole point of saying
-        // "we gear damage first" — it is a queue, not a hint.
-        return results
-               .OrderBy(c => config.Rules.StrictRoleOrder ? config.Rules.RankOf(c.Role) : 0)
-               .ThenBy(c => c.Score)
-               .ThenBy(c => c.ItemsReceived)
-               .ThenByDescending(c => config.Rules.WeightFor(c.Role))
-               .ThenBy(c => roster.Members.IndexOf(c.Member))
-               .ToList();
-    }
-
-    private static string Reason(SimulationResult run, int saved, int ownFinish, int ownBefore,
-                                 RaidRole role, int received)
-    {
-        var parts = new List<string>(4);
-
-        parts.Add(saved > 0
-                      ? $"pulls the group's last week in by {saved}"
-                      : $"group still finishes W{run.LastFinishWeek}");
-
-        // What it does for them, not just where they end up. When the group's last week is the same
-        // whoever takes it — which it is whenever "weight on the slowest player" is turned down —
-        // this is the whole of why one candidate beat another, and it used to be missing.
-        var own = run.BeyondHorizon(ownFinish) ? "not done inside the horizon" : $"done W{ownFinish}";
-
-        if (ownBefore > ownFinish)
-            own += $", was W{(run.BeyondHorizon(ownBefore) ? run.Horizon + 1 : ownBefore)}";
-
-        parts.Add(own);
-        parts.Add(role == RaidRole.Dps ? "damage dealer" : role.ToString().ToLowerInvariant());
-        parts.Add(received == 0 ? "nothing won yet" : $"{received} won so far");
-
-        return string.Join("; ", parts);
+        return results;
     }
 
     /// <summary>
@@ -234,8 +211,9 @@ public sealed class LootPlanner
     {
         var tier = tiers.Tier;
 
+        // The index is the player order, so the rules can be told to follow it.
         var plans = roster.Members
-                          .Select(m => PlayerPlan.From(m, roster.RoleOf(m), tier))
+                          .Select((m, i) => PlayerPlan.From(m, roster.RoleOf(m), tier, i))
                           .ToList();
 
         if (applied == null)

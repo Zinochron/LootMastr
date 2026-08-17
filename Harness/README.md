@@ -9,12 +9,13 @@ To run it:
 ```bash
 dotnet new console -o /tmp/lootmastr-harness --force
 cp Harness/Program.cs /tmp/lootmastr-harness/
-cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/RosterMember.cs LootMastr/Planning/PlayerPlan.cs LootMastr/Planning/PriorityRules.cs LootMastr/Planning/WeekSimulator.cs /tmp/lootmastr-harness/
+cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/RosterMember.cs LootMastr/Planning/PlayerPlan.cs LootMastr/Planning/PriorityRules.cs LootMastr/Planning/DropOrder.cs LootMastr/Planning/WeekSimulator.cs /tmp/lootmastr-harness/
 dotnet run --project /tmp/lootmastr-harness
 ```
 
-It exits non-zero if anything fails. The seven copied files are the whole of the planner: if that
-list ever needs to grow, something game-facing has leaked into `Planning/`.
+It exits non-zero if anything fails. The eight copied files are the whole of the planner: the list
+should only ever grow when pure logic is pulled out into a file of its own, as `DropOrder.cs` was.
+If it grows for any other reason, something game-facing has leaked into `Planning/`.
 
 ## What it pins down
 
@@ -38,9 +39,13 @@ list ever needs to grow, something game-facing has leaked into `Planning/`.
 - Costs come from the category rules, and the last fight's books trade one for one into earlier
   ones — but only the ones not still owed to that fight, so a weapon never gets traded away.
   Own books are spent before anything is converted, and conversion never runs backwards.
-- Roles are a queue: damage, then tanks, then healers, and strictly by default — a healer with far
-  more left still waits behind a damage dealer. Within a role the drop goes to whoever has most
-  left. Turning the order off puts need back in charge.
+- The loot policy is three settings and one rule. Roles are a gate — damage, then tanks, then
+  healers by default — and a healer ahead on every other count still waits behind a damage dealer
+  until the gate is switched off. Inside a role the `Spread` slider reaches both ends: at 0 the top
+  of the player order takes a whole week's coffers, at 1 they go to whoever has won least. A tie
+  falls to the declared order, and switching the player order off leaves need in charge.
+- The ranking and the simulated week name the same player, at three points on that slider. Two
+  rules answering the same question is the bug this pins down.
 - Nobody starves when a coffer pool is scarce.
 - The same roster produces the same plan twice.
 

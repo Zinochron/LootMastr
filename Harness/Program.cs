@@ -83,8 +83,8 @@ static RosterMember Member(string name, params (GearSlot Slot, GearSource Source
     return member;
 }
 
-static PlayerPlan Plan(RosterMember member, RaidRole role, TierDefinition tier) =>
-    PlayerPlan.From(member, role, tier);
+static PlayerPlan Plan(RosterMember member, RaidRole role, TierDefinition tier, int order = 0) =>
+    PlayerPlan.From(member, role, tier, order);
 
 var tier = Tier();
 var rules = new PriorityRules();
@@ -501,24 +501,73 @@ var rules = new PriorityRules();
           !BookLedger.CanAfford(tier, plan, tier.CostForSlot(GearSlot.Weapon)!));
 }
 
-// --- the simulator prefers whoever is furthest from done -----------------------------------------
+// --- the one rule: role gate, player order, how much to share out --------------------------------
+
+// The whole loot policy is these three settings, and every table in the plugin goes through the
+// same DropOrder.Rank. What is asserted here is that each of them does what its label says, and
+// that the slider actually reaches both ends rather than hovering near the middle.
 
 {
-    var nearlyDone = Member("Near", (GearSlot.Body, GearSource.Raid));
-    var farOff = Member("Far",
-                        (GearSlot.Body, GearSource.Raid),
-                        (GearSlot.Legs, GearSource.Raid),
-                        (GearSlot.Head, GearSource.Raid),
-                        (GearSlot.Hands, GearSource.Raid));
+    static string Won(PriorityRules with, params Contender[] candidates) =>
+        DropOrder.Rank(with, candidates)[0].Who.Key;
 
-    // Both damage, because role is a queue that comes first — "furthest from done" only decides
-    // between people the role order cannot separate.
-    var plans = new List<PlayerPlan> { Plan(nearlyDone, RaidRole.Dps, tier), Plan(farOff, RaidRole.Dps, tier) };
-    var result = new WeekSimulator(tier, rules, 12).Run(plans);
+    // Same role, neither has won anything, different amounts left: only the slider separates them.
+    var top = new Contender("Top", RaidRole.Dps, 0, 0, 1);
+    var behind = new Contender("Behind", RaidRole.Dps, 1, 0, 4);
 
-    var first = result.Awards.First(a => a.Slot == GearSlot.Body);
-    Check("within a role, the first body coffer goes to the player with more left",
-          first.PlayerName == "Far", $"went to {first.PlayerName}");
+    Check("shared out, the drop goes to the player with more left",
+          Won(new PriorityRules { Spread = 1.0 }, top, behind) == "Behind");
+
+    Check("funnelled, it goes to the top of the player order instead",
+          Won(new PriorityRules { Spread = 0.0 }, top, behind) == "Top");
+
+    Check("with the player order off, funnelling has nothing to funnel towards",
+          Won(new PriorityRules { Spread = 0.0, UsePlayerOrder = false }, top, behind) == "Behind");
+
+    // Two candidates, so the positions are 0 and 1 either way round and the halves cancel exactly.
+    // The tie falls to the declared order, which is the half that was asked for out loud.
+    Check("evenly weighed, a tie falls to the player order",
+          Won(new PriorityRules { Spread = 0.5 }, top, behind) == "Top");
+
+    // Sharing out counts what people have already been given, not only what they still owe.
+    var served = new Contender("Served", RaidRole.Dps, 0, 3, 2);
+    var missed = new Contender("Missed", RaidRole.Dps, 1, 0, 2);
+
+    Check("shared out, whoever has won least goes first",
+          Won(new PriorityRules { Spread = 1.0 }, served, missed) == "Missed");
+
+    Check("funnelled, what they have already won does not count",
+          Won(new PriorityRules { Spread = 0.0 }, served, missed) == "Served");
+
+    // And the role gate sits above all of it.
+    var healer = new Contender("Healer", RaidRole.Healer, 0, 0, 5);
+    var dps = new Contender("Dps", RaidRole.Dps, 1, 3, 1);
+
+    Check("a healer ahead on every other count still waits behind a damage dealer",
+          Won(new PriorityRules { Spread = 1.0 }, healer, dps) == "Dps");
+
+    Check("with the role order off, they do not",
+          Won(new PriorityRules { Spread = 1.0, UseRoleOrder = false }, healer, dps) == "Healer");
+}
+
+{
+    // Funnelling means one player's whole list, not one lucky coffer.
+    var first = Member("First", (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid));
+    var second = Member("Second", (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid));
+
+    var focused = new PriorityRules { Spread = 0.0 };
+
+    var result = new WeekSimulator(tier, focused, 12)
+        .Run([Plan(first, RaidRole.Dps, tier, 0), Plan(second, RaidRole.Dps, tier, 1)]);
+
+    var week1 = result.Awards.Where(a => a.Week == 1 && !a.Bought).Select(a => a.PlayerName).Distinct().ToList();
+
+    Check("funnelled, the first week's coffers all go to the same player",
+          week1.Count == 1 && week1[0] == "First", string.Join(", ", week1));
+
+    Check("and the other player is still finished inside the horizon",
+          !result.BeyondHorizon(result.FinishWeeks[Plan(second, RaidRole.Dps, tier, 1).Key]),
+          $"W{result.FinishWeeks[Plan(second, RaidRole.Dps, tier, 1).Key]}");
 }
 
 // --- roles are a queue, not a weight -------------------------------------------------------------
@@ -527,12 +576,9 @@ var rules = new PriorityRules();
     Check("damage is geared first by default", rules.RankOf(RaidRole.Dps) == 0);
     Check("then tanks", rules.RankOf(RaidRole.Tank) == 1);
     Check("then healers", rules.RankOf(RaidRole.Healer) == 2);
-    Check("and the order is followed strictly by default", rules.StrictRoleOrder);
-
-    // The soft weights are derived from the same order, so the two can never disagree.
-    Check("the soft weight follows the order too",
-          rules.WeightFor(RaidRole.Dps) > rules.WeightFor(RaidRole.Tank) &&
-          rules.WeightFor(RaidRole.Tank) > rules.WeightFor(RaidRole.Healer));
+    Check("and the role order is on by default", rules.UseRoleOrder);
+    Check("as is the player order", rules.UsePlayerOrder);
+    Check("with the loot half shared out", Math.Abs(rules.Spread - 0.5) < 0.001);
 
     var dps = Member("Dps", (GearSlot.Body, GearSource.Raid));
     var tank = Member("Tank", (GearSlot.Body, GearSource.Raid));
@@ -554,71 +600,64 @@ var rules = new PriorityRules();
 }
 
 {
-    // A healer who is much further behind still waits, because a strict order is a queue. This is
-    // the case the old weights got wrong: a big enough gain used to jump the line.
-    var strict = new PriorityRules();
-
+    // A healer who is much further behind still waits, because the role order is a gate rather than
+    // one term among several. This is the case the old weights got wrong: a big enough gain used to
+    // jump the line, and no setting could stop it.
     var behind = Member("Healer",
                         (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid),
                         (GearSlot.Head, GearSource.Raid), (GearSlot.Hands, GearSource.Raid));
 
     var ahead = Member("Dps", (GearSlot.Body, GearSource.Raid));
 
-    var plans = new List<PlayerPlan> { Plan(behind, RaidRole.Healer, tier), Plan(ahead, RaidRole.Dps, tier) };
-    var result = new WeekSimulator(tier, strict, 12).Run(plans);
+    // The healer is first in the player order, so with the loot funnelled they would take the body
+    // coffer on every count except role. That is what the gate is for.
+    List<PlayerPlan> Pair() => [Plan(behind, RaidRole.Healer, tier, 0), Plan(ahead, RaidRole.Dps, tier, 1)];
 
-    var first = result.Awards.First(a => a.Slot == GearSlot.Body);
-    Check("a healer with far more left still waits behind a damage dealer", first.PlayerName == "Dps",
-          $"went to {first.PlayerName}");
+    var gated = new WeekSimulator(tier, new PriorityRules { Spread = 0.0 }, 12).Run(Pair());
 
-    // Turned off, need reasserts itself.
-    var soft = new PriorityRules { StrictRoleOrder = false };
-    var loose = new WeekSimulator(tier, soft, 12).Run(
-        [Plan(behind, RaidRole.Healer, tier), Plan(ahead, RaidRole.Dps, tier)]);
+    var first = gated.Awards.First(a => a.Slot == GearSlot.Body);
+    Check("a healer first in the player order still waits behind a damage dealer",
+          first.PlayerName == "Dps", $"went to {first.PlayerName}");
 
-    Check("with the order off, the one further behind goes first",
+    // Turned off, the player order carries it.
+    var noRoles = new PriorityRules { Spread = 0.0, UseRoleOrder = false };
+    var loose = new WeekSimulator(tier, noRoles, 12).Run(Pair());
+
+    Check("with the role order off, the player order decides instead",
           loose.Awards.First(a => a.Slot == GearSlot.Body).PlayerName == "Healer");
 }
 
-// --- handing a needed piece out never scores worse than holding it -------------------------------
+// --- one rule, so the plan and the chest cannot disagree -----------------------------------------
 
 {
-    var slow = Member("Slow",
-                      (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid),
-                      (GearSlot.Head, GearSource.Raid), (GearSlot.Hands, GearSource.Raid),
-                      (GearSlot.Feet, GearSource.Raid));
+    // The bug this replaced: the loot window ranked by running a simulation per candidate, the
+    // projection used a rule of its own, and the same coffer named two different people. Both go
+    // through DropOrder now, so a ranking and a simulated week have to agree on the first name.
+    var a = Member("A", (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid));
+    var b = Member("B", (GearSlot.Body, GearSource.Raid));
+    var c = Member("C", (GearSlot.Body, GearSource.Raid), (GearSlot.Head, GearSource.Raid));
 
-    var quick = Member("Quick", (GearSlot.Body, GearSource.Raid));
+    foreach (var spread in new[] { 0.0, 0.5, 1.0 })
+    {
+        var policy = new PriorityRules { Spread = spread };
 
-    var simulator = new WeekSimulator(tier, rules, 12);
+        List<PlayerPlan> Three() =>
+        [
+            Plan(a, RaidRole.Dps, tier, 0), Plan(b, RaidRole.Dps, tier, 1), Plan(c, RaidRole.Dps, tier, 2),
+        ];
 
-    List<PlayerPlan> Fresh() => [Plan(slow, RaidRole.Dps, tier), Plan(quick, RaidRole.Dps, tier)];
+        var contenders = Three()
+                         .Where(p => p.Wants(GearSlot.Body))
+                         .Select(p => new Contender(p.Key, p.Role, p.Order, p.ItemsReceived, p.Open.Count))
+                         .ToList();
 
-    var baseline = simulator.Score(simulator.Run(Fresh()), 2);
+        var ranked = DropOrder.Rank(policy, contenders)[0].Who.Key;
+        var simulated = new WeekSimulator(tier, policy, 12).Run(Three())
+                        .Awards.First(x => x.Slot == GearSlot.Body).PlayerKey;
 
-    var toSlow = Fresh();
-    toSlow[0].TakeSlot(GearSlot.Body);
-    var slowScore = simulator.Score(simulator.Run(toSlow), 2);
-
-    var toQuick = Fresh();
-    toQuick[1].TakeSlot(GearSlot.Body);
-    var quickScore = simulator.Score(simulator.Run(toQuick), 2);
-
-    Check("giving the piece to someone beats nobody taking it",
-          slowScore <= baseline && quickScore <= baseline,
-          $"baseline {baseline:0.00}, slow {slowScore:0.00}, quick {quickScore:0.00}");
-
-    // Both leave the group finishing in the same week, so the tiebreak is the weighted average —
-    // and finishing someone outright this week beats shortening a queue nobody is waiting on.
-    var toSlowRun = simulator.Run(Fresh().Also(p => p[0].TakeSlot(GearSlot.Body)));
-    var toQuickRun = simulator.Run(Fresh().Also(p => p[1].TakeSlot(GearSlot.Body)));
-
-    Check("neither choice changes the group's last week here",
-          toSlowRun.LastFinishWeek == toQuickRun.LastFinishWeek,
-          $"{toSlowRun.LastFinishWeek} vs {toQuickRun.LastFinishWeek}");
-
-    Check("with the last week tied, the piece finishes the player it completes",
-          quickScore < slowScore, $"quick {quickScore:0.00} < slow {slowScore:0.00}");
+        Check($"ranking and simulation name the same player at spread {spread:0.0}",
+              ranked == simulated, $"{ranked} vs {simulated}");
+    }
 }
 
 // --- a shield comes with the weapon ----------------------------------------------------------------

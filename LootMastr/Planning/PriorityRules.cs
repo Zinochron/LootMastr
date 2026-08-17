@@ -6,12 +6,18 @@ using LootMastr.Data;
 namespace LootMastr.Planning;
 
 /// <summary>
-/// How the ranking decides between people, beyond what the simulation says.
+/// The group's loot policy, in three settings.
 ///
-/// Role is an <b>order</b>, not a weight. Weights were the first attempt and they do not express
-/// what a static actually does: a multiplier on someone's finish week is a preference that the
-/// arithmetic can outvote, so a healer saving four weeks beat a damage dealer saving one. Groups do
-/// not run that way — they gear damage first, then tanks, then healers, and mean it.
+/// It used to be five weights feeding a simulation, and the trouble with that was not that the
+/// numbers were wrong — it was that nobody could look at a plan and say why it had chosen someone.
+/// A weight on a projected finish week is a preference the arithmetic can outvote, so a healer
+/// saving four weeks beat a damage dealer saving one, and turning that off meant guessing at a
+/// slider. What a static actually decides is much smaller: which roles come first, which players
+/// come first, and how much of the loot to share out rather than funnel.
+///
+/// So: <see cref="RoleOrder"/> with <see cref="UseRoleOrder"/>, the roster's own order with
+/// <see cref="UsePlayerOrder"/>, and <see cref="Spread"/> between the two extremes. Everything the
+/// plan shows follows from those, through <see cref="DropOrder"/>.
 /// </summary>
 [Serializable]
 public sealed class PriorityRules
@@ -24,45 +30,37 @@ public sealed class PriorityRules
     public List<RaidRole> RoleOrder { get; set; } = [RaidRole.Dps, RaidRole.Tank, RaidRole.Healer];
 
     /// <summary>
-    /// Whether that order decides outright. On, a healer waits while any tank still wants the same
-    /// piece — which is what "we gear damage first" means when a group says it. Off, role becomes a
-    /// nudge inside the arithmetic again, and the simulation can outvote it.
+    /// Whether that order applies at all. On, it is a gate: a healer waits while a tank still wants
+    /// the same piece, whatever the rest of the rule would prefer. Off, role is ignored entirely and
+    /// the player order and the spread decide on their own.
     /// </summary>
-    public bool StrictRoleOrder { get; set; } = true;
+    public bool UseRoleOrder { get; set; } = true;
 
     /// <summary>
-    /// How much one step down the order is worth when it is <em>not</em> strict. Only read then.
+    /// Whether the roster's own order counts. On, being higher up the list is a reason to be served
+    /// first — how strong a reason is <see cref="Spread"/>. Off, everyone inside a role is equal
+    /// until one of them has won more than another.
     /// </summary>
-    public double RoleStep { get; set; } = 0.5;
+    public bool UsePlayerOrder { get; set; } = true;
 
     /// <summary>
-    /// Weeks of simulated delay one already-won item is worth. Purely a tiebreak between players
-    /// the rest of the ranking could not separate.
+    /// How much to share the loot out, from 0 to 1.
+    ///
+    /// At <b>0</b> the top of the order takes everything it can use — one main damage dealer geared
+    /// as fast as the raid allows. At <b>1</b> every drop goes to whoever is furthest behind,
+    /// regardless of where they sit in the list. In between, position and neediness are mixed: a
+    /// player near the top wins unless someone below them is a long way further back.
+    ///
+    /// The role order is not part of this. It is a gate above it, so sliding all the way to 1 shares
+    /// the loot out <i>within</i> a role rather than handing it past one.
     /// </summary>
-    public double FairnessWeight { get; set; } = 0.05;
-
-    /// <summary>
-    /// Weight on the group's last finisher against the weighted average. At 1 the plan optimises
-    /// for everyone being done; at 0 it only cares about the average, which is a different thing
-    /// and worth knowing you have asked for.
-    /// </summary>
-    public double LastFinisherWeight { get; set; } = 1.0;
+    public double Spread { get; set; } = 0.5;
 
     /// <summary>Where a role sits in the order. Lower goes first; anything unknown goes last.</summary>
     public int RankOf(RaidRole role)
     {
         var index = RoleOrder.IndexOf(role);
         return index < 0 ? RoleOrder.Count : index;
-    }
-
-    /// <summary>
-    /// The soft form of the same order, for the weighted average. Derived from the position rather
-    /// than stored separately so the two can never say different things.
-    /// </summary>
-    public double WeightFor(RaidRole role)
-    {
-        var last = Math.Max(1, RoleOrder.Count - 1);
-        return 1.0 + ((last - Math.Min(RankOf(role), last)) * Math.Max(0, RoleStep));
     }
 
     public void Move(RaidRole role, int delta)

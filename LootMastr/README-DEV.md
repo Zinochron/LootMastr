@@ -371,49 +371,54 @@ Tiers live in two places: shipped ones next to the assembly, and ones built in g
 user's copy wins. Enums are written by name — these files get hand-edited and passed around, and
 `"Side": 2` tells nobody anything.
 
-## Role is a queue, not a weight
+## The loot policy is three settings, and one rule reads them
 
-Statics gear **damage, then tanks, then healers**, and they mean it. The first model had a
-multiplier per role on that player's finish week, which cannot express that: a multiplier is a
+`DropOrder.Rank` is the only thing anywhere that decides who a drop goes to. It reads three
+settings and nothing else:
+
+| Setting | What it does |
+|---|---|
+| `RoleOrder` + `UseRoleOrder` | Damage, then tanks, then healers. A **gate**: a healer waits while a tank still wants the piece, whatever else the rules prefer. |
+| `UsePlayerOrder` | Whether the roster's own order counts inside a role. |
+| `Spread` (0…1) | How much of the loot to share out. 0 funnels it to the top of the order; 1 gives every drop to whoever is furthest behind. |
+
+The arithmetic is two positions in the same units. Each candidate has a place in the declared order
+(role, then roster) and a place by neediness (fewest won, then most left), and `Spread` mixes them:
+`(1 − spread) × queue + spread × need`. Role is applied above that as a gate rather than as a term,
+so sliding all the way to "share it out" shares within a role rather than handing a piece past one.
+
+**This replaced five weights feeding a simulation, and the reason was not accuracy.** The old model
+ranked candidates by running a full simulation *per candidate* and comparing finish weeks. It gave
+defensible answers that nobody could explain or steer: a multiplier on a projected week is a
 preference the arithmetic can outvote, so a healer saving four weeks beat a damage dealer saving
-one. It also had no way to say anything about tanks against healers at all — the Settings tab
-exposed exactly one slider, "damage dealer priority".
+one, and the only way to stop it was a slider whose effect could not be predicted. What a static
+actually decides is small and categorical — which roles first, which players first, how much to
+share — and all three of those are now settings rather than something inferred.
 
-`PriorityRules.RoleOrder` is now an ordered list, and `StrictRoleOrder` (on by default) makes it
-decide outright: a healer waits while a tank still wants the same piece, whatever the forecast would
-prefer. Everything else — furthest from done, fairness, roster order — only separates people the
-role order could not.
+The simulation is still run. It no longer decides anything; it says **when** everyone would be
+finished, which is its own question and the one the Plan tab's top table asks.
 
-Turned off, role goes back to being a nudge, and `RoleStep` says how big a nudge. The soft weights
-are *derived* from the same list rather than stored separately, so the two forms cannot disagree.
+### One rule, so the tables cannot disagree
 
-Both the ranking and the simulator's greedy consult it, so the projection matches the decision.
+There used to be two. The loot window used the per-candidate ranking; the projection used a rule of
+its own inside `WeekSimulator.Best` ("whoever has most left"). They genuinely disagreed, which is
+how the same coffer came to name one player in the plan and another in the chest. Both now call
+`DropOrder.Rank`, and the harness asserts they name the same player at three points on the slider.
 
-## Two rules, and which one is allowed to decide
+`Forecast` still decides the coming week itself rather than letting the simulator do it, for a
+different reason: each award carries `Considered` — the ranking it actually came off. "Next drops"
+used to print the winner from the week's calculation beside runners-up from a fresh one that knew
+nothing about the earlier drops of that same week, and a table that argues with itself reads as a
+bug whichever half is right.
 
-There are two ways this can answer "who gets it", and for a long time both were on screen at once
-saying different things:
+"If it dropped right now" is a deliberate exception: it judges every kind of drop on its own with
+nothing else handed out. It can name someone else, and that is not a contradiction — the week above
+has already given the earlier drops away.
 
-- **The ranking** (`LootPlanner.Rank`) runs a full simulation per candidate and compares what each
-  assignment does to the finish weeks. Expensive, and the better answer.
-- **The greedy** (`WeekSimulator.Best`) hands the drop to whoever has most left. Cheap, and only a
-  proxy — it ignores the weights entirely, so with "weight on the slowest player" turned down the
-  two diverge completely.
-
-The rule now: **anything anyone acts on comes from the ranking.** `Forecast` decides the coming week
-with it, applying each drop before ranking the next, and only then hands the plans to the simulator
-with `startWeek: 2` for the projection. So the loot window, "Next drops", and week 1 of the schedule
-are one answer, and the greedy only shapes weeks nobody is standing in front of yet.
-
-"If it dropped right now" is the exception, deliberately: it judges every kind of drop on its own
-with nothing else handed out. It can name someone else, and that is not a contradiction — the week
-above has already given the earlier drops away.
-
-## The one number the plan is built on
+## What the simulation is still for
 
 `WeekSimulator` plays the rest of the tier forward and reports the week the **last** player
-finishes. A candidate for a drop is judged by running that simulation with them holding the item.
-Two things are deliberately assumed, and both are written on the class:
+finishes. Two things are deliberately assumed, and both are written on the class:
 
 - Coffers come up evenly — the drop pool is walked round-robin, not rolled. A slot in a pool of
   four at two drops a week therefore appears every other week, which is its average rate.
@@ -427,15 +432,19 @@ satisfied the moment they are chosen, because they cost the raid nothing. Only `
 `TomeAugmented` ever compete for a drop, and for `TomeAugmented` it is the *material* that is
 tracked, never the tome piece.
 
-## A result that surprised me
+## Sharing out counts what people have had, not what they still owe
 
-Given one player who needs five pieces and one who needs only the piece that just dropped, the
-ranking hands it to the player it **finishes**, not the one with more left — because in that case
-both choices leave the group's last week unchanged, and finishing someone outright is strictly
-better. The greedy "most remaining needs" rule inside the simulation and the ranking that wraps it
-are allowed to disagree; the ranking wins, because it is the one that plays the whole tier forward.
+The neediness half of the rule sorts on **items already won** first and open needs second. It reads
+backwards until you try the other way round: ordering by "most left" alone hands every coffer of a
+fight to the same player, because taking one does not make their list short enough to matter. Won
+items are what a group means when it says someone has had their share.
 
-The first version of the harness asserted the opposite and was wrong.
+This is also why a test that looks obvious can fail for the right reason. Asserting that "shared
+out, the body coffer goes to the player with four needs" fails in a full simulation — by the time
+fight 3 comes round, that player has already taken the head and hands from fight 2 and is now the
+one who has had most. The rule is right; the assertion was measuring the week, not the rule. Rule
+claims are asserted against `DropOrder.Rank` directly, and only claims about a whole week go
+through the simulator.
 
 ## Everything here is unique
 

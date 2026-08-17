@@ -238,30 +238,29 @@ public sealed class PlanTab : ITab
         }
     }
 
+    /// <summary>
+    /// The winner and who else was in the running — both taken from the award itself.
+    ///
+    /// It used to name the winner from the week's calculation and list the runners-up from a fresh
+    /// one that had no idea what the earlier drops of the same week had already done. The two
+    /// disagreed often enough to look broken, because they were two answers to different questions
+    /// shown as one line.
+    /// </summary>
     private void DrawAwardRecipients(PlannedAward award)
     {
-        var ranking = award.Upgrade != null
-                          ? Upgrade(award.Upgrade.Value)
-                          : award.Slot != null
-                              ? Slot(award.Slot.Value)
-                              : [];
+        var ranking = award.Considered ?? [];
 
         Widgets.Coloured(Widgets.Done, award.PlayerName);
 
-        var winner = ranking.FirstOrDefault(c => c.Member.Name == award.PlayerName);
-        if (winner != null)
-            Widgets.Tooltip($"{winner.Member.Name}\n{winner.Reason}");
+        if (!string.IsNullOrEmpty(award.Why))
+            Widgets.Tooltip($"{award.PlayerName}\n{award.Why}");
 
         if (config.ShowOnlyNextRecipient || ranking.Count <= 1)
             return;
 
-        var rest = ranking.Where(c => c.Member.Name != award.PlayerName).Take(3).ToList();
-        if (rest.Count == 0)
-            return;
-
         ImGui.SameLine();
-        ImGui.TextDisabled($"> {string.Join(" > ", rest.Select(c => c.Member.Name))}");
-        Widgets.Tooltip(string.Join("\n", ranking.Select((c, i) => $"{i + 1}. {c.Member.Name} — {c.Reason}")));
+        ImGui.TextDisabled($"> {string.Join(" > ", ranking.Skip(1).Take(3).Select(c => c.Name))}");
+        Widgets.Tooltip(string.Join("\n", ranking.Select((c, i) => $"{i + 1}. {c.Name} — {c.Reason}")));
     }
 
     private IReadOnlyList<Candidate> Slot(GearSlot slot)
