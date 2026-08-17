@@ -384,6 +384,22 @@ var rules = new PriorityRules();
     Check("spare last-fight books are traded down to finish sooner", result.LastFinishWeek == 1,
           $"week {result.LastFinishWeek}");
 
+    // The trade is reported, not just performed: three accessory books, one of them earned this
+    // week and two traded for. A plan saying "buy it with three M1S books" means something else if
+    // two of the three have to be exchanged first.
+    var buy = result.Awards.Single(a => a.Bought);
+    Check("and the plan says which books were traded in",
+          buy.Traded is { FromEncounter: 4, Books: 2, Covered: 2 },
+          buy.Traded?.ToString() ?? "nothing recorded");
+
+    var rich = Member("C", (GearSlot.Necklace, GearSource.Raid));
+    rich.Tokens[1] = 3;
+
+    Check("a purchase paid for out of its own books records no trade",
+          new WeekSimulator(noDrops, rules, 12)
+              .Run([Plan(rich, RaidRole.Dps, noDrops)])
+              .Awards.Single(a => a.Bought).Traded == null);
+
     // In a tier that does not trade books down at all, the same player waits three weeks for three
     // accessory books. Note that dropping the three in hand is not the comparison to make: every
     // week hands out a fourth-fight book too, and with no weapon owed those are spare as well.

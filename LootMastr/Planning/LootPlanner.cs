@@ -225,12 +225,12 @@ public sealed class LootPlanner
             var fight = tier.Encounter(cost.Encounter)?.Name ?? $"#{cost.Encounter}";
             var text = $"{award.What} for {cost.Cost} {fight} book(s)";
 
-            // Say so when it only works by trading books in — it is not obvious from the counts.
-            if (member.TokensFor(cost.Encounter) < cost.Cost)
+            // Say so when part of it has to be traded for first, with the figure the purchase
+            // actually used rather than one worked out again from the counts.
+            if (award.Traded is { } trade)
             {
-                var source = tier.ConvertibleSourceFor(cost.Encounter);
-                if (source != null)
-                    text += $" (trading in {tier.Encounter(source.Value)?.Name ?? "later"} books)";
+                var source = tier.Encounter(trade.FromEncounter)?.Name ?? $"#{trade.FromEncounter}";
+                text += $" (exchange {trade.Books} × {source})";
             }
 
             result.Add(text);

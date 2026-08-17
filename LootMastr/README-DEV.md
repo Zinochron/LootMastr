@@ -649,11 +649,17 @@ same `PendingAward` list the drops are ranked against. Books in hand were earned
 already happened, so spending them is not something to model at the end of the week — and a player
 about to buy the body piece should not also be handed the body coffer.
 
-Purchases are kept out of the drop views entirely. *Next drops* filters them, and the week-by-week
-list is two tabs, *Expected schedule* and *Planned book exchanges*. They were one list with the
-bought entries marked "(books)", and that is two different kinds of thing in one column: a coffer is
-a decision made in the instance with seven other people wanting it, an exchange is one player
-walking to an NPC. Reading a week meant separating them by eye every time.
+*Next drops* is drops only — a coffer is a decision made in the instance with seven other people
+wanting it, an exchange is one player walking to an NPC, and mixing them into a table about who
+should be given what made neither readable. The week-by-week view keeps both: *Expected schedule*
+lists everything a player ends up with and marks the bought ones `(books)`, and *Planned book
+exchanges* is those same purchases with what each costs.
+
+**And what it costs includes the trade.** `BookLedger.Pay` reports the conversion it had to make,
+which rides on the award as `PlannedAward.Traded` and shows as `3 × M2S (exchange 1 × M4S)`. Without
+it the plan says "buy the head piece with three second-fight books" to a player holding two, which
+is not wrong so much as unfollowable. Reconstructing it from the counts afterwards would be a second
+calculation to disagree with the first — the ledger already knows, so it says.
 
 ### Two calculations, on purpose this time
 

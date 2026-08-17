@@ -293,8 +293,9 @@ public sealed class PlanTab : ITab
             if (drops.Success)
             {
                 Widgets.HelpMarker("The whole tier played forward: every fight cleared every week, " +
-                                   "every coffer handed to whoever the rules put first. Book " +
-                                   "purchases are in the next tab.");
+                                   "every coffer handed to whoever the rules put first. Anything " +
+                                   "bought with books is marked and sits under the fight whose " +
+                                   "books pay for it; the next tab has what each one costs.");
 
                 DrawScheduleWeeks(result);
             }
@@ -319,21 +320,16 @@ public sealed class PlanTab : ITab
         using var id = ImRaii.PushId("drops");
 
         var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
-        var drops = result.Awards.Where(a => !a.Bought).ToList();
 
-        if (drops.Count == 0)
-        {
-            Widgets.Coloured(Widgets.Muted, "Nothing left that has to drop.");
-            return;
-        }
-
-        foreach (var week in Weeks(drops))
+        foreach (var week in Weeks(result.Awards))
         {
             using var indent = ImRaii.PushIndent();
 
             foreach (var encounter in encounters)
             {
-                var awards = drops.Where(a => a.Week == week && a.Encounter == encounter.Index).ToList();
+                var awards = result.Awards
+                                   .Where(a => a.Week == week && a.Encounter == encounter.Index)
+                                   .ToList();
 
                 ImGui.TextUnformatted(encounter.Name);
 
@@ -348,7 +344,19 @@ public sealed class PlanTab : ITab
                 }
 
                 foreach (var award in awards)
+                {
                     ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
+
+                    // A purchase sits under the fight whose books pay for it, which is where you
+                    // want to see it — but it is not something that has to drop, and the whole
+                    // point of this list is what the week has to produce.
+                    if (!award.Bought)
+                        continue;
+
+                    ImGui.SameLine();
+                    Widgets.Coloured(Widgets.Augment, "(books)");
+                    Widgets.Tooltip("Bought with books rather than won — the next tab has what it costs.");
+                }
             }
         }
     }
@@ -403,6 +411,20 @@ public sealed class PlanTab : ITab
                     ImGui.TextDisabled($"{fight} books");
                 else
                     ImGui.TextUnformatted($"{cost.Cost} × {fight}");
+
+                // Say when part of it has to be traded for first. "Three second-fight books" is a
+                // different instruction depending on whether you have three, and nothing in the
+                // counts says so.
+                if (award.Traded is not { } trade)
+                    continue;
+
+                var source = tier.Encounter(trade.FromEncounter)?.Name ?? $"#{trade.FromEncounter}";
+
+                ImGui.SameLine();
+                Widgets.Coloured(Widgets.Augment, $"(exchange {trade.Books} × {source})");
+
+                Widgets.Tooltip($"{trade.Covered} of those {cost?.Cost ?? trade.Covered} come from " +
+                                $"trading in {trade.Books} × {source}, which this player has spare.");
             }
         }
     }

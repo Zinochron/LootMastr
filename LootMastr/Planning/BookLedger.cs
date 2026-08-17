@@ -4,6 +4,14 @@ using LootMastr.Data;
 namespace LootMastr.Planning;
 
 /// <summary>
+/// Books of another fight traded in to cover part of a purchase.
+///
+/// <paramref name="Books"/> is what was handed over, <paramref name="Covered"/> what it bought —
+/// the two differ whenever a tier's trade is not one for one.
+/// </summary>
+public readonly record struct BookTrade(int FromEncounter, int Books, int Covered);
+
+/// <summary>
 /// What a player can pay for with the books they hold, including books traded in from another
 /// fight. Pure arithmetic, shared by the simulator and the books grid so the two can never
 /// disagree about whether someone can afford something.
@@ -52,12 +60,21 @@ public static class BookLedger
     public static bool CanAfford(TierDefinition tier, PlayerPlan player, BookCost cost) =>
         cost.Cost > 0 && Available(tier, player, cost.Encounter) >= cost.Cost;
 
+    public static bool Pay(TierDefinition tier, PlayerPlan player, BookCost cost) =>
+        Pay(tier, player, cost, out _);
+
     /// <summary>
     /// Spends the books. Own books go first and only the shortfall is converted, so nothing is
     /// traded away that did not have to be.
+    ///
+    /// <paramref name="traded"/> reports the conversion when there was one. A plan that says "buy
+    /// the head piece with three second-fight books" is a different instruction depending on whether
+    /// one of those three has to be traded for first, and that is not visible from the counts.
     /// </summary>
-    public static bool Pay(TierDefinition tier, PlayerPlan player, BookCost cost)
+    public static bool Pay(TierDefinition tier, PlayerPlan player, BookCost cost, out BookTrade? traded)
     {
+        traded = null;
+
         if (!CanAfford(tier, player, cost))
             return false;
 
@@ -75,7 +92,10 @@ public static class BookLedger
             return true;
 
         var ratio = Math.Max(1, RatioFor(tier, source.Value));
-        player.Tokens[Clamp(source.Value)] -= shortfall * ratio;
+        var spent = shortfall * ratio;
+
+        player.Tokens[Clamp(source.Value)] -= spent;
+        traded = new BookTrade(source.Value, spent, shortfall);
 
         return true;
     }

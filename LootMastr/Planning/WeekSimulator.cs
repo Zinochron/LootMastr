@@ -15,7 +15,8 @@ public readonly record struct PlannedAward(
     string PlayerName,
     bool Bought,
     IReadOnlyList<AwardCandidate>? Considered = null,
-    string? Why = null)
+    string? Why = null,
+    BookTrade? Traded = null)
 {
     public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.CofferLabel() ?? "?";
 }
@@ -221,7 +222,7 @@ public sealed class WeekSimulator
                              .ThenByDescending(x => x.Cost!.Cost)
                              .First();
 
-                if (!BookLedger.Pay(tier, player, choice.Cost!))
+                if (!BookLedger.Pay(tier, player, choice.Cost!, out var traded))
                     break;
 
                 player.Open.Remove(choice.Need);
@@ -229,7 +230,7 @@ public sealed class WeekSimulator
                 awards.Add(new PlannedAward(currentWeek, choice.Cost!.Encounter,
                                             choice.Need.IsUpgrade ? null : Slots.CofferSlot(choice.Need.Slot),
                                             choice.Need.IsUpgrade ? choice.Need.Side : null,
-                                            player.Key, player.Name, Bought: true));
+                                            player.Key, player.Name, Bought: true, Traded: traded));
             }
         }
     }
