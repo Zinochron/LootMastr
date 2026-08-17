@@ -167,7 +167,10 @@ public sealed class PlanTab : ITab
         Widgets.HelpMarker("Hides the runners-up, leaving just who each drop is for.");
         ImGui.Separator();
 
-        var week = result.Awards.Where(a => a.Week == 1).ToList();
+        // Drops only. What the coming week's books buy is a different kind of thing — nobody has to
+        // be in the instance for it and nobody else was competing for it — and it belongs under
+        // Planned book exchanges rather than mixed into a table about coffers.
+        var week = result.Awards.Where(a => a is { Week: 1, Bought: false }).ToList();
         if (week.Count == 0)
         {
             Widgets.Coloured(Widgets.Muted, "Nothing expected next week.");
@@ -227,12 +230,6 @@ public sealed class PlanTab : ITab
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(award.What);
 
-            if (award.Bought)
-            {
-                ImGui.SameLine();
-                ImGui.TextDisabled("(books)");
-            }
-
             ImGui.TableNextColumn();
             DrawAwardRecipients(award);
         }
@@ -263,37 +260,71 @@ public sealed class PlanTab : ITab
         Widgets.Tooltip(string.Join("\n", ranking.Select((c, i) => $"{i + 1}. {c.Name} — {c.Reason}")));
     }
 
+    /// <summary>
+    /// The rest of the tier, week by week, split in two.
+    ///
+    /// Drops and book purchases were one list with the bought ones marked "(books)", and they are
+    /// not the same kind of thing: a coffer is a decision made in the instance with seven other
+    /// people wanting it, and an exchange is one player walking to an NPC. Reading a week meant
+    /// filtering the two apart by eye every time.
+    /// </summary>
     private void DrawSchedule(SimulationResult result)
     {
-        ImGui.TextUnformatted("Expected schedule");
-        Widgets.HelpMarker("What the simulation expects to happen if every fight is cleared every week " +
-                           "and coffers come up evenly. Books spent are marked.");
-        ImGui.Separator();
-
         if (result.Awards.Count == 0)
         {
+            ImGui.TextUnformatted("Expected schedule");
+            ImGui.Separator();
             Widgets.Coloured(Widgets.Muted, "Nothing left to hand out.");
             return;
         }
 
-        var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
-        var lastWeek = result.Awards.Max(a => a.Week);
+        using var tabs = ImRaii.TabBar("##schedule");
+        if (!tabs.Success)
+            return;
 
-        for (var week = 1; week <= lastWeek; week++)
+        using (var drops = ImRaii.TabItem("Expected schedule"))
         {
-            // Weeks fold away because the list gets long; the fights inside one do not, because
-            // a week is only worth opening to see all of it at once.
-            var open = week == 1 ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None;
-            if (!ImGui.CollapsingHeader($"Week {week}###week{week}", open))
-                continue;
+            if (drops.Success)
+            {
+                Widgets.HelpMarker("What the simulation expects to happen if every fight is cleared " +
+                                   "every week. Book purchases are in the next tab.");
 
+                DrawScheduleWeeks(result);
+            }
+        }
+
+        using var exchanges = ImRaii.TabItem("Planned book exchanges");
+        if (exchanges.Success)
+        {
+            Widgets.HelpMarker("Every piece the plan expects to be bought rather than won, and the " +
+                               "week the books for it are there. Week 1 is what somebody could walk " +
+                               "to the NPC and buy right now.");
+
+            DrawExchangeWeeks(result);
+        }
+    }
+
+    private void DrawScheduleWeeks(SimulationResult result)
+    {
+        // Its own id scope, or the two tabs' week headers share an open/closed state.
+        using var id = ImRaii.PushId("drops");
+
+        var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
+        var drops = result.Awards.Where(a => !a.Bought).ToList();
+
+        if (drops.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "Nothing left that has to drop.");
+            return;
+        }
+
+        foreach (var week in Weeks(drops))
+        {
             using var indent = ImRaii.PushIndent();
 
             foreach (var encounter in encounters)
             {
-                var awards = result.Awards
-                                   .Where(a => a.Week == week && a.Encounter == encounter.Index)
-                                   .ToList();
+                var awards = drops.Where(a => a.Week == week && a.Encounter == encounter.Index).ToList();
 
                 ImGui.TextUnformatted(encounter.Name);
 
@@ -308,16 +339,79 @@ public sealed class PlanTab : ITab
                 }
 
                 foreach (var award in awards)
-                {
                     ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
-
-                    if (!award.Bought)
-                        continue;
-
-                    ImGui.SameLine();
-                    ImGui.TextDisabled("(books)");
-                }
             }
+        }
+    }
+
+    private void DrawExchangeWeeks(SimulationResult result)
+    {
+        using var id = ImRaii.PushId("buys");
+
+        var bought = result.Awards.Where(a => a.Bought).ToList();
+
+        if (bought.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "Nothing is expected to be bought with books.");
+            return;
+        }
+
+        var tier = tiers.Tier;
+
+        foreach (var week in Weeks(bought))
+        {
+            using var indent = ImRaii.PushIndent();
+            using var table = ImRaii.Table($"##buys{week}", 3,
+                                           ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+            if (!table.Success)
+                continue;
+
+            ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthFixed, 150f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn("Buys", ImGuiTableColumnFlags.WidthFixed, 150f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn("Costs");
+            ImGui.TableHeadersRow();
+
+            foreach (var award in bought.Where(a => a.Week == week))
+            {
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(award.PlayerName);
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(award.What);
+
+                ImGui.TableNextColumn();
+
+                var cost = award.Upgrade != null
+                               ? tier.CostForUpgrade(award.Upgrade.Value)
+                               : award.Slot != null
+                                   ? tier.CostForSlot(award.Slot.Value)
+                                   : null;
+
+                var fight = tier.Encounter(award.Encounter)?.Name ?? $"#{award.Encounter}";
+
+                if (cost == null)
+                    ImGui.TextDisabled($"{fight} books");
+                else
+                    ImGui.TextUnformatted($"{cost.Cost} × {fight}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Week headers, yielding only the ones the reader opened. Weeks fold away because the list gets
+    /// long; what is inside one does not, because a week is only worth opening to see all at once.
+    /// </summary>
+    private static IEnumerable<int> Weeks(IReadOnlyList<PlannedAward> awards)
+    {
+        var last = awards.Max(a => a.Week);
+
+        for (var week = 1; week <= last; week++)
+        {
+            var open = week == 1 ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None;
+
+            if (ImGui.CollapsingHeader($"Week {week}###week{week}", open))
+                yield return week;
         }
     }
 

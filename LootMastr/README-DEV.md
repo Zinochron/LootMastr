@@ -635,6 +635,12 @@ same `PendingAward` list the drops are ranked against. Books in hand were earned
 already happened, so spending them is not something to model at the end of the week — and a player
 about to buy the body piece should not also be handed the body coffer.
 
+Purchases are kept out of the drop views entirely. *Next drops* filters them, and the week-by-week
+list is two tabs, *Expected schedule* and *Planned book exchanges*. They were one list with the
+bought entries marked "(books)", and that is two different kinds of thing in one column: a coffer is
+a decision made in the instance with seven other people wanting it, an exchange is one player
+walking to an NPC. Reading a week meant separating them by eye every time.
+
 `+1 <fight>` raises the kill count and gives every roster member a book. The Roster tab's clear
 prompt is the accurate path — it only counts the people who were actually in the party — and this
 is the catch-up for the clears nobody confirmed in time.
