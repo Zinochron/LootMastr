@@ -13,7 +13,8 @@ public sealed record LootDecision(
     RosterMember? Winner,
     string Reason,
     IReadOnlyList<Candidate> Ranking,
-    bool AlreadyAssigned = false);
+    bool AlreadyAssigned = false,
+    bool Offered = false);
 
 /// <summary>
 /// Works out who each item in the open loot window should go to, and is the single place that would
@@ -37,11 +38,16 @@ public sealed class LootAssigner
     /// <summary>
     /// Items handed over since this chest opened, keyed by their slot and id.
     ///
-    /// The game's own <c>RollResult</c> cannot answer this: in Lootmaster mode <c>Loot.Items</c> is
-    /// empty, so every item reads as undecided however many have been given away. Without this an
-    /// assigned coffer stayed top of the list and got offered again, and again.
+    /// Nothing in the loot window answers this. In Lootmaster mode <c>Loot.Items</c> is empty, so
+    /// every item reads as undecided however many have been given away — and the chest itself keeps
+    /// showing an awarded coffer, so an item disappearing is not a signal either. What fills this is
+    /// the obtain line in chat, which is also the only thing that can tell an award apart from the
+    /// game refusing a unique item the recipient already owns.
     /// </summary>
     private readonly HashSet<string> assigned = [];
+
+    /// <summary>The row last put in front of the game, still waiting for the chat line to settle it.</summary>
+    private string? offeredKey;
 
     public LootAssigner(Configuration config, LootWindowReader loot, LootPlanner planner,
                         RosterStore roster, SafetyGuard guard, TierCatalog tiers,
@@ -66,7 +72,7 @@ public sealed class LootAssigner
     /// </summary>
     public void Refresh(bool force = false)
     {
-        CollectCompleted();
+        CollectOffered();
 
         if (!loot.WindowOpen)
         {
@@ -74,6 +80,7 @@ public sealed class LootAssigner
             {
                 decisions = [];
                 lastSignature = string.Empty;
+                offeredKey = null;
 
                 // A new chest is a clean slate; what was handed out of the last one is history.
                 assigned.Clear();
@@ -105,6 +112,10 @@ public sealed class LootAssigner
         foreach (var item in items)
         {
             var decision = Decide(item, pending);
+
+            if (KeyOf(item) == offeredKey)
+                decision = decision with { Offered = true };
+
             decisions.Add(decision);
 
             if (decision.Winner != null)
@@ -117,22 +128,39 @@ public sealed class LootAssigner
     private static string KeyOf(LiveLootItem item) => $"{item.Index}:{item.ItemId}";
 
     /// <summary>
-    /// Writes down what the runner just handed over: remembers it so it is not offered twice, and
-    /// ticks it off the recipient's list without waiting for the chat message.
+    /// Notes which row the runner just put in front of the game. Offered, not done: the game can
+    /// still refuse it, and only chat says whether anyone actually received anything.
     /// </summary>
-    private void CollectCompleted()
+    private void CollectOffered()
     {
-        if (runner.Completed is not { } item)
+        if (runner.Offered is not { } item)
             return;
 
-        var member = roster.Members.FirstOrDefault(m => m.Name == runner.CompletedRecipient);
-        if (member != null)
-            Record(member, item);
+        offeredKey = KeyOf(item);
+        runner.ClearOffered();
+        lastSignature = string.Empty;
+    }
 
-        assigned.Add(KeyOf(item));
-        runner.ClearCompleted();
+    /// <summary>
+    /// Chat saw a coffer change hands, so it is out of the running whoever got it — including
+    /// somebody outside the roster.
+    ///
+    /// This is what stops a coffer being offered twice. The plugin's own click cannot: pressing the
+    /// buttons is not the same as the item moving, and a unique coffer the recipient already owns
+    /// comes back with an error dialog and stays exactly where it was.
+    /// </summary>
+    public void MarkHandedOver(uint itemId)
+    {
+        var row = decisions.FirstOrDefault(d => d.Item.ItemId == itemId && !d.AlreadyAssigned);
+        if (row == null)
+            return;
 
-        // Force the next Refresh to recompute: the chest reads the same, but one item is spoken for.
+        var key = KeyOf(row.Item);
+        assigned.Add(key);
+
+        if (offeredKey == key)
+            offeredKey = null;
+
         lastSignature = string.Empty;
     }
 
@@ -200,7 +228,12 @@ public sealed class LootAssigner
         Record(decision.Winner, decision.Item);
 
         // Also out of the running: recording it by hand means it has been handed over.
-        assigned.Add(KeyOf(decision.Item));
+        var key = KeyOf(decision.Item);
+        assigned.Add(key);
+
+        if (offeredKey == key)
+            offeredKey = null;
+
         lastSignature = string.Empty;
 
         Status = $"{decision.Item.What} recorded for {decision.Winner.Name}.";

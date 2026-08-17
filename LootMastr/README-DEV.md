@@ -51,8 +51,18 @@ whose name appears four values later — and only falls back to the fixed offset
 nothing. `Loot.Items` is still read, but purely to enrich what was found with roll state, which
 genuinely does not exist yet at that point.
 
+**`LiveLootItem.Index` is derived from where the block sits, not from how many items were
+recognised.** It looks like a detail and is not: that number is the game's own slot index, and every
+single thing the plugin does to a chest is keyed on it — which row to select, whether the right
+window opened. Counting recognised items instead meant one coffer the catalogue could not name
+shifted every item after it by one.
+
 The loot rule comes from `ContentsFinder.Instance()->LootRules`, not from the caption, which is
 localised.
+
+**An awarded coffer stays in the chest.** A recording proved it: a slot handed over minutes earlier
+still opened its own assignment window when pressed again. So "the item is gone" is not a signal for
+anything, and neither is the window's contents. See *Knowing what has already been handed over*.
 
 ## Handing an item over
 
@@ -70,19 +80,40 @@ Two things in there are worth not forgetting.
 party list read *Shiori, Yuma* — the local player came first. Recipients are matched by name.
 
 **The game asks a question in plain words before anything happens**, and that is the safety net the
-whole design leans on. Which callback opens each window is *inferred*, not recorded, so
-`LootAssignmentRunner` tries a short list of payload shapes and **verifies against what the game put
-on screen** after each: the targeting window has to be showing the right loot index and item name,
-and the confirmation has to name both the intended player and the intended item. A wrong shape
-opens the wrong window or none, and the step is abandoned. Nothing is irreversible until the Yes,
-and that is only pressed once the dialog's own text checks out.
-
-`Note()` logs which shape worked, which is what turns the inferred list into a known one — after
-the first successful run the others can go.
+whole design leans on. Every step is **verified against what the game put on screen**: the targeting
+window has to be showing the right loot index and item name, and the confirmation has to name both
+the intended player and the intended item. Nothing is irreversible until the Yes, and that is only
+pressed once the dialog's own text checks out.
 
 Assignment modes map onto the flow directly. **Confirm** does steps 1–2 and leaves the game's own
 Yes/No for the human, which is a better confirmation than anything the plugin could put on screen.
 **Automatic** answers it too. One item at a time, because each walks all three windows.
+
+### Which item is being assigned is the selection, not the press
+
+This cost two rounds of testing, so it is worth stating flatly: **the Loot Recipient button carries
+no item.** It acts on whichever row the chest currently has selected. A recording of a failed run
+shows it plainly — the plugin pressed the button meaning the ring, and the game opened the earring,
+because the earring was the last row the player had clicked by hand and the plugin's attempt to move
+the selection had done nothing whatsoever. Repeating it just kept re-offering a coffer that had
+already been handed over, and the ring was never once tried.
+
+Two things came out of that.
+
+`AtkComponentList.SelectItem` is not enough on its own. It moves the list's own highlight without
+telling the addon, so the button went on reading the old row. The event that does reach the addon is
+the list item click, and `AtkComponentList.DispatchItemEvent(index, AtkEventType.ListItemClick)` is
+the game building that event — index and all — rather than the plugin assembling one. Hand-made list
+events are what crashed the client, so asking the game for one is also the safe way round.
+
+And the selection is **read back and checked before the button is pressed**: `AddonNeedGreed.
+SelectedItemIndex` or `AgentLoot.SelectedSlotIndex`, either will do, both were seen tracking a
+hand-clicked row. If neither says what it should after a few tries, nothing is pressed and the
+status line asks the player to click the row themselves. A press on the wrong row is not a no-op.
+
+The list itself is found by asking each node id in turn and taking the one holding as many rows as
+`AddonNeedGreed.NumItems`. Taking the first list in the window is what the earlier version did, and
+a wrong list is a selection that never moves.
 
 ### One attempt where there is no confirmation
 
@@ -91,10 +122,9 @@ Lootmaster chest offers two actions, and action `0` is **Greed only** — pressi
 item for good. An early version tried a list of payload shapes on the chest until one worked, on
 the reasoning that a wrong shape does nothing. It does something: it greeds the item.
 
-So the chest gets exactly **one** attempt, with `Configuration.AssignActionId` (1), and reports
-failure rather than working around it. Picking a recipient inside the targeting window may still be
-tried in a few shapes, because the game asks "Allow &lt;player&gt; to claim &lt;item&gt;?" afterwards and
-that check catches both a wrong name and a wrong item before anything irreversible happens.
+So the chest gets exactly **one** press, and reports failure rather than working around it. What is
+retried is the *selection*, which changes nothing on its own and is checked before anything is
+pressed.
 
 The rule worth carrying: **retry only where a verification gate stands between the attempt and the
 consequence.**
@@ -108,24 +138,28 @@ ranking every item against the same untouched roster.
 
 ### Knowing what has already been handed over
 
-The game cannot tell you. `RollResult` lives in `Loot.Items`, which is **empty** in Lootmaster mode
-— so every item in the chest reads as undecided however many have been given away. The first
-version had a single "assign the next one" button keyed on that, so after a successful assignment it
-picked the same coffer again, and again.
+**The chat line, and nothing else.** Three sources were tried and all three are blind:
 
-`LootAssigner.assigned` remembers what has gone, keyed by slot and item id, cleared when the chest
-closes. A successful run also ticks the recipient's list without waiting for the chat message, and
-recording something by hand counts too.
+- `RollResult` lives in `Loot.Items`, which is **empty** in Lootmaster mode, so every item reads as
+  undecided however many have been given away.
+- The item disappearing from the chest is not a signal — it does not disappear.
+- The plugin's own click is not a signal either. Pressing the buttons is not the same as the item
+  moving: assigning a unique coffer to someone who already owns one is **refused**, with an error
+  dialog, and the row stays exactly where it was. That happened during a recording, and treating a
+  finished click as a finished assignment marks it done when nothing changed hands.
 
-The button is per row now rather than one for "next". Which coffer is being handed over is the
-leader's call, and a list that decides for you goes wrong the moment it believes an item is still
-open when it is not.
+So `ObtainTracker` calls `LootAssigner.MarkHandedOver(itemId)` when it sees an obtain line, whoever
+it names — including someone outside the roster, since the coffer is gone either way. `assigned`
+holds those, keyed by slot and item id, cleared when the chest closes. Recording something by hand
+counts too, and the runner's own finish only marks the row *offered*, which shows in the table and
+leaves the button live.
 
-### It can legitimately fail
+The button is per row rather than one for "next". Which coffer is being handed over is the leader's
+call, and a list that decides for you goes wrong the moment it believes an item is still open when
+it is not.
 
-Assigning a unique item to someone who already owns one is refused by the game, with an error
-dialog — this happened during the recording. `VerifyGone` therefore waits for the item to actually
-leave the chest and reports if it does not, rather than retrying into the error.
+The fallback if a client's obtain line ever arrives on a channel `ObtainTracker` is not listening to:
+the Record button on the row, and the Debug tab lists every line it considered.
 
 ### Acting is opt-in, because an earlier version crashed the client
 
@@ -158,11 +192,10 @@ NeedGreedTargeting   ButtonClick    param=0   confirm
 Two earlier versions guessed a `FireCallback` number instead: `[0, index]` pressed **Greed only**
 and settled an item, `[1, index]` did nothing. The recording is what replaced that.
 
-**The recipient's `param` stayed 0 across three different recipients**, so it names the list, not the
-row. The chosen row lives in the list component's own `SelectedItemIndex`, which is why
-`SelectInList` sets that and then presses confirm. That list is found by asking for each node id in
-turn rather than hardcoding one, so a rearranged window costs a failed step instead of the wrong
-person being picked.
+**Every one of those parameters identifies the control, not the row.** They stayed the same across
+three different rows and three different recipients. The row lives in the list's own state — which
+is the whole subject of *Which item is being assigned is the selection, not the press* above, and
+the single most expensive thing to have got wrong here.
 
 Events are sent with their `Listener`, `Target` and `Node` pointing at the window, the way a real
 one arrives. A zeroed `AtkEvent` invites the game's own handler to walk a null pointer, and that
@@ -172,9 +205,18 @@ Verification still wraps every step, because a recording is one client on one pa
 
 ### Debug → the recorder
 
-`AddonWatcher` hooks `PreReceiveEvent` on the two loot windows and `PostSetup` for every addon,
-keeping the windows that appear while `NeedGreed` is up. It produced both tables above and stays for
-whenever the flow changes.
+`AddonWatcher` hooks `PreReceiveEvent` on the two loot windows, `PostSetup` for every addon (keeping
+the windows that appear while `NeedGreed` is up), and `PostRefresh` on `NeedGreed` itself. It
+produced both tables above and stays for whenever the flow changes.
+
+The `PostRefresh` snapshots exist because opening the window was never enough: what an award does to
+a coffer's row is the one thing no capture had ever shown, since the window is only snapshotted as
+it opens and by then nothing has happened. Comparison ignores the first seven values — the countdown
+lives in the header and refreshes every second, and would otherwise push every real change out.
+
+The press hook catches the plugin's own `ReceiveEvent` calls too, since they go through the same
+vtable. That is how the failed run was diagnosed: a `ButtonClick param=5` in the log with **no**
+`ListItemClick` before it is a selection that never happened.
 
 On by default: the press hook is scoped to two windows and the window hook returns immediately
 unless a chest is open, so it costs nothing — and a checkbox that has to be remembered already cost
@@ -191,7 +233,10 @@ value — click, then wait for the window to actually show the change.
 RollState, RollResult, RollValue, WeeklyLootItem, Time, LootMode}`; `RollState { UpToNeed=0,
 UpToGreed=1, UpToPass=2, Rolled=17, Unavailable=21 }`; `RollResult { UnAwarded, Needed, Greeded,
 Passed, Awarded }`; `LootMode { Normal=0, GreedOnly=1, Unavailable=2, LootMasterGreedOnly=3 }`;
-`AgentLoot.{NumItems, SelectedSlotIndex, HoveredSlotIndex, IsAddonShown()}`;
+`AgentLoot.{NumItems, SelectedSlotIndex, HoveredSlotIndex, HoveredItemId, IsAddonShown()}`;
+`AddonNeedGreed.{NumItems, SelectedItemIndex}`;
+`AtkComponentList.{SelectItem(int, bool), DispatchItemEvent(int, AtkEventType), GetItemCount(),
+SelectedItemIndex}` and `AtkEventType.ListItemClick = 35`;
 `IGameGui.GetAddonByName → AtkUnitBasePtr` with `.Address`, `.AtkValues` as
 `IEnumerable<AtkValuePtr>` and `AtkValuePtr.{ValueType, GetValue()}`;
 `IChatGui.ChatMessage → void(IChatMessage)` with `.LogKind`, `.Message`, `.Sender`;

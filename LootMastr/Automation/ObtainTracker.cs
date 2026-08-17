@@ -97,15 +97,31 @@ public sealed class ObtainTracker : IDisposable
 
         var senderText = sender.TextValue;
 
-        return roster.Members.FirstOrDefault(m => !string.IsNullOrEmpty(m.Name) &&
-                                                  (senderText.Contains(m.Name, StringComparison.Ordinal) ||
-                                                   text.Contains(m.Name, StringComparison.Ordinal)));
+        var named = roster.Members.FirstOrDefault(m => !string.IsNullOrEmpty(m.Name) &&
+                                                       (senderText.Contains(m.Name, StringComparison.Ordinal) ||
+                                                        text.Contains(m.Name, StringComparison.Ordinal)));
+
+        if (named != null)
+            return named;
+
+        // "You obtain a Genji ring coffer." names nobody and carries no player payload, which is
+        // exactly the line the leader gets when they keep a coffer themselves — a common enough
+        // case that leaving it untracked showed up as gear the plugin thought was still owed.
+        return payload == null && Services.PlayerState.IsLoaded
+                   ? roster.Find(Services.PlayerState.CharacterName,
+                                 Services.PlayerState.HomeWorld.ValueNullable?.Name.ExtractText() ?? string.Empty)
+                   : null;
     }
 
     private string Apply(RosterMember? member, uint itemId)
     {
         if (!tiers.TryMatch(itemId, out var slot, out var upgrade))
             return "not tier loot";
+
+        // Ahead of everything else, and regardless of who it went to: an item somebody has obtained
+        // is not still in the chest waiting to be assigned. This is the only honest signal there is
+        // — pressing the buttons does not mean the game accepted it.
+        assigner.MarkHandedOver(itemId);
 
         if (member == null)
             return "no roster player in the line";

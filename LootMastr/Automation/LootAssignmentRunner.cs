@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using AtkEventType = FFXIVClientStructs.FFXIV.Component.GUI.AtkEventType;
 using LootMastr.Data;
@@ -14,7 +14,7 @@ namespace LootMastr.Automation;
 /// The flow, taken from a recorded Lootmaster chest rather than guessed:
 ///
 /// <list type="number">
-/// <item><c>NeedGreed</c> — the chest. Clicking an item opens…</item>
+/// <item><c>NeedGreed</c> — the chest. Selecting a row and pressing Loot Recipient opens…</item>
 /// <item><c>NeedGreedTargeting</c> — <c>[0]</c> the loot index, <c>[4]</c> the item name,
 /// <c>[6]</c> how many candidates, <c>[7…]</c> their names. Picking one opens…</item>
 /// <item><c>SelectYesno</c> — "Allow &lt;player&gt; to claim the &lt;item&gt;?"</item>
@@ -23,14 +23,17 @@ namespace LootMastr.Automation;
 /// The candidate list is <b>not</b> in party order — the recording had the local player first and
 /// the party list the other way round — so recipients are matched by name, never by index.
 ///
-/// The window events are recorded too, not inferred. Two earlier attempts guessed at a callback
-/// number: one pressed <b>Greed only</b> and settled an item, the next did nothing at all. What
-/// drives each step now is the event a real click sends, read off a recording of three assignments.
+/// <b>Which item is being assigned is decided by the chest's selection, not by the button press.</b>
+/// The Loot Recipient button carries no item: it acts on whatever row is selected. A recording of a
+/// failed run made that plain — the plugin pressed the button for the ring and the game opened the
+/// earring, because the earring was the last row the player had clicked and the plugin's attempt to
+/// move the selection had done nothing at all. So the selection is now moved through the list's own
+/// item event, and then <b>read back and checked</b> before the button is pressed. If it cannot be
+/// moved, nothing is pressed.
 ///
-/// Every step is still verified against what the game put on screen afterwards, because a recording
-/// is one client on one patch. Nothing is irreversible until the Yes on the last dialog, and that is
-/// only pressed once the dialog's own text names both the intended player and the intended item.
-/// Nothing is ever tried twice: a wrong press in the chest is a decision, not a no-op.
+/// Every step is verified against what the game put on screen afterwards, because a recording is one
+/// client on one patch. Nothing is irreversible until the Yes on the last dialog, and that is only
+/// pressed once the dialog's own text names both the intended player and the intended item.
 /// </summary>
 public sealed class LootAssignmentRunner : IDisposable
 {
@@ -46,6 +49,9 @@ public sealed class LootAssignmentRunner : IDisposable
 
     private const int StepTimeoutMs = 4000;
 
+    /// <summary>How often to try moving the chest's selection before giving up on it.</summary>
+    private const int SelectionAttempts = 3;
+
     /// <summary>
     /// The events a real click sends, taken off a recording of three assignments in a live chest:
     ///
@@ -56,9 +62,9 @@ public sealed class LootAssignmentRunner : IDisposable
     /// NeedGreedTargeting   ButtonClick    param=0   confirm
     /// </code>
     ///
-    /// The recipient's <c>param</c> stayed 0 across three different recipients, so it identifies
-    /// the list rather than the row — the chosen row lives in the list component's own
-    /// <c>SelectedItemIndex</c>, which is why that is set instead of encoded here.
+    /// Every one of those parameters identifies the <i>control</i>, not the row: they stayed the
+    /// same across three different rows and three different recipients. The row lives in the list's
+    /// own state, which is why it is set there instead of being encoded in a parameter.
     /// </summary>
     private const int LootRecipientButton = 5;
 
@@ -67,15 +73,15 @@ public sealed class LootAssignmentRunner : IDisposable
     private enum Phase
     {
         Idle,
+        SelectRow,
+        PressRecipient,
         OpenTargeting,
         PickRecipient,
         Confirm,
-        VerifyGone,
         Done,
     }
 
     private readonly Configuration config;
-    private readonly LootWindowReader loot;
     private readonly SafetyGuard guard;
 
     private Phase phase = Phase.Idle;
@@ -85,10 +91,9 @@ public sealed class LootAssignmentRunner : IDisposable
     private DateTime lastAction = DateTime.MinValue;
     private int attempt;
 
-    public LootAssignmentRunner(Configuration config, LootWindowReader loot, SafetyGuard guard)
+    public LootAssignmentRunner(Configuration config, SafetyGuard guard)
     {
         this.config = config;
-        this.loot = loot;
         this.guard = guard;
 
         Services.Framework.Update += OnUpdate;
@@ -98,19 +103,24 @@ public sealed class LootAssignmentRunner : IDisposable
 
     public string Status { get; private set; } = string.Empty;
 
-    /// <summary>True when the last run finished with the item actually gone from the chest.</summary>
-    public bool LastSucceeded { get; private set; }
+    /// <summary>
+    /// What the last run put in front of the game, and for whom.
+    ///
+    /// Deliberately not called "completed". An awarded coffer stays in the chest — the recording
+    /// shows a slot still opening its assignment window after it had been handed over — so the
+    /// window cannot say whether anything changed hands, and neither can this. The game can still
+    /// refuse: a unique coffer the recipient already owns comes back with an error. What actually
+    /// settles a row is the obtain line in chat, which <see cref="ObtainTracker"/> watches for.
+    /// </summary>
+    public LiveLootItem? Offered { get; private set; }
 
-    /// <summary>What the last successful run handed over, for the caller to write down once.</summary>
-    public LiveLootItem? Completed { get; private set; }
+    public string OfferedRecipient { get; private set; } = string.Empty;
 
-    public string CompletedRecipient { get; private set; } = string.Empty;
-
-    /// <summary>Called by the caller once it has recorded <see cref="Completed"/>.</summary>
-    public void ClearCompleted()
+    /// <summary>Called by the caller once it has noted <see cref="Offered"/>.</summary>
+    public void ClearOffered()
     {
-        Completed = null;
-        CompletedRecipient = string.Empty;
+        Offered = null;
+        OfferedRecipient = string.Empty;
     }
 
     public string Start(LiveLootItem target, string playerName)
@@ -136,8 +146,7 @@ public sealed class LootAssignmentRunner : IDisposable
         item = target;
         recipient = playerName;
         attempt = 0;
-        LastSucceeded = false;
-        phase = Phase.OpenTargeting;
+        phase = Phase.SelectRow;
         stepStarted = DateTime.UtcNow;
         Status = $"Assigning {target.Name} to {playerName}…";
 
@@ -170,6 +179,14 @@ public sealed class LootAssignmentRunner : IDisposable
 
         switch (phase)
         {
+            case Phase.SelectRow:
+                SelectRow();
+                break;
+
+            case Phase.PressRecipient:
+                PressRecipient();
+                break;
+
             case Phase.OpenTargeting:
                 OpenTargeting();
                 break;
@@ -181,55 +198,98 @@ public sealed class LootAssignmentRunner : IDisposable
             case Phase.Confirm:
                 Confirm();
                 break;
-
-            case Phase.VerifyGone:
-                VerifyGone();
-                break;
         }
     }
 
-    private void OpenTargeting()
+    /// <summary>Puts the chest's selection on the item this run is about.</summary>
+    private void SelectRow()
     {
-        // Already showing the right item? Then the click landed.
+        // Already open on the right item — the player got there first. Carry on from there.
         if (TargetingMatchesItem())
         {
-            attempt = 0;
-            stepStarted = DateTime.UtcNow;
-            phase = Phase.PickRecipient;
+            Advance(Phase.PickRecipient);
             return;
         }
 
         if (AddonReader.IsOpen(TargetingAddon))
         {
             // Someone else's item is open. Leave it alone rather than clicking through it.
-            Fail("The targeting window is open for a different item — close it and try again.");
+            Fail("The assignment window is open for a different item — close it and try again.");
             return;
         }
 
-        // One attempt, never a list of shapes to try. Each item in a Lootmaster chest offers two
-        // actions, and a wrong press here does not do nothing — it hits "Greed only", which
-        // settles that item for good.
-        if (attempt > 0)
+        if (!SelectChestRow(item.Index))
         {
-            Fail($"{item.Name}: the assignment window did not open. The Debug tab's recorder shows " +
-                 "what the buttons actually send if the layout has changed.");
+            Fail($"{item.Name}: the chest's item list could not be read, so nothing was pressed. " +
+                 "Click the row in the game window yourself and press Assign again.");
+
             return;
         }
 
-        attempt++;
+        Advance(Phase.PressRecipient);
+    }
 
-        // Select the row, then press Loot Recipient — what a click on that row does.
-        SelectInList(ChestAddon, item.Index);
+    /// <summary>
+    /// Presses Loot Recipient — but only once the chest agrees about which row that means.
+    ///
+    /// This check is the whole point. The button has no idea which item it is for; it reads the
+    /// selection. Pressing it on the wrong row does not fail, it opens the wrong item's assignment
+    /// window, and that is how a coffer already handed over got offered again.
+    /// </summary>
+    private void PressRecipient()
+    {
+        if (TargetingMatchesItem())
+        {
+            Advance(Phase.PickRecipient);
+            return;
+        }
+
+        if (AddonReader.IsOpen(TargetingAddon))
+        {
+            Fail("The assignment window is open for a different item — close it and try again.");
+            return;
+        }
+
+        if (!SelectionIsOn(item.Index))
+        {
+            if (attempt >= SelectionAttempts)
+            {
+                Fail($"{item.Name}: the chest still has another row selected, so nothing was " +
+                     "pressed. Click the row in the game window yourself, then press Assign again.");
+
+                return;
+            }
+
+            attempt++;
+            SelectChestRow(item.Index);
+            return;
+        }
+
         ClickButton(ChestAddon, LootRecipientButton);
+        Advance(Phase.OpenTargeting);
+    }
+
+    private void OpenTargeting()
+    {
+        if (TargetingMatchesItem())
+        {
+            Advance(Phase.PickRecipient);
+            return;
+        }
+
+        // Only reachable if the selection moved between the check and the press.
+        if (AddonReader.IsOpen(TargetingAddon))
+        {
+            Fail($"The game opened the assignment window for something other than {item.Name}. " +
+                 "Nothing was chosen — close it and try again.");
+        }
     }
 
     private void PickRecipient()
     {
         if (AddonReader.IsOpen(ConfirmAddon))
         {
-            attempt = 0;
-            stepStarted = DateTime.UtcNow;
-            phase = Phase.Confirm;
+            Advance(Phase.Confirm);
             return;
         }
 
@@ -288,32 +348,34 @@ public sealed class LootAssignmentRunner : IDisposable
         if (config.Mode != AssignmentMode.Automatic)
         {
             Status = $"Ready: \"{prompt}\" — confirm it in game.";
-            phase = Phase.Done;
+            Finish();
             return;
         }
 
         // Yes is 0 on SelectYesno.
         ClickButton(ConfirmAddon, ConfirmButton);
-        stepStarted = DateTime.UtcNow;
-        phase = Phase.VerifyGone;
+        Status = $"{item.Name} → {recipient}, confirmed.";
+        Finish();
     }
 
-    private void VerifyGone()
+    /// <summary>
+    /// Ends the run at the point the plugin's part is over. Whether the item really changed hands
+    /// is not something this can see — the chest keeps showing an awarded coffer, and the game
+    /// refuses a unique item the recipient already owns — so it is reported as offered and left for
+    /// chat to settle.
+    /// </summary>
+    private void Finish()
     {
-        if (AddonReader.IsOpen(ConfirmAddon))
-            return;
-
-        // The item leaving the chest is the only proof it was handed over. It can legitimately
-        // fail here — a unique item the recipient already owns is refused by the game — and that
-        // has to be reported rather than retried.
-        if (loot.Read().Any(i => i.Index == item.Index && i.ItemId == item.ItemId))
-            return;
-
-        LastSucceeded = true;
-        Completed = item;
-        CompletedRecipient = recipient;
-        Status = $"{item.Name} → {recipient}.";
+        Offered = item;
+        OfferedRecipient = recipient;
         phase = Phase.Done;
+    }
+
+    private void Advance(Phase next)
+    {
+        attempt = 0;
+        stepStarted = DateTime.UtcNow;
+        phase = next;
     }
 
     private bool TargetingMatchesItem()
@@ -359,18 +421,98 @@ public sealed class LootAssignmentRunner : IDisposable
         prompt.Contains(item.Name, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Sends a window the same event a click on it would. The event is built with its listener and
-    /// target pointing at the window, which is what a real one carries — a zeroed event invites the
-    /// game's own handler to walk a null pointer, and that takes the client with it.
+    /// Whether the chest is pointing at the row this run is about.
+    ///
+    /// Two places hold that answer and either will do: the addon's own <c>SelectedItemIndex</c> and
+    /// the loot agent's <c>SelectedSlotIndex</c>. Both were seen tracking a hand-clicked row in the
+    /// recording, and requiring both to agree would fail a run over a field that happens to lag a
+    /// frame.
     /// </summary>
+    private static unsafe bool SelectionIsOn(int index)
+    {
+        var addon = AddonReader.Find(ChestAddon);
+
+        if (!addon.IsNull)
+        {
+            var chest = (AddonNeedGreed*)addon.Address;
+            if (chest != null && chest->SelectedItemIndex == index)
+                return true;
+        }
+
+        var agent = AgentLoot.Instance();
+        return agent != null && agent->SelectedSlotIndex == index;
+    }
+
+    /// <summary>
+    /// Selects a row in the chest, the way a click does.
+    ///
+    /// <c>SelectItem</c> alone was not enough: it moves the list's own highlight without telling the
+    /// addon, so the Loot Recipient button went on acting on the row the player had clicked. The
+    /// event that does reach the addon is the list item click, and the game builds it — index and
+    /// all — in <c>DispatchItemEvent</c>. Hand-made list events are what crashed the client, so this
+    /// asks the game for one rather than assembling it.
+    /// </summary>
+    private static unsafe bool SelectChestRow(int index)
+    {
+        var addon = AddonReader.Find(ChestAddon);
+        if (addon.IsNull)
+            return false;
+
+        var chest = (AddonNeedGreed*)addon.Address;
+        if (chest == null)
+            return false;
+
+        var list = FindItemList(chest);
+        if (list == null)
+            return false;
+
+        // The game indexes its own renderers with this; out of range would walk off the end.
+        if (index < 0 || index >= list->GetItemCount())
+            return false;
+
+        list->SelectItem(index, false);
+        list->DispatchItemEvent(index, AtkEventType.ListItemClick);
+
+        return true;
+    }
+
+    /// <summary>
+    /// The chest's item list, found by asking each node id in turn and taking the one holding as
+    /// many rows as the chest has items. The first list in the window is only a fallback — picking
+    /// it blindly is what the earlier version did, and a wrong list means a selection that never
+    /// moves.
+    /// </summary>
+    private static unsafe AtkComponentList* FindItemList(AddonNeedGreed* chest)
+    {
+        const uint highestNodeId = 64;
+
+        var unitBase = (AtkUnitBase*)chest;
+        AtkComponentList* fallback = null;
+
+        for (uint nodeId = 1; nodeId <= highestNodeId; nodeId++)
+        {
+            var list = unitBase->GetComponentListById(nodeId);
+            if (list == null)
+                continue;
+
+            if (fallback == null)
+                fallback = list;
+
+            if (chest->NumItems > 0 && list->GetItemCount() == chest->NumItems)
+                return list;
+        }
+
+        return fallback;
+    }
+
     /// <summary>
     /// Presses a button in a window.
     ///
     /// The version of this that crashed the client passed a <b>null</b> <c>AtkEventData</c>, and
     /// used it for list clicks as well — where the game's handler reads that data to work out which
-    /// row was hit. Lists no longer go through here at all (see <see cref="SelectInList"/>), and
-    /// what is left gets a real, zeroed event and event data with the window as listener, which is
-    /// the shape a genuine press arrives in.
+    /// row was hit. Lists no longer go through here at all, and what is left gets a real, zeroed
+    /// event and event data with the window as listener, which is the shape a genuine press arrives
+    /// in.
     /// </summary>
     private unsafe void ClickButton(string addonName, int eventParam)
     {
@@ -399,18 +541,9 @@ public sealed class LootAssignmentRunner : IDisposable
     }
 
     /// <summary>
-    /// Picks a row in a window's list, through the game's own <c>SelectItem</c> rather than by
-    /// synthesising the click. That method builds whatever the list needs internally, which is
-    /// exactly the part that could not be reconstructed from the outside — and hand-made list
-    /// events are what took the client down.
-    ///
-    /// The click event carries the list's id rather than the row, which is why the recording showed
-    /// the same parameter for three different recipients: the row is this call's argument.
-    ///
-    /// The list is found by asking for each node id in turn rather than hardcoding one. A wrong
-    /// guess is caught by the checks that follow — the targeting window has to be showing the right
-    /// item, and the confirmation has to name the right player — so it costs a failed step rather
-    /// than the wrong person.
+    /// Picks a row in the recipient list. That window holds one list and its selection is read at
+    /// the moment its own confirm button is pressed, so the highlight is enough here — and the
+    /// window's text names the chosen player before anything irreversible happens.
     /// </summary>
     private unsafe bool SelectInList(string addonName, int index)
     {
@@ -432,7 +565,12 @@ public sealed class LootAssignmentRunner : IDisposable
             if (list == null)
                 continue;
 
-            list->SelectItem(index, true);
+            if (index < 0 || index >= list->GetItemCount())
+                return false;
+
+            list->SelectItem(index, false);
+            list->DispatchItemEvent(index, AtkEventType.ListItemClick);
+
             return true;
         }
 
@@ -443,7 +581,6 @@ public sealed class LootAssignmentRunner : IDisposable
     {
         Status = reason;
         phase = Phase.Done;
-        LastSucceeded = false;
         Services.Log.Warning($"Loot assignment stopped: {reason}");
     }
 

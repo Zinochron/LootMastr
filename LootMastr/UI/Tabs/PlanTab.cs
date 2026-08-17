@@ -174,29 +174,56 @@ public sealed class PlanTab : ITab
             return;
         }
 
-        using var table = ImRaii.Table("##nextDrops", 3,
+        var known = new HashSet<int>();
+
+        foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
+        {
+            known.Add(encounter.Index);
+            DrawFightDrops(encounter.Index, encounter.Name,
+                           week.Where(a => a.Encounter == encounter.Index).ToList());
+        }
+
+        // Anything the tier no longer has a fight for still has to appear somewhere.
+        foreach (var group in week.Where(a => !known.Contains(a.Encounter))
+                                  .GroupBy(a => a.Encounter)
+                                  .OrderBy(g => g.Key))
+        {
+            DrawFightDrops(group.Key, $"Fight #{group.Key}", group.ToList());
+        }
+    }
+
+    /// <summary>
+    /// One fight's drops, in a table of its own.
+    ///
+    /// A table per fight rather than a Fight column down the side. ImGui cannot span rows, and both
+    /// ways of pretending otherwise were worse: repeating the name on every row buries the drops,
+    /// and nesting a table beside the name never lines its columns up with the one above it. Here
+    /// the fight is the first column's heading, which costs nothing and cannot drift.
+    /// </summary>
+    private void DrawFightDrops(int index, string name, IReadOnlyList<PlannedAward> awards)
+    {
+        using var id = ImRaii.PushId(index);
+
+        if (awards.Count == 0)
+        {
+            ImGui.TextUnformatted(name);
+            ImGui.SameLine();
+            Widgets.Coloured(Widgets.Muted, "— nothing expected");
+            return;
+        }
+
+        using var table = ImRaii.Table("##drops", 2,
                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
         if (!table.Success)
             return;
 
-        ImGui.TableSetupColumn("Fight", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
-        ImGui.TableSetupColumn("Drop", ImGuiTableColumnFlags.WidthFixed, 130f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn(name, ImGuiTableColumnFlags.WidthFixed, 150f * ImGuiHelpers.GlobalScale);
         ImGui.TableSetupColumn("Goes to");
         ImGui.TableHeadersRow();
 
-        var namedFight = -1;
-
-        foreach (var award in week.OrderBy(a => a.Encounter))
+        foreach (var award in awards)
         {
             ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-
-            if (award.Encounter != namedFight)
-            {
-                ImGui.TextUnformatted(tiers.Tier.Encounter(award.Encounter)?.Name ?? $"#{award.Encounter}");
-                namedFight = award.Encounter;
-            }
-
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(award.What);
 
@@ -268,52 +295,34 @@ public sealed class PlanTab : ITab
                            "given away, and here they have not.");
         ImGui.Separator();
 
-        // Two levels of table rather than one. ImGui has no row spanning, so the fight name gets a
-        // cell of its own with the whole group nested beside it — which is what spanning would look
-        // like, and keeps the fight from being repeated down the column.
-        using var table = ImRaii.Table("##priorities", 2,
-                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
-        if (!table.Success)
-            return;
-
-        ImGui.TableSetupColumn("Fight", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
-        ImGui.TableSetupColumn("Drops");
-        ImGui.TableHeadersRow();
-
+        // A table per fight, for the same reason as the drops above: nesting one table inside
+        // another never lined up, and it was the layout the fight column was fighting against.
         foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
         {
             using var id = ImRaii.PushId(encounter.Index);
 
-            ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted(encounter.Name);
-
-            ImGui.TableNextColumn();
-
             if (encounter.DropSlots.Count == 0 && encounter.UpgradeDrops.Count == 0)
             {
-                Widgets.Coloured(Widgets.Muted, "nothing set up — see the Tier tab");
+                ImGui.TextUnformatted(encounter.Name);
+                ImGui.SameLine();
+                Widgets.Coloured(Widgets.Muted, "— nothing set up, see the Tier tab");
                 continue;
             }
 
-            using var inner = ImRaii.Table("##drops", 2,
-                                           ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
-            if (!inner.Success)
+            using var table = ImRaii.Table("##priorities", 2,
+                                           ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+            if (!table.Success)
                 continue;
 
-            ImGui.TableSetupColumn("##drop", ImGuiTableColumnFlags.WidthFixed, 110f * ImGuiHelpers.GlobalScale);
-            ImGui.TableSetupColumn("##priority");
+            ImGui.TableSetupColumn(encounter.Name, ImGuiTableColumnFlags.WidthFixed, 150f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn("Priority");
+            ImGui.TableHeadersRow();
 
             foreach (var slot in encounter.DropSlots)
-            {
                 DrawPriorityRow(slot.CofferLabel(), Slot(slot));
-            }
 
             foreach (var side in encounter.UpgradeDrops)
-            {
                 DrawPriorityRow($"{side} upgrade", Upgrade(side));
-            }
         }
     }
 

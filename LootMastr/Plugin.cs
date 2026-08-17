@@ -59,7 +59,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Loot = new LootWindowReader(Items, Tiers);
         guard = new SafetyGuard(Party, Loot);
-        runner = new LootAssignmentRunner(Configuration, Loot, guard);
+        runner = new LootAssignmentRunner(Configuration, guard);
         Assigner = new LootAssigner(Configuration, Loot, Planner, Roster, guard, Tiers, runner);
         announcer = new ChatAnnouncer(Configuration, guard);
         tracker = new ObtainTracker(Configuration, Roster, Tiers, Assigner);

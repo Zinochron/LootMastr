@@ -43,11 +43,13 @@ public sealed class AddonWatcher : IDisposable
 
     private readonly List<AddonSighting> sightings = new();
     private readonly List<ButtonPress> events = new();
+    private readonly List<AddonSighting> chestStates = new();
 
     public AddonWatcher()
     {
         Services.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, OnAddonSetup);
         Services.AddonLifecycle.RegisterListener(AddonEvent.PreReceiveEvent, LootAddons, OnReceiveEvent);
+        Services.AddonLifecycle.RegisterListener(AddonEvent.PostRefresh, "NeedGreed", OnChestRefresh);
     }
 
     public IReadOnlyList<AddonSighting> Sightings => sightings;
@@ -74,6 +76,7 @@ public sealed class AddonWatcher : IDisposable
     {
         sightings.Clear();
         events.Clear();
+        chestStates.Clear();
     }
 
     private void OnReceiveEvent(AddonEvent type, AddonArgs args)
@@ -103,6 +106,32 @@ public sealed class AddonWatcher : IDisposable
             events.RemoveRange(Limit, events.Count - Limit);
     }
 
+    /// <summary>
+    /// The chest's values every time the game rewrites them.
+    ///
+    /// Opening the window is not enough. What an award does to a coffer's row is the one thing a
+    /// capture has never shown — the window is only snapshotted as it opens, and by then nothing has
+    /// happened yet. A recording proved the coffer does <i>not</i> leave the chest afterwards, which
+    /// leaves this as the only place a "spoken for" marker could be hiding.
+    /// </summary>
+    private void OnChestRefresh(AddonEvent type, AddonArgs args)
+    {
+        if (!Enabled)
+            return;
+
+        var values = DumpValues("NeedGreed");
+
+        // The window refreshes once a second for its countdown, and that lives in the header. Only
+        // the item blocks are compared, or the roll timer would push every real change back out.
+        if (chestStates.Count > 0 && ItemBlocks(chestStates[0].Values) == ItemBlocks(values))
+            return;
+
+        chestStates.Insert(0, new AddonSighting(DateTime.Now, "NeedGreed", values));
+
+        if (chestStates.Count > Limit)
+            chestStates.RemoveRange(Limit, chestStates.Count - Limit);
+    }
+
     private void OnAddonSetup(AddonEvent type, AddonArgs args)
     {
         if (!Enabled)
@@ -122,6 +151,13 @@ public sealed class AddonWatcher : IDisposable
             sightings.RemoveRange(Limit, sightings.Count - Limit);
 
         Services.Log.Information($"Addon opened over the loot window: {name}");
+    }
+
+    /// <summary>Everything past the seven header values, which is where the countdown ticks.</summary>
+    private static string ItemBlocks(string dump)
+    {
+        var lines = dump.Split('\n');
+        return lines.Length <= 7 ? dump : string.Join('\n', lines.Skip(7));
     }
 
     private static string DumpValues(string name)
@@ -158,6 +194,23 @@ public sealed class AddonWatcher : IDisposable
         }
 
         builder.AppendLine();
+        builder.AppendLine($"Chest contents each time they changed (recording: {Enabled}):");
+
+        if (chestStates.Count == 0)
+        {
+            builder.AppendLine("  none recorded");
+        }
+        else
+        {
+            foreach (var state in chestStates.AsEnumerable().Reverse())
+            {
+                builder.AppendLine();
+                builder.AppendLine($"  {state.At:HH:mm:ss.fff}  NeedGreed");
+                builder.AppendLine(state.Values);
+            }
+        }
+
+        builder.AppendLine();
         builder.AppendLine($"Windows opened over the loot window (recording: {Enabled}):");
 
         if (sightings.Count == 0)
@@ -178,5 +231,6 @@ public sealed class AddonWatcher : IDisposable
     {
         Services.AddonLifecycle.UnregisterListener(OnAddonSetup);
         Services.AddonLifecycle.UnregisterListener(OnReceiveEvent);
+        Services.AddonLifecycle.UnregisterListener(OnChestRefresh);
     }
 }

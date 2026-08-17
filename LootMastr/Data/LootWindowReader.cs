@@ -147,11 +147,26 @@ public sealed class LootWindowReader
 
             var count = i + CountOffset < values.Count && values[i + CountOffset].TryGet<int>(out var c) ? c : 1;
 
-            found.Add(new AddonEntry(found.Count, itemId, info.Name, Math.Max(1, count)));
+            found.Add(new AddonEntry(SlotIndexFor(i, found.Count), itemId, info.Name, Math.Max(1, count)));
             i += ValuesPerItem - 1;
         }
 
         return found.Count > 0 ? found : ReadByFixedLayout(values);
+    }
+
+    /// <summary>
+    /// Which loot slot a block of values belongs to.
+    ///
+    /// Taken from where the block sits, not from how many items have been recognised so far. The
+    /// game addresses an item in the chest by its slot, and everything the plugin does to that
+    /// chest — selecting the row, checking that the right window opened — is keyed on this number.
+    /// Counting recognised items instead meant that one coffer the catalogue could not name shifted
+    /// every item after it by one, and the click meant for the ring landed on the earring.
+    /// </summary>
+    private static int SlotIndexFor(int valueIndex, int fallback)
+    {
+        var offset = valueIndex - HeaderValues;
+        return offset >= 0 && offset % ValuesPerItem == 0 ? offset / ValuesPerItem : fallback;
     }
 
     /// <summary>
@@ -170,7 +185,7 @@ public sealed class LootWindowReader
             var name = AsString(values[i + NameOffset]) ?? string.Empty;
             var count = values[i + CountOffset].TryGet<int>(out var c) ? c : 1;
 
-            found.Add(new AddonEntry(found.Count, itemId, name, Math.Max(1, count)));
+            found.Add(new AddonEntry(SlotIndexFor(i, found.Count), itemId, name, Math.Max(1, count)));
         }
 
         return found;

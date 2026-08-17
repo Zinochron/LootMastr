@@ -286,6 +286,7 @@ public sealed class LootTab : ITab
             {
                 ImGui.AlignTextToFramePadding();
                 Widgets.Coloured(Widgets.Done, "done");
+                Widgets.Tooltip("Someone obtained this — it is out of the chest's running.");
             }
             else
             {
@@ -300,6 +301,14 @@ public sealed class LootTab : ITab
 
                 if (!verdict.Ok)
                     Widgets.Tooltip(verdict.Reason);
+                else if (decision.Offered)
+                {
+                    // Offered, not done. The plugin drove the windows; whether the item moved is
+                    // something only the obtain line in chat can say, and the game does refuse a
+                    // coffer the recipient already owns.
+                    Widgets.Tooltip("Already put in front of the game once — waiting for someone to " +
+                                    "obtain it. Press again if the game refused it.");
+                }
             }
 
             ImGui.TableNextColumn();
@@ -307,6 +316,12 @@ public sealed class LootTab : ITab
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted(decision.Item.Name);
+
+            if (decision.Offered && !decision.AlreadyAssigned)
+            {
+                ImGui.SameLine();
+                Widgets.Coloured(Widgets.Wanted, "(offered)");
+            }
 
             if (decision.Item.WeeklyLootItem)
             {
@@ -332,8 +347,9 @@ public sealed class LootTab : ITab
                     assigner.ConfirmByHand(decision);
             }
 
-            Widgets.Tooltip("Tick this off as received. Use it after assigning the item in the game " +
-                            "window yourself — chat tracking usually does it on its own.");
+            Widgets.Tooltip("Tick this off as received and take it out of the chest's running. " +
+                            "Normally unnecessary: the obtain line in chat does both on its own. " +
+                            "Use it if chat tracking is off, or was not listening.");
         }
     }
 
