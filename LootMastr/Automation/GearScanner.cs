@@ -281,7 +281,11 @@ public sealed class GearScanner : IDisposable
             var member = roster.Find(local.Name, local.World);
             if (member != null)
             {
-                Apply(member, equipment.ReadLocal(), 0,
+                // Worked out from the items: the examine window hands one over for anybody else, and
+                // nothing does for you. Passing 0 here is what put "i0" on your own sheet.
+                var gear = equipment.ReadLocal();
+
+                Apply(member, gear, equipment.AverageItemLevel(gear),
                       attributes.TryReadLocal(out var measured) ? measured : null);
 
                 scanned++;

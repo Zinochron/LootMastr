@@ -72,6 +72,42 @@ public sealed class EquipmentReader
     }
 
     /// <summary>
+    /// Average item level worked out from the items themselves.
+    ///
+    /// Needed only for the local player, and only because the game does not hand it over: the examine
+    /// window carries a ready number for anybody else, and nothing in <c>PlayerState</c> or
+    /// <c>InventoryManager</c> is the equivalent for you. The scan used to pass 0 for your own row,
+    /// which read as "i0" on your own sheet.
+    ///
+    /// The weapon counts twice, standing in for the off-hand slot. Every job but paladin has nothing
+    /// there, and a paladin's shield comes out of the same coffer at the same level — so counting the
+    /// main hand for both is right in the one case and harmless in the other. Twelve values over
+    /// eleven slots, which is what the character window divides by.
+    /// </summary>
+    public int AverageItemLevel(IReadOnlyDictionary<GearSlot, uint> gear)
+    {
+        var total = 0;
+        var counted = 0;
+
+        foreach (var slot in Slots.All)
+        {
+            if (!gear.TryGetValue(slot, out var itemId) || !items.TryGetItem(itemId, out var info))
+                continue;
+
+            total += info.ItemLevel;
+            counted++;
+
+            if (slot == GearSlot.Weapon)
+            {
+                total += info.ItemLevel;
+                counted++;
+            }
+        }
+
+        return counted == 0 ? 0 : total / counted;
+    }
+
+    /// <summary>
     /// Files a flat list of equipped items by slot, using each item's own equip category rather
     /// than its position — container layouts differ between the inventory and the examine window,
     /// and the item always knows where it goes.
