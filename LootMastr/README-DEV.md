@@ -653,11 +653,15 @@ about to buy the body piece should not also be handed the body coffer.
 wanting it, an exchange is one player walking to an NPC, and mixing them into a table about who
 should be given what made neither readable.
 
-The week-by-week view keeps both, in the order they happen. Each week in *Expected schedule* lists
-its fights and then a **Book exchange** line with everything the week's books buy. Purchases were
-filed under the fight whose books pay for them, which is true and unhelpful: a fight heading in that
-list means "go and clear this", and a purchase is not that. *Planned book exchanges* is the same
-purchases as a table, grouped by week.
+*Expected schedule* keeps both, in the order they happen: one tab per week, its fights listed in
+order and then a **Book exchange** line with everything that week's books buy. Purchases were filed
+under the fight whose books pay for them, which is true and unhelpful — a fight heading in that list
+means "go and clear this", and a purchase is not that.
+
+There was a second tab, *Planned book exchanges*, listing every purchase of the whole tier. It went
+once a week could be read whole. It had existed because a week could not: the purchases were
+scattered through the fights, so seeing them together needed a view of their own. Fix the week and
+the view stops answering a question anybody was asking.
 
 **And what it costs includes the trade.** `BookLedger.Pay` reports the conversion it had to make,
 which rides on the award as `PlannedAward.Traded` and shows as `3 × M2S (exchange 1 × M4S)`. Without
