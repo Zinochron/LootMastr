@@ -472,6 +472,39 @@ one who has had most. The rule is right; the assertion was measuring the week, n
 claims are asserted against `DropOrder.Rank` directly, and only claims about a whole week go
 through the simulator.
 
+## Expert mode
+
+`Configuration.ExpertMode`, off by default, two radio buttons rather than a checkbox — both settings
+are a position, and a static that keeps its lists by hand is not missing anything.
+
+Off, a slot is a word and a tick: "Raid, done". That is the whole of what a distribution needs, and
+it is maintainable by hand. On, every slot carries the **item actually equipped** and the **item
+aimed at**, which is what a damage estimate needs — and which is only maintainable because the gear
+scan fills the equipped side in on its own.
+
+Both live in the same `SlotNeed`: `BisItemId` from the import, `EquippedItemId` and `EquippedSource`
+from the scan. Expert mode did not add a data model, it added a view onto one that was already
+there and mostly invisible.
+
+### The roster in expert mode
+
+The grid does not survive eleven slots times two sides, so it is replaced rather than widened:
+
+- A folded-away **player list** — who is in the static, their job, link and books. What you touch
+  when somebody joins, which is rarely. It reuses `DrawPlayerCell` / `DrawImportCell` /
+  `DrawTokenCell` unchanged, so a link or a book count behaves identically in both modes.
+- **One tab per player**, and inside it two panes: *Wearing* on the left, *Aiming at* on the right.
+
+Two panes rather than a table with an Is and an Ought column. Item names run to forty characters —
+a table would wrap or cut them — and the question this view answers is "what is still wrong with
+this set", which is read down one column at a time.
+
+The slot name sits at a fixed offset (`SlotLabel`) so both panes line up without being tables. Each
+pane is an `ImRaii.Child` so a long name clips instead of shoving the other column off screen.
+
+Editing a need goes through **`DrawNeedPopup`**, shared with the simple grid. Two views with their
+own idea of how a need is edited is how you end up with two subtly different sets of rules.
+
 ## Everything here is unique
 
 Raid gear, augmented gear and the materials can only be held once. Two consequences that are easy

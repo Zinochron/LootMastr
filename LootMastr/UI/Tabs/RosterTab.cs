@@ -67,8 +67,252 @@ public sealed class RosterTab : ITab
             return;
         }
 
+        if (config.ExpertMode)
+        {
+            DrawPlayerList();
+            ImGuiHelpers.ScaledDummy(4f);
+            DrawPlayerSheets();
+            return;
+        }
+
         DrawLegend();
         DrawGrid();
+    }
+
+    /// <summary>
+    /// Who is in the static, and nothing about their gear.
+    ///
+    /// Folded away by default. In expert mode this is the part you touch when somebody joins or the
+    /// order changes, which is rarely; the sheets below are what you actually read. The same three
+    /// cell drawers as the simple grid, so a link or a book count behaves identically in both.
+    /// </summary>
+    private void DrawPlayerList()
+    {
+        if (!ImGui.CollapsingHeader($"Players ({roster.Members.Count})###players"))
+            return;
+
+        using var table = ImRaii.Table("##rosterList", 4,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("BiS", ImGuiTableColumnFlags.WidthFixed, 46f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Books", ImGuiTableColumnFlags.WidthFixed, 74f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("##order", ImGuiTableColumnFlags.WidthFixed, 62f * ImGuiHelpers.GlobalScale);
+        ImGui.TableHeadersRow();
+
+        RosterMember? removing = null;
+
+        foreach (var member in roster.Members.ToList())
+        {
+            using var id = ImRaii.PushId(member.Key);
+
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            DrawPlayerCell(member);
+
+            ImGui.TableNextColumn();
+            DrawImportCell(member);
+
+            ImGui.TableNextColumn();
+            DrawTokenCell(member);
+
+            ImGui.TableNextColumn();
+            if (ImGui.SmallButton("^"))
+                roster.Move(member, -1);
+
+            ImGui.SameLine(0f, 2f);
+            if (ImGui.SmallButton("v"))
+                roster.Move(member, 1);
+
+            ImGui.SameLine(0f, 2f);
+            if (ImGui.SmallButton("x") && ImGui.GetIO().KeyCtrl)
+                removing = member;
+
+            Widgets.Tooltip("Ctrl+click to remove this player from the roster.");
+        }
+
+        if (removing != null)
+            roster.Remove(removing);
+    }
+
+    /// <summary>One tab per player, because eleven slots × two sides does not fit a shared grid.</summary>
+    private void DrawPlayerSheets()
+    {
+        using var tabs = ImRaii.TabBar("##sheets", ImGuiTabBarFlags.FittingPolicyScroll);
+        if (!tabs.Success)
+            return;
+
+        foreach (var member in roster.Members.ToList())
+        {
+            // Labelled by name, identified by key: renaming a player must not reset their tab.
+            using var tab = ImRaii.TabItem($"{member.Name}###sheet{member.Key}");
+            if (!tab.Success)
+                continue;
+
+            using var id = ImRaii.PushId(member.Key);
+            DrawSheet(member);
+        }
+    }
+
+    /// <summary>
+    /// One player: what they are wearing on the left, what they are aiming at on the right.
+    ///
+    /// Two panes rather than a table with an Is and an Ought column. Item names run to forty
+    /// characters and a table would either wrap them or cut them, and reading down one side is what
+    /// this is for — "what is still wrong with this set" is a question about one column at a time.
+    /// </summary>
+    private void DrawSheet(RosterMember member)
+    {
+        var job = jobs.Get(member.JobId);
+        var role = roster.RoleOf(member);
+
+        Widgets.Icon(job.IconId, 20f);
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted($"{member.DisplayName} — {job.Name} ({role})");
+
+        if (member.HasBeenScanned)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"i{member.AverageItemLevel}, read {Ago(member.LastScannedUtc)}");
+        }
+        else
+        {
+            ImGui.SameLine();
+            Widgets.Coloured(Widgets.Wanted, "gear not read yet");
+            Widgets.Tooltip("Press \"Read gear\" above. Until then the left column is empty and " +
+                            "nothing can be compared.");
+        }
+
+        ImGui.TextDisabled(SummaryOf(member));
+
+        if (!string.IsNullOrEmpty(member.ImportWarning))
+            Widgets.Coloured(Widgets.Wanted, $"? {member.ImportWarning}");
+
+        ImGuiHelpers.ScaledDummy(4f);
+
+        var width = (ImGui.GetContentRegionAvail().X - (ImGui.GetStyle().ItemSpacing.X * 2)) / 2f;
+
+        using (var left = ImRaii.Child("##current", new Vector2(width, 0f), true))
+        {
+            if (left.Success)
+                DrawCurrentColumn(member);
+        }
+
+        ImGui.SameLine();
+
+        using var right = ImRaii.Child("##target", new Vector2(width, 0f), true);
+        if (right.Success)
+            DrawTargetColumn(member);
+    }
+
+    private void DrawCurrentColumn(RosterMember member)
+    {
+        ImGui.TextUnformatted("Wearing");
+        Widgets.HelpMarker("Read from the game — real items, not glamours. Examine reports what a " +
+                           "character actually has on.");
+        ImGui.Separator();
+
+        foreach (var slot in Slots.All)
+        {
+            var need = member.NeedFor(slot);
+
+            SlotLabel(slot);
+
+            if (!member.HasBeenScanned)
+            {
+                Widgets.Coloured(Widgets.Muted, "not read yet");
+                continue;
+            }
+
+            if (need.EquippedItemId == 0)
+            {
+                Widgets.Coloured(Widgets.Muted, "empty");
+                continue;
+            }
+
+            var item = items.GetItem(need.EquippedItemId);
+            var wearing = need.IsWearingTarget;
+
+            Widgets.Icon(item.IconId, 18f);
+            ImGui.SameLine(0f, 4f);
+            Widgets.Coloured(wearing ? Widgets.Done : Widgets.Muted,
+                             $"{item.Name}{(wearing ? " ✓" : string.Empty)}");
+
+            Widgets.Tooltip($"{item.Name}\ni{item.ItemLevel} — {need.EquippedSource.Label()}\n\n" +
+                            (wearing ? "This is the target piece." : "Not the target piece."));
+        }
+    }
+
+    private void DrawTargetColumn(RosterMember member)
+    {
+        ImGui.TextUnformatted("Aiming at");
+        Widgets.HelpMarker("From the imported set, or set by hand. Click a row to change what the " +
+                           "slot wants or to tick it off.");
+        ImGui.Separator();
+
+        foreach (var slot in Slots.All)
+        {
+            var need = member.NeedFor(slot);
+            var state = need.StateFor(member.HasBeenScanned);
+
+            SlotLabel(slot);
+
+            var colour = Widgets.ColourFor(need.Source, state);
+            var mark = Widgets.MarkFor(state);
+
+            if (need.BisItemId != 0)
+            {
+                var item = items.GetItem(need.BisItemId);
+
+                Widgets.Icon(item.IconId, 18f);
+                ImGui.SameLine(0f, 4f);
+
+                using (ImRaii.PushColor(ImGuiCol.Text, colour))
+                {
+                    if (ImGui.Selectable($"{item.Name}{mark}##{slot}"))
+                        ImGui.OpenPopup($"##need{slot}");
+                }
+
+                Widgets.Tooltip(DescribeCell(member, slot, need, state));
+            }
+            else
+            {
+                // No exact item — the slot was set by hand, so the source word is all there is.
+                using (ImRaii.PushColor(ImGuiCol.Text, colour))
+                {
+                    if (ImGui.Selectable($"{need.Source.Label()}{mark}##{slot}"))
+                        ImGui.OpenPopup($"##need{slot}");
+                }
+
+                Widgets.Tooltip(DescribeCell(member, slot, need, state));
+            }
+
+            DrawNeedPopup(member, slot, need);
+        }
+    }
+
+    /// <summary>The slot's name at a fixed width, so both columns line up without being a table.</summary>
+    private static void SlotLabel(GearSlot slot)
+    {
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextDisabled(slot.ShortLabel());
+        ImGui.SameLine(66f * ImGuiHelpers.GlobalScale);
+    }
+
+    private static string Ago(DateTime? at)
+    {
+        if (at == null)
+            return "never";
+
+        var span = DateTime.UtcNow - at.Value;
+
+        return span.TotalMinutes < 1 ? "just now"
+             : span.TotalHours < 1 ? $"{(int)span.TotalMinutes} min ago"
+             : span.TotalDays < 1 ? $"{(int)span.TotalHours} h ago"
+             : $"{(int)span.TotalDays} d ago";
     }
 
     private void DrawToolbar()
@@ -452,6 +696,16 @@ public sealed class RosterTab : ITab
 
         Widgets.Tooltip(DescribeCell(member, slot, need, state));
 
+        DrawNeedPopup(member, slot, need);
+    }
+
+    /// <summary>
+    /// What a slot wants, and whether it has been handed over. Shared by the grid cell and the
+    /// expert sheet — the two views disagreeing about how a need is edited would be a good way to
+    /// end up with two subtly different sets of rules.
+    /// </summary>
+    private void DrawNeedPopup(RosterMember member, GearSlot slot, SlotNeed need)
+    {
         using var popup = ImRaii.Popup($"##need{slot}");
         if (!popup.Success)
             return;

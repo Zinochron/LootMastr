@@ -31,6 +31,9 @@ public sealed class SettingsTab : ITab
 
     public void Draw()
     {
+        DrawExpertMode();
+
+        ImGuiHelpers.ScaledDummy(10f);
         ImGui.TextUnformatted("Distribution");
         ImGui.Separator();
 
@@ -78,6 +81,47 @@ public sealed class SettingsTab : ITab
             config.VerboseChat = verbose;
             config.Save();
         }
+    }
+
+    /// <summary>
+    /// Whether the plugin works from exact gear or from what each slot is owed.
+    ///
+    /// Two radio buttons rather than a checkbox, because both settings are a position rather than
+    /// one being the absence of the other: a static that keeps its lists by hand wants the simple
+    /// one and is not missing anything.
+    /// </summary>
+    private void DrawExpertMode()
+    {
+        ImGui.TextUnformatted("Working mode");
+        ImGui.Separator();
+
+        var expert = config.ExpertMode;
+
+        if (ImGui.RadioButton("Simple", !expert) && expert)
+        {
+            config.ExpertMode = false;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("A slot is a word and a tick — \"Raid, done\". Enough to run a " +
+                           "distribution, and the version a group can keep up by hand.");
+
+        ImGui.SameLine(0f, 20f);
+
+        if (ImGui.RadioButton("Expert", expert) && !expert)
+        {
+            config.ExpertMode = true;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Every slot carries the item actually equipped and the item aimed at. " +
+                           "The roster becomes a plain list of players with a sheet each, rather " +
+                           "than one grid of everything.\n\n" +
+                           "This is what a damage estimate needs, and it is only maintainable " +
+                           "because the gear scan fills the equipped side in on its own.");
+
+        if (expert)
+            Widgets.Coloured(Widgets.Muted, "Roster shows exact gear. Read gear to fill it in.");
     }
 
     /// <summary>

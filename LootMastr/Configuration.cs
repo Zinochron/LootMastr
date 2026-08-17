@@ -85,5 +85,17 @@ public class Configuration : IPluginConfiguration
     /// <summary>Echo what the plugin is doing into the local chat log.</summary>
     public bool VerboseChat { get; set; } = false;
 
+    // ---- Expert mode ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Whether to work from exact gear rather than from what each slot is owed.
+    ///
+    /// Off, a slot is a word and a tick: "Raid, done". That is enough to run a distribution and it
+    /// is what a static can keep up by hand. On, every slot carries the item actually equipped and
+    /// the item aimed at, which is what a damage estimate needs — and which is only maintainable
+    /// because the gear scan fills it in on its own.
+    /// </summary>
+    public bool ExpertMode { get; set; }
+
     public void Save() => Services.PluginInterface.SavePluginConfig(this);
 }
