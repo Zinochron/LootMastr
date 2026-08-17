@@ -31,15 +31,21 @@ public sealed class JobProfileCatalog
         var job = jobs.Get(jobId);
         var abbreviation = job.IsValid ? job.Abbreviation : "???";
 
-        if (profiles.Value.TryGetValue(abbreviation, out var profile))
-            return profile;
+        if (profiles.Value.TryGetValue(abbreviation, out var known))
+            return known;
 
         // Magical means the job's own primary stat is intelligence or mind — which the game says, so
         // there is no list to keep. Reading it off the role instead had every caster falling through
         // as physical, because a black mage's role is simply "dps".
-        return JobProfile.Default(abbreviation,
-                                  magical: job.PrimaryStat is 4 or 5,
-                                  tank: job.Role is RaidRole.Tank);
+        var profile = JobProfile.Default(abbreviation,
+                                        magical: job.PrimaryStat is 4 or 5,
+                                        tank: job.Role is RaidRole.Tank);
+
+        // Physical ranged is its own trait, and RaidRole cannot see it — melee and ranged are both
+        // "dps" there, which is right for a loot queue and wrong for a damage multiplier.
+        return jobs.IsPhysicalRanged(jobId)
+                   ? profile with { Trait = JobProfile.TraitForPhysicalRanged() }
+                   : profile;
     }
 
     private static Dictionary<string, JobProfile> Load()
@@ -67,15 +73,15 @@ public sealed class JobProfileCatalog
 
                 result[abbreviation] = new JobProfile(
                     abbreviation,
-                    entry.Value<double?>("potencyPerGcd") ?? 320,
-                    entry.Value<double?>("ogcdPotencyPerSecond") ?? 40,
-                    entry.Value<double?>("autoAttackShare") ?? 0,
+                    entry.Value<double?>("potencyPerSecond") ?? 180,
+                    entry.Value<double?>("referenceGcd") ?? 2.50,
+                    entry.Value<double?>("gcdShare") ?? 0.75,
                     entry.Value<bool?>("spellSpeed") ?? false,
                     entry.Value<bool?>("tenacity") ?? false,
                     entry.Value<double?>("trait") ?? 1.0,
                     entry.Value<double?>("attackPowerMultiplier") ?? 237)
                 {
-                    // Only a profile somebody has held against a gear planner drops the caveat.
+                    // Only a potency figure that came from a sim drops the caveat.
                     IsDefaulted = !(entry.Value<bool?>("calibrated") ?? false),
                 };
             }

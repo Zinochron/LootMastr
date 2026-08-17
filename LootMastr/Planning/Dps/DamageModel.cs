@@ -72,7 +72,7 @@ public static class DamageModel
         return new DamageEstimate(
             perHundred,
             gcd,
-            perHundred / 100.0 * profile.PotencyPerSecond(gcd),
+            perHundred / 100.0 * profile.PotencyPerSecondAt(gcd),
             profile.IsDefaulted
                 ? $"No rotation profile for {profile.Abbreviation} — the damage per 100 potency is " +
                   "exact, the DPS figure is a rough conversion."

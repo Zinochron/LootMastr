@@ -668,11 +668,25 @@ for the same coffer divides two of the first number, so the second one's error c
 thing the plugin is actually for. The UI shows DPS because nobody thinks in potency, and puts the
 exact figure in the tooltip beside it.
 
-`JobProfile` is the modelled half — `Data/Jobs/dps-profiles.json`, data like the tier files. It
-scales one job as a whole, so it moves the number a player is shown and does **not** move the
-ranking between two players of the same job. A profile ten percent out is a cosmetic problem, not a
-distribution one. Each entry carries `calibrated`, false until somebody has held it against a gear
-planner, and the tooltip says which it is.
+`JobProfile` is the modelled half — `Data/Jobs/dps-profiles.json`, data like the tier files.
+
+It used to be three guessed numbers per job: a potency per GCD, an off-cooldown rate and an
+auto-attack share. Guessing them put a sage **39% low** against XIVGear — 18,070 against 25,108. It is
+now **one measured number**, `potencyPerSecond`, taken from a rotation simulator for a known set,
+together with the `referenceGcd` it was measured at.
+
+```
+potencyPerSecondAt(gcd) = potencyPerSecond × (gcdShare × referenceGcd / gcd + (1 − gcdShare))
+```
+
+`gcdShare` is the only estimate left in the profile, and deliberately so: it decides how the number
+*moves* with a speed stat, not what the number *is*. Being wrong about it costs a fraction of a
+percent per point of speed. Being wrong about the total cost 39%.
+
+Each entry carries `calibrated`, false until its potency figure came from a sim rather than from this
+file's own guesses, and the tooltip says which it is. **This matters more since the ranking went flat:
+a percentage cancelled the profile out, so it only affected the displayed number; a flat gain is
+proportional to it and so does affect the ranking between two different jobs.**
 
 The flooring is not decoration. Every term truncates at a fixed number of decimal places, which is
 what substat tiers *are* — a stat can gain thirty points and change nothing. Rounding instead would
@@ -703,34 +717,34 @@ Magical means the job's primary stat is intelligence or mind — which the game 
 list to maintain. Deriving it from the *role* had every caster falling through as physical, because
 a black mage's role is simply "dps".
 
-#### It took three sets, and the shape was not what it looked like
+#### It took four sets, and every rule but the last one was wrong
 
 | Set | Job | Attack power | Trait | 100 potency |
 |---|---|---|---|---|
 | `d12038d5…` | Black mage | 237 | 1.30 | 13161.4 |
 | `1dde8dd8…` | Paladin | 190 | 1.00 | 7979.5 |
 | `3487d0fa…` | Dancer | 237 | 1.20 | 12367.43 |
+| `e76a9c0f…` | Dragoon | 237 | 1.00 | 10311.15 |
 
-Each one is exact, and each one changed the rule:
+Every number is exact against its set. What kept changing was the *rule*:
 
 1. The **black mage** set found the missing trait and gave 1.30 for magical. The physical value came
    with it as **1.20**, from the conventional "Maim and Mastery" — a guess riding along with a
    measurement.
-2. The **paladin** set said 1.00, so that guess was wrong and every physical job had been overstated
-   by a fifth. The obvious conclusion — physical is 1.00, magical is 1.30 — was also wrong. It also
-   settled the tank attack power multiplier at 190: no other value in a hundred reproduces Etro's
-   published strength multiplier of 2834%.
-3. The **dancer** set says 1.20 with the full 237. So it is a **tank exception**, not a
-   magical-against-physical split: a tank has no damage trait and a reduced attack multiplier, and
-   everybody else gets 237 with +20% physical or +30% magical.
+2. The **paladin** set said 1.00, so that guess was wrong: every physical job had been overstated by
+   a fifth. It also settled the tank attack power multiplier at 190, since no other value in a hundred
+   reproduces Etro's published strength multiplier of 2834%. The conclusion drawn — physical is 1.00,
+   magical is 1.30 — was wrong too.
+3. The **dancer** set said 1.20 with the full 237, so the story became "a tank exception". Which was
+   also wrong.
+4. The **dragoon** set says 1.00. A melee reads like a tank, so **physical ranged is the odd one
+   out** — three distinct traits over four categories, reducible to no single axis.
 
-Which means the original 1.20 was right for the jobs it was written for and wrong only for tanks —
-and two sets in a row could each be satisfied by a rule that the third disproved.
-
-**Melee is the one category with no set behind it.** It shares everything measurable with physical
-ranged — same attack power multiplier, same primary stat, no tenacity — so 1.20 is where the evidence
-points rather than where a convention does. All three sets are harness fixtures, each asserted to a
-tenth, plus a check that the three traits stand in that order at all.
+So: four categories, one measurement each, and the only remaining inference is that the other jobs in
+a category match the one that was measured. `RaidRole` cannot express this — it folds melee and ranged
+into "dps", which is right for a loot queue and wrong for a damage multiplier — so
+`JobCatalog.IsPhysicalRanged` reads the game's finer role plus the primary stat: role 3 is ranged, and
+dexterity separates a dancer from a black mage.
 
 #### Three mistakes worth keeping written down
 

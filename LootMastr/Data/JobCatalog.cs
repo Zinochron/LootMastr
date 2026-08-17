@@ -6,7 +6,7 @@ namespace LootMastr.Data;
 
 public readonly record struct JobInfo(
     uint Id, string Abbreviation, string Name, RaidRole Role, uint IconId,
-    uint PrimaryStat, int PrimaryModifier)
+    uint PrimaryStat, int PrimaryModifier, byte GameRole)
 {
     public bool IsValid => Id != 0;
 }
@@ -26,9 +26,23 @@ public sealed class JobCatalog
     public JobInfo Get(uint jobId) =>
         jobs.Value.TryGetValue(jobId, out var info)
             ? info
-            : new JobInfo(0, "???", "Unknown", RaidRole.Unknown, 0, 0, 0);
+            : new JobInfo(0, "???", "Unknown", RaidRole.Unknown, 0, 0, 0, 0);
 
     public RaidRole RoleOf(uint jobId) => Get(jobId).Role;
+
+    /// <summary>
+    /// Whether this job is a physical ranged one — bard, machinist or dancer.
+    ///
+    /// <see cref="RaidRole"/> cannot say: it folds melee and ranged into one "dps", which is right for
+    /// a loot queue and wrong for a damage trait. Physical ranged turned out to be the one category
+    /// with a trait of its own, and telling it apart needs the game's finer role plus the primary
+    /// stat — role 3 is ranged, and dexterity separates a dancer from a black mage.
+    /// </summary>
+    public bool IsPhysicalRanged(uint jobId)
+    {
+        var job = Get(jobId);
+        return job.GameRole == 3 && job.PrimaryStat == 2;
+    }
 
     /// <summary>Looks a job up by its three letter abbreviation, as gear planners spell it.</summary>
     public JobInfo FindByAbbreviation(string abbreviation)
@@ -68,7 +82,8 @@ public sealed class JobCatalog
                 RoleFrom(row.Role),
                 JobIconBase + row.RowId,
                 row.PrimaryStat,
-                ModifierFor(row, row.PrimaryStat));
+                ModifierFor(row, row.PrimaryStat),
+                row.Role);
         }
 
         return result;

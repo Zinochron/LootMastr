@@ -1099,7 +1099,7 @@ var rules = new PriorityRules();
     var level = LevelTable.Known(100)!.Value;
 
     var blm = new JobProfile("BLM",
-                             PotencyPerGcd: 480, OgcdPotencyPerSecond: 20, AutoAttackShare: 0,
+                             PotencyPerSecond: 212, ReferenceGcd: 2.50, GcdShare: 0.91,
                              UsesSpellSpeed: true, UsesTenacity: false,
                              Trait: 1.30, AttackPowerMultiplier: 237);
 
@@ -1136,7 +1136,7 @@ var rules = new PriorityRules();
     var level = LevelTable.Known(100)!.Value;
 
     var pld = new JobProfile("PLD",
-                             PotencyPerGcd: 290, OgcdPotencyPerSecond: 35, AutoAttackShare: 0.12,
+                             PotencyPerSecond: 169, ReferenceGcd: 2.50, GcdShare: 0.77,
                              UsesSpellSpeed: false, UsesTenacity: true,
                              Trait: 1.00, AttackPowerMultiplier: 190);
 
@@ -1171,7 +1171,7 @@ var rules = new PriorityRules();
     var level = LevelTable.Known(100)!.Value;
 
     var dnc = new JobProfile("DNC",
-                             PotencyPerGcd: 310, OgcdPotencyPerSecond: 105, AutoAttackShare: 0.16,
+                             PotencyPerSecond: 265.6, ReferenceGcd: 2.50, GcdShare: 0.47,
                              UsesSpellSpeed: false, UsesTenacity: false,
                              Trait: 1.20, AttackPowerMultiplier: 237);
 
@@ -1186,16 +1186,77 @@ var rules = new PriorityRules();
           Math.Abs(estimate.DamagePer100Potency - 12367.43) < 0.1,
           estimate.DamagePer100Potency.ToString("0.00"));
 
-    Check("a physical job that is not a tank has a trait of 1.20",
-          Math.Abs(JobProfile.TraitFor(magical: false, tank: false) - 1.20) < 1e-9);
+    Check("physical ranged is its own trait at 1.20",
+          Math.Abs(JobProfile.TraitForPhysicalRanged() - 1.20) < 1e-9);
+}
 
-    // The three anchors, side by side. Each is a different job, a different trait and — for the tank
-    // — a different attack power multiplier, so no two of them could be satisfied by one wrong rule.
-    Check("the trait table is a tank exception, not a magical split",
-          JobProfile.TraitFor(magical: false, tank: true) <
-          JobProfile.TraitFor(magical: false, tank: false) &&
+{
+    // etro.gg/gearset/e76a9c0f-c41c-433f-b1cc-d75c3f86b39a — dragoon, i790, 2.50 GCD.
+    //
+    // The fourth anchor, and it broke the third rule. "Tank exception" was the story after the dancer
+    // set; a melee reads 1.00 like the tank, so **physical ranged** is the odd one out. Four sets,
+    // four categories, one measurement each — and each of the first three suggested a rule the next
+    // one disproved.
+    var level = LevelTable.Known(100)!.Value;
+
+    var drg = new JobProfile("DRG",
+                             PotencyPerSecond: 249, ReferenceGcd: 2.50, GcdShare: 0.58,
+                             UsesSpellSpeed: false, UsesTenacity: false,
+                             Trait: 1.00, AttackPowerMultiplier: 237);
+
+    var set = new StatBlock(
+        Level: 100, JobModifier: 115, MainStat: 6838, WeaponDamage: 158, WeaponDelayMs: 2800,
+        CriticalHit: 3605, DirectHit: 1982, Determination: 2506,
+        SkillSpeed: 420, SpellSpeed: 420, Tenacity: 420);
+
+    var estimate = DamageModel.Estimate(set, drg, level)!.Value;
+
+    Check("Etro's dragoon set: 10311.2 damage per 100 potency",
+          Math.Abs(estimate.DamagePer100Potency - 10311.15) < 0.1,
+          estimate.DamagePer100Potency.ToString("0.00"));
+
+    Check("a melee's trait is 1.00, the same as a tank's",
+          Math.Abs(JobProfile.TraitFor(magical: false, tank: false) - 1.00) < 1e-9);
+
+    // Four categories, and only three distinct traits — so the table cannot be reduced to one axis.
+    Check("physical ranged sits between melee and magical",
           JobProfile.TraitFor(magical: false, tank: false) <
+          JobProfile.TraitForPhysicalRanged() &&
+          JobProfile.TraitForPhysicalRanged() <
           JobProfile.TraitFor(magical: true, tank: false));
+}
+
+{
+    // The potency figure holds at the recast it was measured at, and only the part bound to the
+    // global cooldown moves away from it. This is the shape of the calibration, and getting the
+    // total wrong is what put a sage 39% low against xivgear.
+    var level = LevelTable.Known(100)!.Value;
+
+    var profile = new JobProfile("SGE",
+                                 PotencyPerSecond: 214, ReferenceGcd: 2.50, GcdShare: 0.81,
+                                 UsesSpellSpeed: true, UsesTenacity: false,
+                                 Trait: 1.30, AttackPowerMultiplier: 237);
+
+    Check("the measured figure holds at its own recast",
+          Math.Abs(profile.PotencyPerSecondAt(2.50) - 214) < 1e-9,
+          profile.PotencyPerSecondAt(2.50).ToString("0.0"));
+
+    Check("a shorter recast lands more potency", profile.PotencyPerSecondAt(2.40) > 214);
+    Check("a longer one lands less", profile.PotencyPerSecondAt(2.60) < 214);
+
+    // Only the GCD-bound share scales, so the change is smaller than the recast's own change.
+    var faster = profile.PotencyPerSecondAt(2.00) / 214;
+    Check("and it scales by the gcd share, not one for one", faster < 2.50 / 2.00,
+          $"{faster:0.000} against {2.50 / 2.00:0.000}");
+
+    // A job whose damage is all off-cooldown gains nothing from speed at all.
+    var allOgcd = profile with { GcdShare = 0 };
+    Check("no gcd share means speed buys nothing",
+          Math.Abs(allOgcd.PotencyPerSecondAt(2.00) - 214) < 1e-9);
+
+    var allGcd = profile with { GcdShare = 1 };
+    Check("a full gcd share scales one for one with the recast",
+          Math.Abs(allGcd.PotencyPerSecondAt(2.00) - (214 * 2.50 / 2.00)) < 1e-9);
 }
 
 {
