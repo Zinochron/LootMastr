@@ -794,6 +794,22 @@ Percentages run on **DPS**, not on damage per 100 potency. The exact half cannot
 all — a piece that buys a shorter recast changes nothing in it — so the headline percentage uses the
 number that accounts for everything, with both exact figures beside it in the tooltip.
 
+### The whole target set
+
+`GearComparer.TargetGain` puts a damage figure at the top of each pane in the roster sheet: this is
+what they do, that is what they would do, and the number beside the second is the distance still to
+go.
+
+It is built by **starting from the measured set and applying every slot's difference**, not by adding
+a set up from parts. Adding up from parts would need base stats, a clan bonus and the food formula,
+none of which is needed anywhere else — but the real reason is that it would be a *second way* of
+arriving at a number already on the same screen, free to disagree with the per-slot gains listed
+underneath it. Every slot's gain summed has to equal the set's gain, and computing one from the other
+is the only way to guarantee that rather than hope for it.
+
+A player already wearing their whole target set gets a gain of **zero, not "unknown"** — the two
+estimates being the same value says exactly that.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

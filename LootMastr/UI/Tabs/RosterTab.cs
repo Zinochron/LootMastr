@@ -205,7 +205,7 @@ public sealed class RosterTab : ITab
         Widgets.Tooltip("Examines this one character. They have to be in the party and in the zone.");
 
         ImGui.TextDisabled(SummaryOf(member));
-        DrawEstimate(member);
+        DrawPreview(member);
 
         if (!string.IsNullOrEmpty(member.ImportWarning))
             Widgets.Coloured(Widgets.Wanted, $"? {member.ImportWarning}");
@@ -228,31 +228,28 @@ public sealed class RosterTab : ITab
     }
 
     /// <summary>
-    /// What this set is worth, in one line.
+    /// What a set is worth, at the top of its own column.
     ///
-    /// Estimated DPS is the headline because nobody thinks in potency, and the exact number is in
-    /// the tooltip beside it: damage per 100 potency is arithmetic the game itself does, and it is
-    /// what every comparison between two candidates for a coffer actually rests on. The DPS figure
-    /// multiplies it by a modelled rotation and is the softer of the two — so it says so.
+    /// One of these over each pane, so the two are read the way the panes are: this is what they do,
+    /// that is what they would do. Estimated DPS is the headline because nobody thinks in potency;
+    /// damage per 100 potency is the exact half and sits in the tooltip, along with the recast.
     /// </summary>
-    private void DrawEstimate(RosterMember member)
+    private static void DrawEstimateLine(DamageEstimate estimate, string what, double? gainOverNow)
     {
-        if (gear.Estimate(member) is not { } estimate)
-            return;
-
         Widgets.Coloured(Widgets.Done, $"~{estimate.EstimatedDps:N0} dps");
 
-        ImGui.SameLine();
-        ImGui.TextDisabled($"· {estimate.DamagePer100Potency:N0} per 100 potency · {estimate.Gcd:0.00}s GCD");
+        if (gainOverNow is { } gain && Math.Abs(gain) >= 1)
+        {
+            ImGui.SameLine(0f, 4f);
+            Widgets.Coloured(gain > 0 ? Widgets.Wanted : Widgets.Muted, $"({gain:+#,##0;-#,##0})");
+        }
 
         Widgets.Tooltip(
+            $"{what}\n\n" +
             $"{estimate.DamagePer100Potency:N0} damage per 100 potency — exact, straight out of the stats.\n" +
             $"{estimate.Gcd:0.00} second global cooldown.\n\n" +
             $"~{estimate.EstimatedDps:N0} dps converts that with a rotation profile.\n" +
-            (estimate.Caveat ?? "That profile has been checked against a gear planner.") +
-            "\n\nMeasured off the character, so materia and food are already in it.");
-
-        DrawPreview(member);
+            (estimate.Caveat ?? "That profile has been checked against a gear planner."));
     }
 
     /// <summary>
@@ -327,6 +324,18 @@ public sealed class RosterTab : ITab
         ImGui.TextUnformatted("Wearing");
         Widgets.HelpMarker("Read from the game — real items, not glamours. Examine reports what a " +
                            "character actually has on.");
+
+        if (gear.Estimate(member) is { } now)
+        {
+            DrawEstimateLine(now, "What they do on the set they are wearing. Measured off the " +
+                                  "character, so materia and food are already in it.", null);
+        }
+        else
+        {
+            Widgets.Coloured(Widgets.Muted, "no estimate yet");
+            Widgets.Tooltip("Needs their gear read, and a weapon in the list.");
+        }
+
         ImGui.Separator();
 
         foreach (var slot in Slots.All)
@@ -365,6 +374,24 @@ public sealed class RosterTab : ITab
         ImGui.TextUnformatted("Aiming at");
         Widgets.HelpMarker("From the imported set, or set by hand. Click a row to change what the " +
                            "slot wants or to tick it off.");
+
+        // The whole point of the column, at the top of it: not what the next piece is worth, but
+        // where the set ends up. The number beside it is the distance still to go.
+        if (gear.TargetGain(member) is { } target)
+        {
+            DrawEstimateLine(target.After,
+                             "What they would do with every target piece — the finish line.\n\n" +
+                             "Counted on the items' own stats, with the melds they are wearing now " +
+                             "assumed to carry over. A target set with more meld slots than the " +
+                             "current one is worth a little more than this says.",
+                             target.Dps);
+        }
+        else
+        {
+            Widgets.Coloured(Widgets.Muted, "no estimate yet");
+            Widgets.Tooltip("Needs their gear read and a target set with items in it.");
+        }
+
         ImGui.Separator();
 
         foreach (var slot in Slots.All)

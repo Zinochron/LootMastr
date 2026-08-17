@@ -77,6 +77,69 @@ public sealed class GearComparer
         return new GearGain(baseline, improved);
     }
 
+    /// <summary>
+    /// What the whole target set would do, against what they are wearing now. The finish line.
+    ///
+    /// Built by starting from the measured set and applying every slot's difference, rather than by
+    /// adding a set up from parts. Two reasons, and the second is the important one:
+    ///
+    /// <list type="bullet">
+    /// <item>Adding up from parts would need a character's base stats, their clan bonus and the food
+    /// formula, none of which is needed anywhere else.</item>
+    /// <item>It would be a <b>second way</b> of arriving at a number this plugin already computes,
+    /// free to disagree with the per-slot gains sitting next to it on the same screen. Every slot's
+    /// gain summed has to equal the set's gain, and the only way to guarantee that is to compute one
+    /// from the other.</item>
+    /// </list>
+    ///
+    /// It inherits the same stated assumption: melds carry over, so a target set with more meld slots
+    /// than the current one is worth a little more than this says.
+    /// </summary>
+    public GearGain? TargetGain(RosterMember member)
+    {
+        if (builder.For(member) is not { } before || builder.LevelFor(before.Level) is not { } level)
+            return null;
+
+        var job = jobs.Get(member.MeasuredJobId);
+        var profile = profiles.For(member.MeasuredJobId);
+
+        var after = before;
+        var changed = false;
+
+        foreach (var slot in Slots.All)
+        {
+            var need = member.NeedFor(slot);
+
+            if (need.BisItemId == 0 || need.BisItemId == need.EquippedItemId)
+                continue;
+
+            if (!items.TryGetStats(need.BisItemId, out var target))
+                continue;
+
+            var worn = need.EquippedItemId != 0 && items.TryGetStats(need.EquippedItemId, out var found)
+                           ? StatsOf(found)
+                           : [];
+
+            after = GearDelta.Apply(after, job.PrimaryStat, GearDelta.Between(worn, StatsOf(target)),
+                                    slot == GearSlot.Weapon ? target.WeaponDamage : 0,
+                                    slot == GearSlot.Weapon ? target.DelayMs : 0);
+
+            changed = true;
+        }
+
+        if (DamageModel.Estimate(before, profile, level) is not { } baseline)
+            return null;
+
+        // Already wearing the target set: the gain is zero rather than unknown, and the two estimates
+        // being the same object says exactly that.
+        if (!changed)
+            return new GearGain(baseline, baseline);
+
+        return DamageModel.Estimate(after, profile, level) is { } improved
+                   ? new GearGain(baseline, improved)
+                   : null;
+    }
+
     /// <summary>Convenience: what the target piece for a slot would be worth over what is worn.</summary>
     public GearGain? GainOfTarget(RosterMember member, GearSlot slot)
     {
