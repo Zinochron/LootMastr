@@ -462,15 +462,31 @@ public sealed class GearScanner : IDisposable
         {
             var need = member.NeedFor(slot);
 
+            if (need.EquippedItemId == 0)
+                continue;
+
+            // Tomestone gear in the slot proves the tomestone piece is bought, whether or not it is
+            // the augmented version and whether or not it is the exact target. That matters more
+            // than it sounds: without it every roster starts out looking like nobody owns a single
+            // tome piece, and the plan hands out materials nobody can use.
+            if (need.EquippedSource is GearSource.Tome or GearSource.TomeAugmented)
+                need.BaseObtained = true;
+
             // Wearing it is proof of owning it, and catches everything picked up before the plugin
             // was ever opened. The reverse is not proof of anything, so nothing is turned off here.
-            if (need.EquippedItemId == 0 || !need.IsWearingTarget)
+            if (!need.IsWearingTarget)
                 continue;
 
             if (need.Source == GearSource.Raid)
+            {
                 need.Obtained = true;
+            }
             else if (need.Source == GearSource.TomeAugmented)
+            {
+                // Wearing the augmented piece means both halves are in hand, not just the material.
                 need.UpgradeObtained = true;
+                need.BaseObtained = true;
+            }
         }
 
         member.LastScannedUtc = DateTime.UtcNow;

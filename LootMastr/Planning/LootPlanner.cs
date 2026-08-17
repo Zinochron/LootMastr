@@ -158,7 +158,7 @@ public sealed class LootPlanner
         Rank(plan => plan.Wants(slot), plan => plan.GainFor(slot), applied);
 
     public IReadOnlyList<Candidate> RankForUpgrade(GearSide side, IEnumerable<PendingAward>? applied = null) =>
-        Rank(plan => plan.WantsUpgrade(side), plan => plan.GainForUpgrade(side), applied);
+        Rank(plan => plan.WantsUpgrade(side), plan => plan.GainForUpgrade(side), applied, side);
 
     /// <summary>
     /// Everyone who still needs this drop, in the group's own order.
@@ -169,12 +169,22 @@ public sealed class LootPlanner
     /// candidate</i> and ordered by the result, which was both slower and impossible to explain.
     /// </summary>
     private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, Func<PlayerPlan, double> gainOf,
-                                          IEnumerable<PendingAward>? applied)
+                                          IEnumerable<PendingAward>? applied, GearSide? material = null)
     {
         var basePlans = BuildPlans(applied);
-        var eligible = basePlans.Where(wants).ToList();
+        var wanting = basePlans.Where(wants).ToList();
+
+        // For a material, whoever can actually put it on comes first, and the same rule the
+        // projection uses decides that — one place, so the chest and the plan cannot disagree about
+        // who a twine is for.
+        var eligible = material != null
+                           ? WeekSimulator.Usable(wanting, material.Value).ToList()
+                           : wanting;
+
         if (eligible.Count == 0)
             return [];
+
+        var skipped = wanting.Count - eligible.Count;
 
         var baseline = NewSimulator().Run(Clone(basePlans));
 
@@ -197,10 +207,14 @@ public sealed class LootPlanner
                               ? $"not done inside {baseline.Horizon} weeks as things stand"
                               : $"on track for W{finish}";
 
+            var note = skipped > 0
+                           ? $"; {skipped} ahead of them cannot buy the piece it goes into yet"
+                           : string.Empty;
+
             results.Add(new Candidate(
                             member, placing.Who.Role, placing.Who.Order, placing.Who.ItemsReceived,
                             placing.Who.OpenNeeds, finish,
-                            $"{DropOrder.Explain(config.Rules, placing)}; {waiting}"));
+                            $"{DropOrder.Explain(config.Rules, placing)}; {waiting}{note}"));
         }
 
         return results;
@@ -223,6 +237,13 @@ public sealed class LootPlanner
         {
             if (!award.Bought || award.Week != 1 || award.PlayerKey != member.Key)
                 continue;
+
+            // Bought from the other shop, and priced in the other currency.
+            if (award.WithTomestones)
+            {
+                result.Add($"{award.What} for {award.TomeCost} tomestones");
+                continue;
+            }
 
             var cost = award.Upgrade != null
                            ? tier.CostForUpgrade(award.Upgrade.Value)

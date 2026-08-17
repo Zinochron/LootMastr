@@ -72,6 +72,8 @@ static TierDefinition Tier()
     // The last fight's books trade one for one into any earlier fight's.
     tier.Conversions.Add(new TierTokenConversion { FromEncounter = 4, ToEncounters = [1, 2, 3], Ratio = 1 });
 
+    tier.SeedTomeCosts();
+
     return tier;
 }
 
@@ -1517,6 +1519,233 @@ var rules = new PriorityRules();
           $"{downgrade.Percent:+0.00;-0.00;0.00}%");
 
     Check("no change is no gain", Math.Abs(new GearGain(before, before).Percent) < 1e-9);
+}
+
+// --- the tomestone ledger ------------------------------------------------------------------------
+
+{
+    int TomeCost(GearSlot slot) => tier.TomeCostForSlot(slot) ?? 0;
+
+    Check("body and legs cost 825", TomeCost(GearSlot.Body) == 825 && TomeCost(GearSlot.Legs) == 825);
+    Check("head, hands and feet cost 495",
+          TomeCost(GearSlot.Head) == 495 && TomeCost(GearSlot.Hands) == 495 && TomeCost(GearSlot.Feet) == 495);
+    Check("accessories cost 375",
+          TomeCost(GearSlot.Earrings) == 375 && TomeCost(GearSlot.Ring1) == 375 && TomeCost(GearSlot.Ring2) == 375);
+    Check("the weapon costs 500", TomeCost(GearSlot.Weapon) == 500);
+
+    // A material is bought with books and has no tomestone price at all. Seeding one would put a
+    // second, wrong way to pay for it into the arithmetic.
+    Check("upgrade materials have no tome price",
+          tier.CostRules.Where(r => r.Upgrade != null).All(r => r.TomeCost == 0));
+
+    // Typed-in numbers are somebody's decision, the same rule the book costs already follow.
+    var typed = Tier();
+    typed.CostRules.First(r => r.Slots.Contains(GearSlot.Body)).TomeCost = 900;
+    typed.SeedTomeCosts();
+    Check("a price somebody typed in is left alone", typed.TomeCostForSlot(GearSlot.Body) == 900);
+
+    // A rule spanning two categories cannot be priced by either, and saying nothing is the only
+    // honest answer — it would have to be split first.
+    var mixed = new TierDefinition();
+    mixed.CostRules.Add(new TierCostRule { Label = "Mixed", Slots = [GearSlot.Body, GearSlot.Head] });
+    mixed.SeedTomeCosts();
+    Check("a rule mixing categories is left unpriced", mixed.TomeCostForSlot(GearSlot.Body) == null);
+}
+
+{
+    var member = Member("Tomes",
+                        (GearSlot.Head, GearSource.Tome),
+                        (GearSlot.Hands, GearSource.Tome),
+                        (GearSlot.Body, GearSource.TomeAugmented),
+                        (GearSlot.Weapon, GearSource.Raid));
+
+    var plan = Plan(member, RaidRole.Dps, tier);
+
+    Check("the bank starts at a week's worth per week before the tier",
+          plan.Tomes == tier.TomestonesPerWeek * tier.PriorTomeWeeks, $"{plan.Tomes}");
+
+    Check("both tomestone sources are on the shopping list", plan.TomeOpen.Count == 3,
+          string.Join(", ", plan.TomeOpen.Select(n => $"{n.Slot}:{n.Cost}")));
+
+    Check("and the raid weapon is not", plan.TomeOpen.All(n => n.Slot != GearSlot.Weapon));
+
+    Check("the total is what the categories say", TomeLedger.Outstanding(plan) == 495 + 495 + 825,
+          $"{TomeLedger.Outstanding(plan)}");
+
+    // Only the augmented one is a material's prerequisite; a plain tome piece blocks nothing.
+    Check("only the augmented piece is flagged as a material's base",
+          plan.TomeOpen.Count(n => n.ForAugment) == 1);
+
+    member.NeedFor(GearSlot.Body).BaseObtained = true;
+    var bought = Plan(member, RaidRole.Dps, tier);
+
+    Check("a piece already bought is off the list", bought.TomeOpen.Count == 2);
+    Check("and out of the total", TomeLedger.Outstanding(bought) == 990);
+}
+
+{
+    // The week the last purchase can land, from the closed form. The simulator arrives at the same
+    // number by spending week by week, and T1 asserts the two agree.
+    var member = Member("Slow",
+                        (GearSlot.Body, GearSource.Tome),
+                        (GearSlot.Legs, GearSource.Tome),
+                        (GearSlot.Head, GearSource.Tome));
+
+    var plan = Plan(member, RaidRole.Dps, tier);   // 825 + 825 + 495 = 2145, bank 450
+
+    Check("the tome clock is the shortfall over the weekly cap",
+          TomeLedger.WeekAffordedBy(tier, plan) == 4, $"W{TomeLedger.WeekAffordedBy(tier, plan)}");
+
+    plan.Tomes = 3000;
+    Check("enough in the bank already is week one, not week zero",
+          TomeLedger.WeekAffordedBy(tier, plan) == 1);
+
+    plan.TomeOpen.Clear();
+    Check("owing nothing is week zero", TomeLedger.WeekAffordedBy(tier, plan) == 0);
+}
+
+{
+    // The gate. A twine is only worth handing over if the piece under it can be worn.
+    var member = Member("Augmenting", (GearSlot.Body, GearSource.TomeAugmented));
+    var plan = Plan(member, RaidRole.Dps, tier);
+
+    plan.Tomes = 0;
+    Check("a material is no use without the piece under it", !plan.CanUseUpgrade(GearSide.Left));
+
+    plan.Tomes = 825;
+    Check("and is the moment the piece is affordable", plan.CanUseUpgrade(GearSide.Left));
+
+    member.NeedFor(GearSlot.Body).BaseObtained = true;
+    var owns = Plan(member, RaidRole.Dps, tier);
+    owns.Tomes = 0;
+    Check("owning the piece outright needs no tomestones at all", owns.CanUseUpgrade(GearSide.Left));
+
+    Check("and says nothing about a side they do not want", !owns.CanUseUpgrade(GearSide.Right));
+}
+
+{
+    // The stopgap weapon: not in anybody's target set, and 500 out of their budget all the same.
+    var member = Member("Stopgap", (GearSlot.Weapon, GearSource.Raid), (GearSlot.Head, GearSource.Tome));
+
+    var before = TomeLedger.Outstanding(Plan(member, RaidRole.Dps, tier));
+
+    member.WeaponTokenObtained = true;
+    var after = Plan(member, RaidRole.Dps, tier);
+
+    Check("taking the weapon stone puts 500 on the bill",
+          TomeLedger.Outstanding(after) == before + 500, $"{before} -> {TomeLedger.Outstanding(after)}");
+
+    // A player whose target weapon really is the augmented tome one already owes for it once.
+    var augmented = Member("Aims for it", (GearSlot.Weapon, GearSource.TomeAugmented));
+    augmented.WeaponTokenObtained = true;
+
+    Check("and is not charged twice when the weapon was already on the list",
+          Plan(augmented, RaidRole.Dps, tier).TomeOpen.Count(n => n.Slot == GearSlot.Weapon) == 1);
+}
+
+// --- the simulator spends tomestones -------------------------------------------------------------
+
+{
+    SimulationResult RunFor(params PlayerPlan[] plans) =>
+        new WeekSimulator(tier, rules, 20).Run(plans);
+
+    // Nothing but tomestone gear: no coffer is owed, and the raid clock says done in week zero
+    // while the set is still four weeks off. That gap is the whole reason for the second clock.
+    var vendor = Member("Vendor", (GearSlot.Body, GearSource.Tome), (GearSlot.Legs, GearSource.Tome),
+                        (GearSlot.Head, GearSource.Tome));
+
+    var plan = Plan(vendor, RaidRole.Dps, tier);
+    var expected = TomeLedger.WeekAffordedBy(tier, plan);
+    var run = RunFor(plan);
+
+    Check("the raid owes them nothing at all", run.FinishWeeks[vendor.Key] == 0,
+          $"W{run.FinishWeeks[vendor.Key]}");
+
+    Check("and the set is finished when the last piece is paid for",
+          run.WholeSetWeek(vendor.Key) == expected, $"W{run.WholeSetWeek(vendor.Key)} vs W{expected}");
+
+    // The two routes to that week are independent - one counts weeks of income, the other spends
+    // week by week in whatever order it likes. They have to agree, and a disagreement is a bug in
+    // one of them rather than a matter of taste.
+    Check("the closed form and the simulation agree", expected == 4, $"W{expected}");
+
+    Check("every purchase is priced", run.Awards.Where(a => a.WithTomestones)
+                                                .All(a => a.TomeCost is 825 or 495 or 375 or 500));
+
+    Check("and nothing is bought twice",
+          run.Awards.Count(a => a.WithTomestones) == 3, $"{run.Awards.Count(a => a.WithTomestones)}");
+}
+
+{
+    // The whole set is done when both halves are: still owed a coffer means not finished, however
+    // long ago the last tomestone piece was paid for.
+    var mixed = Member("Mixed", (GearSlot.Head, GearSource.Tome), (GearSlot.Body, GearSource.Raid));
+    var plan = Plan(mixed, RaidRole.Dps, tier);
+
+    // Nobody to compete with, so the body coffer lands in week one and the head is affordable at
+    // once - both clocks come out at one, and neither can come out earlier.
+    var run = new WeekSimulator(tier, rules, 20).Run([plan]);
+
+    Check("the tome clock is never earlier than the raid clock",
+          run.WholeSetWeek(mixed.Key) >= run.FinishWeeks[mixed.Key],
+          $"W{run.FinishWeeks[mixed.Key]} / W{run.WholeSetWeek(mixed.Key)}");
+}
+
+{
+    // The gate, end to end. Two players want an armour material. The one the order puts first
+    // cannot buy the body piece for weeks; the other already owns theirs.
+    var first = Member("First", (GearSlot.Body, GearSource.TomeAugmented),
+                                (GearSlot.Legs, GearSource.TomeAugmented));
+
+    var second = Member("Second", (GearSlot.Body, GearSource.TomeAugmented));
+    second.NeedFor(GearSlot.Body).BaseObtained = true;
+
+    var poor = Plan(first, RaidRole.Dps, tier, 0);
+    poor.Tomes = 0;
+
+    var ready = Plan(second, RaidRole.Dps, tier, 1);
+    ready.Tomes = 0;
+
+    var usable = WeekSimulator.Usable([poor, ready], GearSide.Left).ToList();
+
+    Check("a material goes to whoever can use it, not to whoever is first in line",
+          usable.Count == 1 && usable[0].Key == second.Key,
+          string.Join(", ", usable.Select(p => p.Name)));
+
+    // And it still goes out when nobody can - holding it beats leaving it in the chest.
+    poor.Tomes = 0;
+    var alsoPoor = Plan(second, RaidRole.Dps, tier, 1);
+    alsoPoor.TomeOpen.Clear();
+    alsoPoor.TomeOpen.Add(new TomeNeed(GearSlot.Body, 825, true));
+    alsoPoor.Tomes = 0;
+
+    var nobody = WeekSimulator.Usable([poor, alsoPoor], GearSide.Left).ToList();
+
+    Check("and goes out anyway when nobody can use it yet", nobody.Count == 2,
+          string.Join(", ", nobody.Select(p => p.Name)));
+}
+
+{
+    // A piece with a material already sitting in the bag is bought first, even when it is the
+    // cheaper one - that purchase finishes a slot the same evening, and the other only banks stats.
+    var member = Member("Ordering", (GearSlot.Body, GearSource.Tome),
+                                    (GearSlot.Head, GearSource.TomeAugmented));
+
+    // The head's material has already been won, so the piece under it is all that is missing.
+    member.NeedFor(GearSlot.Head).UpgradeObtained = true;
+
+    var plan = Plan(member, RaidRole.Dps, tier);
+    plan.Tomes = 900;   // both affordable once the week's 450 lands
+
+    var run = new WeekSimulator(tier, rules, 1).Run([plan]);
+    var bought = run.Awards.Where(a => a.WithTomestones).ToList();
+
+    Check("the piece whose material is waiting is bought first",
+          bought.Count > 0 && bought[0].Slot == GearSlot.Head,
+          string.Join(", ", bought.Select(a => $"{a.Slot}:{a.TomeCost}")));
+
+    Check("and the expensive one follows in the same week when it is affordable",
+          bought.Count == 2 && bought[1].Slot == GearSlot.Body);
 }
 
 Console.WriteLine();

@@ -45,6 +45,24 @@ public sealed class TierDefinition
     public bool AllCoffersDrop { get; set; } = true;
 
     /// <summary>
+    /// Tomestones a character can collect in one week. The game's own cap, and everyone hits it.
+    ///
+    /// A number rather than a constant because it is the sort of thing an expansion changes, and
+    /// because a group that knows it will miss a week can say so by lowering it.
+    /// </summary>
+    public int TomestonesPerWeek { get; set; } = 450;
+
+    /// <summary>
+    /// Weeks of tomestones already in the bank when the tier opens.
+    ///
+    /// Savage releases a week after the patch, so everyone starts with at least one week banked —
+    /// and a group that starts the tier late starts with several. This is the single number that
+    /// decides whether the first body piece is affordable in week one or week three, which is why
+    /// it is asked for rather than assumed.
+    /// </summary>
+    public int PriorTomeWeeks { get; set; } = 1;
+
+    /// <summary>
     /// What the shop actually sells, discovered from <c>SpecialShop</c>. Used to show the exchange
     /// and as a fallback for costs; <see cref="CostRules"/> is what the arithmetic runs on.
     /// </summary>
@@ -158,6 +176,80 @@ public sealed class TierDefinition
             return new BookCost(rule.Encounter, rule.Cost);
 
         return ShopCostFor(Rewards.Where(r => r.Slot == coffer));
+    }
+
+    /// <summary>
+    /// What the tomestone version of a slot costs, or null when the tier does not price one.
+    ///
+    /// Only the rules, never the discovered shop table: the book exchange is what
+    /// <see cref="Rewards"/> holds, and the tomestone vendor is a different NPC that this plugin
+    /// does not read. These numbers are typed in, and a missing one has to read as "unknown"
+    /// rather than as "free".
+    /// </summary>
+    public int? TomeCostForSlot(GearSlot slot)
+    {
+        var coffer = Slots.CofferSlot(slot);
+
+        var rule = CostRules.Where(r => r.TomeCost > 0 && r.Slots.Contains(coffer)).MinBy(r => r.TomeCost);
+        return rule?.TomeCost;
+    }
+
+    /// <summary>
+    /// Fills in the standard tomestone prices, and only where nothing is set.
+    ///
+    /// Same rule as <c>DeriveCostRules</c>: a number somebody typed in is a decision and is never
+    /// overwritten. The prices themselves have been the same for several expansions — 825 for the
+    /// two big armour pieces, 495 for the three small ones, 375 for an accessory, 500 for a weapon
+    /// that also wants a stone — so seeding them saves four fields of typing and stays editable.
+    /// </summary>
+    public bool SeedTomeCosts()
+    {
+        var changed = false;
+
+        foreach (var rule in CostRules)
+        {
+            if (rule.TomeCost > 0 || rule.Upgrade != null || rule.Slots.Count == 0)
+                continue;
+
+            var price = StandardTomePrice(rule.Slots);
+            if (price == 0)
+                continue;
+
+            rule.TomeCost = price;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /// <summary>The going rate for whichever category a rule's slots fall into. 0 when they are mixed.</summary>
+    private static int StandardTomePrice(IEnumerable<GearSlot> slots)
+    {
+        var price = 0;
+
+        foreach (var slot in slots)
+        {
+            var own = Slots.CofferSlot(slot) switch
+            {
+                GearSlot.Body or GearSlot.Legs => 825,
+                GearSlot.Head or GearSlot.Hands or GearSlot.Feet => 495,
+                GearSlot.Earrings or GearSlot.Necklace or GearSlot.Bracelets or GearSlot.Ring1 => 375,
+                GearSlot.Weapon => 500,
+                _ => 0,
+            };
+
+            if (own == 0)
+                return 0;
+
+            // A rule that mixes categories is priced by nothing, which is the honest answer: it
+            // would have to be split before either number could be right.
+            if (price != 0 && price != own)
+                return 0;
+
+            price = own;
+        }
+
+        return price;
     }
 
     public BookCost? CostForUpgrade(GearSide side)
@@ -281,6 +373,17 @@ public sealed class TierCostRule
     public int Encounter { get; set; }
 
     public int Cost { get; set; }
+
+    /// <summary>
+    /// What the same category costs in tomestones, from the other shop. 0 when it has no tome
+    /// version — a material is bought with books only.
+    ///
+    /// It sits on the same rule as the book price rather than in a table of its own because the two
+    /// shops group the slots <b>identically</b>: accessories together, head/hands/feet together,
+    /// body and legs together, the weapon on its own. A second table would be a second copy of that
+    /// grouping, free to drift from this one.
+    /// </summary>
+    public int TomeCost { get; set; }
 
     /// <summary>Slots this rule prices. Rings are filed under <c>Ring1</c>.</summary>
     public List<GearSlot> Slots { get; set; } = new();

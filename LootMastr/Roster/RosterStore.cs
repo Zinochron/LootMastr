@@ -139,10 +139,19 @@ public sealed class RosterStore
                 hash.Add(need.Source);
                 hash.Add(need.Obtained);
                 hash.Add(need.UpgradeObtained);
+
+                // The tomestone piece under an augment decides whether a material dropping tonight
+                // is worth anything to this player, so it moves the plan and belongs in here.
+                hash.Add(need.BaseObtained);
             }
 
             for (var encounter = 1; encounter <= PlayerPlan.MaxEncounters; encounter++)
                 hash.Add(member.TokensFor(encounter));
+
+            // The weapon stone costs 500 tomestones, which shifts this player's whole vendor
+            // timeline — a change the plan reads and therefore has to notice.
+            hash.Add(member.WeaponTokenObtained);
+            hash.Add(member.WeaponAugmentObtained);
         }
 
         return hash.ToHashCode();

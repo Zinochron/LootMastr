@@ -16,8 +16,12 @@ public readonly record struct PlannedAward(
     bool Bought,
     IReadOnlyList<AwardCandidate>? Considered = null,
     string? Why = null,
-    BookTrade? Traded = null)
+    BookTrade? Traded = null,
+    int TomeCost = 0)
 {
+    /// <summary>Bought from the tomestone vendor rather than won or traded for with books.</summary>
+    public bool WithTomestones => TomeCost > 0;
+
     /// <summary>
     /// What this is, in the words the plan is read in.
     ///
@@ -30,14 +34,28 @@ public readonly record struct PlannedAward(
                               : Slot?.CofferLabel() ?? "?";
 }
 
+/// <summary>
+/// What the projection came out with. Two clocks, on purpose.
+///
+/// <see cref="FinishWeeks"/> is when the raid stops owing somebody anything - coffers and materials.
+/// <see cref="TomeFinishWeeks"/> is when their set is actually finished, tomestone pieces included.
+/// The second is never earlier than the first and is frequently several weeks later, because 450 a
+/// week is the one rate in this tier that clearing faster does not change.
+/// </summary>
 public sealed record SimulationResult(
     int LastFinishWeek,
     IReadOnlyDictionary<string, int> FinishWeeks,
     IReadOnlyList<PlannedAward> Awards,
-    int Horizon)
+    int Horizon,
+    int LastTomeFinishWeek = 0,
+    IReadOnlyDictionary<string, int>? TomeFinishWeeks = null)
 {
     /// <summary>True for a week the simulation never reached, i.e. "not within the horizon".</summary>
     public bool BeyondHorizon(int week) => week > Horizon;
+
+    /// <summary>When this player's whole set is done, raid and vendor both.</summary>
+    public int WholeSetWeek(string key) =>
+        TomeFinishWeeks?.GetValueOrDefault(key, Horizon + 1) ?? FinishWeeks.GetValueOrDefault(key, Horizon + 1);
 }
 
 /// <summary>
@@ -86,8 +104,14 @@ public sealed class WeekSimulator
 
         MarkFinished(players, Math.Max(0, startWeek - 1));
 
-        for (currentWeek = startWeek; currentWeek <= horizon && players.Any(p => !p.IsDone); currentWeek++)
+        for (currentWeek = startWeek; currentWeek <= horizon && players.Any(p => !p.IsFullyDone); currentWeek++)
         {
+            // Tomestones arrive once a week whatever happens, which is the whole reason they are the
+            // slower clock: a group that clears twice as fast still waits the same number of weeks
+            // for a body piece. Books are earned per clear, a few lines further down.
+            foreach (var player in players)
+                player.Tomes += tier.TomestonesPerWeek;
+
             foreach (var encounter in encounters)
             {
                 currentEncounter = encounter.Index;
@@ -107,21 +131,30 @@ public sealed class WeekSimulator
             }
 
             SpendTokens(players);
+            SpendTomes(players);
             MarkFinished(players, currentWeek);
         }
 
         var beyond = horizon + 1;
         var finishWeeks = new Dictionary<string, int>(players.Count);
+        var tomeWeeks = new Dictionary<string, int>(players.Count);
         var last = 0;
+        var lastTome = 0;
 
         foreach (var player in players)
         {
             var week = player.FinishedWeek < 0 ? beyond : player.FinishedWeek;
             finishWeeks[player.Key] = week;
             last = Math.Max(last, week);
+
+            // The whole set is done when both halves are, so this is the later of the two rather
+            // than the tomestone half alone - a player still owed a coffer is not finished.
+            var tome = Math.Max(week, player.TomeFinishedWeek < 0 ? beyond : player.TomeFinishedWeek);
+            tomeWeeks[player.Key] = tome;
+            lastTome = Math.Max(lastTome, tome);
         }
 
-        return new SimulationResult(last, finishWeeks, [..awards], horizon);
+        return new SimulationResult(last, finishWeeks, [..awards], horizon, lastTome, tomeWeeks);
     }
 
     /// <summary>
@@ -182,7 +215,7 @@ public sealed class WeekSimulator
 
     private void AwardUpgrade(IReadOnlyList<PlayerPlan> players, GearSide side)
     {
-        var winner = Best(players.Where(p => p.WantsUpgrade(side)), p => p.GainForUpgrade(side));
+        var winner = Best(Usable(players.Where(p => p.WantsUpgrade(side)), side), p => p.GainForUpgrade(side));
         if (winner == null || !winner.TakeUpgrade(side, out var slot))
             return;
 
@@ -207,6 +240,70 @@ public sealed class WeekSimulator
 
         var ranked = DropOrder.Rank(rules, contenders);
         return ranked.Count == 0 ? null : list.First(p => p.Key == ranked[0].Who.Key);
+    }
+
+    /// <summary>
+    /// Narrows a material's field to whoever could actually use it this week, and gives up quietly
+    /// when nobody can.
+    ///
+    /// A twine in the bag of somebody who cannot buy the body piece for another four weeks is four
+    /// weeks the group did not have to lose. But refusing to hand it over at all would be worse -
+    /// the chest keeps it and nobody gets it ever. So this is a preference, not a veto: if not one
+    /// candidate can use it, the normal order decides and somebody holds it.
+    /// </summary>
+    public static IEnumerable<PlayerPlan> Usable(IEnumerable<PlayerPlan> candidates, GearSide side)
+    {
+        var list = candidates.ToList();
+        var usable = list.Where(p => p.CanUseUpgrade(side)).ToList();
+
+        return usable.Count > 0 ? usable : list;
+    }
+
+    /// <summary>
+    /// Tomestone pieces, bought as soon as they are affordable.
+    ///
+    /// The order is what a player actually does. A piece whose material is already sitting in the
+    /// bag comes first, because buying it finishes a slot the same evening; then the ones still
+    /// waiting on a drop; then plain tomestone gear. Within each, the expensive piece first - it is
+    /// the bigger upgrade, and with a flat weekly income the last purchase lands in the same week
+    /// either way.
+    /// </summary>
+    private void SpendTomes(IReadOnlyList<PlayerPlan> players)
+    {
+        foreach (var player in players)
+        {
+            while (true)
+            {
+                var affordable = player.TomeOpen.Where(n => TomeLedger.CanAfford(player, n.Cost)).ToList();
+
+                if (affordable.Count == 0)
+                    break;
+
+                var choice = affordable
+                             .OrderByDescending(n => Waiting(player, n))
+                             .ThenByDescending(n => n.Cost)
+                             .First();
+
+                if (!TomeLedger.Pay(player, choice.Cost))
+                    break;
+
+                player.TakeTome(choice.Slot);
+
+                // Encounter 0: no fight hands this over. The week view files purchases at the end of
+                // the week rather than under a fight, for exactly that reason.
+                awards.Add(new PlannedAward(currentWeek, 0, Slots.CofferSlot(choice.Slot), null,
+                                            player.Key, player.Name, Bought: true, TomeCost: choice.Cost));
+            }
+        }
+    }
+
+    /// <summary>How badly a purchase is wanted: 2 the material is in hand, 1 it is coming, 0 neither.</summary>
+    private static int Waiting(PlayerPlan player, TomeNeed need)
+    {
+        if (!need.ForAugment)
+            return 0;
+
+        return player.Open.Any(o => o.IsUpgrade && o.Slot == need.Slot) ? 1 : 2;
     }
 
     private static Contender Contend(PlayerPlan plan, double gain) =>
@@ -258,6 +355,9 @@ public sealed class WeekSimulator
         {
             if (player.IsDone && player.FinishedWeek < 0)
                 player.FinishedWeek = week;
+
+            if (player.IsTomeDone && player.TomeFinishedWeek < 0)
+                player.TomeFinishedWeek = week;
         }
     }
 }

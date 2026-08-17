@@ -52,10 +52,24 @@ public sealed class SlotNeed
     public bool Obtained { get; set; }
 
     /// <summary>
-    /// For <see cref="GearSource.TomeAugmented"/>: the upgrade material is in hand. The base
-    /// tomestone piece is not tracked, since it costs no raid resource.
+    /// For <see cref="GearSource.TomeAugmented"/>: the upgrade material is in hand.
     /// </summary>
     public bool UpgradeObtained { get; set; }
+
+    /// <summary>
+    /// The tomestone piece itself is bought, for a <see cref="GearSource.Tome"/> or
+    /// <see cref="GearSource.TomeAugmented"/> slot.
+    ///
+    /// It used not to be tracked, on the reasoning that the base piece costs no raid resource. It
+    /// costs 450-a-week though, and that turns out to decide things the raid does care about: a
+    /// material handed to somebody who cannot buy the piece under it sits idle for weeks while
+    /// another player could have used it the same evening.
+    ///
+    /// Deliberately <b>not</b> folded into <see cref="Obtained"/>. That one answers "has the raid
+    /// given them this", which <see cref="IsSatisfied"/> reads, and quietly widening it would put
+    /// finished slots back into the distribution.
+    /// </summary>
+    public bool BaseObtained { get; set; }
 
     /// <summary>Item id from the imported gear set, 0 when the slot was set by hand.</summary>
     public uint BisItemId { get; set; }
@@ -126,6 +140,7 @@ public sealed class SlotNeed
         Source = Source,
         Obtained = Obtained,
         UpgradeObtained = UpgradeObtained,
+        BaseObtained = BaseObtained,
         BisItemId = BisItemId,
         BisMateria = [..BisMateria],
         EquippedItemId = EquippedItemId,
@@ -202,6 +217,19 @@ public sealed class RosterMember
 
     /// <summary>Food the target set assumes, as an item id. 0 for none.</summary>
     public uint TargetFoodItemId { get; set; }
+
+    /// <summary>
+    /// They took the stone the tomestone weapon needs. Costs them 500 tomestones on top of it, which
+    /// is why the plan has to know: it is more than a week of income and it moves everything else
+    /// they were saving for.
+    /// </summary>
+    public bool WeaponTokenObtained { get; set; }
+
+    /// <summary>They took the material that augments that weapon. Only useful after the stone.</summary>
+    public bool WeaponAugmentObtained { get; set; }
+
+    /// <summary>They have the tier's mount, and are out of the running for the next one.</summary>
+    public bool MountObtained { get; set; }
 
     public bool HasBeenScanned => LastScannedUtc != null;
 

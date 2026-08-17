@@ -292,7 +292,8 @@ public sealed class RosterTab : ITab
             var target = member.NeedFor(slot.Value).BisItemId;
             var gain = target == 0 ? null : gear.Gain(member, slot.Value, target);
 
-            ImGui.TextUnformatted($"{award.What}{(award.Bought ? " (books)" : string.Empty)}");
+            var how = award.WithTomestones ? " (tomes)" : award.Bought ? " (books)" : string.Empty;
+            ImGui.TextUnformatted($"{award.What}{how}");
             ImGui.SameLine();
 
             if (gain is not { } change)

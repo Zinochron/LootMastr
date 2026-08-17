@@ -39,6 +39,9 @@ public sealed class TierTab : ITab
         DrawIdentity();
 
         ImGuiHelpers.ScaledDummy(6f);
+        DrawTomestones();
+
+        ImGuiHelpers.ScaledDummy(6f);
         DrawEncounters();
 
         ImGuiHelpers.ScaledDummy(10f);
@@ -210,6 +213,100 @@ public sealed class TierTab : ITab
                            "\"Augmented\" in the name is what tells them apart.\n\n" +
                            "\"Discover exchange\" fills these in on its own; they are editable for " +
                            "the rare tier it gets wrong.");
+    }
+
+    /// <summary>
+    /// The other currency, and the only one the plugin cannot read out of the game.
+    ///
+    /// The book prices come from the shop the player is standing at and are deliberately not
+    /// editable — hand-editing what the game itself said was an invitation to break a working tier.
+    /// These are the opposite case: the tomestone vendor is a shop this plugin never opens, so every
+    /// number here was typed in by somebody. Seeded with the going rates, editable because that is
+    /// the only way they can ever be corrected.
+    /// </summary>
+    private void DrawTomestones()
+    {
+        var tier = tiers.Tier;
+
+        ImGui.TextUnformatted("Tomestones");
+        Widgets.HelpMarker("What the tomestone vendor charges, and how much everybody has to spend " +
+                           "there. This is usually the slower of the two clocks: clearing faster " +
+                           "earns books faster, and does nothing at all for tomestones.");
+        ImGui.Separator();
+
+        Count("Per week", 0, 2000, () => tier.TomestonesPerWeek, v => tier.TomestonesPerWeek = v);
+        Widgets.HelpMarker("The weekly cap. Everyone is assumed to hit it every week — a group that " +
+                           "knows it will not can say so by lowering this.");
+
+        ImGui.SameLine(0f, 20f);
+
+        Count("Weeks banked before the tier", 0, 20, () => tier.PriorTomeWeeks, v => tier.PriorTomeWeeks = v);
+        Widgets.HelpMarker("Savage opens a week after the patch, so everyone starts with at least " +
+                           "one week saved up — more if the group starts the tier late.\n\n" +
+                           "This one number decides whether the first body piece is affordable in " +
+                           "week one or week three, which is why it is asked for rather than guessed.");
+
+        var priced = tier.CostRules.Where(r => r.Upgrade == null && r.Slots.Count > 0).ToList();
+
+        if (priced.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             "No cost rules yet — discover the exchange first and the prices appear here.");
+            return;
+        }
+
+        using var table = ImRaii.Table("##tomePrices", 3,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("Category");
+        ImGui.TableSetupColumn("Tomes", ImGuiTableColumnFlags.WidthFixed, 80f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Weeks of income", ImGuiTableColumnFlags.WidthFixed, 120f * ImGuiHelpers.GlobalScale);
+        ImGui.TableHeadersRow();
+
+        foreach (var rule in priced)
+        {
+            using var id = ImRaii.PushId(rule.Label);
+
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(string.IsNullOrWhiteSpace(rule.Label) ? "(unnamed)" : rule.Label);
+
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(-1f);
+
+            var cost = rule.TomeCost;
+            if (ImGui.InputInt("##tome", ref cost, 0))
+            {
+                rule.TomeCost = System.Math.Clamp(cost, 0, 9999);
+                config.Save();
+            }
+
+            // What the price actually costs somebody, which is the part that decides a plan. 825 is
+            // not a number anybody has a feel for; "just under two weeks" is.
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+
+            if (rule.TomeCost <= 0)
+                Widgets.Coloured(Widgets.Muted, "not sold");
+            else
+                ImGui.TextDisabled($"{rule.TomeCost / (double)System.Math.Max(1, tier.TomestonesPerWeek):0.0}");
+        }
+    }
+
+    /// <summary>A plain bounded number. The item-level fields are <c>ushort</c>; these are not.</summary>
+    private void Count(string label, int min, int max, Func<int> get, Action<int> set)
+    {
+        ImGui.SetNextItemWidth(90f * ImGuiHelpers.GlobalScale);
+
+        var value = get();
+        if (!ImGui.InputInt(label, ref value, 0))
+            return;
+
+        set(System.Math.Clamp(value, min, max));
+        config.Save();
     }
 
     private void Level(string label, Func<ushort> get, Action<ushort> set)

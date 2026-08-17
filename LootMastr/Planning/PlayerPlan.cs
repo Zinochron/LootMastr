@@ -18,6 +18,15 @@ public readonly record struct OpenNeed(GearSlot Slot, int Encounter, bool IsUpgr
 }
 
 /// <summary>
+/// One tomestone piece a player still has to buy.
+///
+/// <paramref name="ForAugment"/> separates the two reasons a slot is on this list. A plain
+/// tomestone piece only ever costs the player time; one that is going to be augmented is also what
+/// decides whether a material dropping tonight can be used at all.
+/// </summary>
+public readonly record struct TomeNeed(GearSlot Slot, int Cost, bool ForAugment);
+
+/// <summary>
 /// A player as the simulator sees them: what is left, what books they hold, nothing else. Kept
 /// separate from <see cref="RosterMember"/> so a simulation can be run on throwaway copies.
 /// </summary>
@@ -39,6 +48,12 @@ public sealed class PlayerPlan
     /// <summary>Books held, indexed 1..4. Index 0 is unused so the fight number reads directly.</summary>
     public int[] Tokens { get; init; } = new int[MaxEncounters + 1];
 
+    /// <summary>Tomestones in hand, starting from whatever the weeks before the tier banked.</summary>
+    public int Tomes { get; set; }
+
+    /// <summary>Tomestone pieces still to buy. Empty for a player whose set needs none.</summary>
+    public List<TomeNeed> TomeOpen { get; init; } = new();
+
     /// <summary>
     /// What each kind of drop would be worth to this player, in flat damage per second.
     ///
@@ -58,7 +73,21 @@ public sealed class PlayerPlan
     /// <summary>Week the player ran out of open needs, or -1 while still short of something.</summary>
     public int FinishedWeek { get; set; } = -1;
 
+    /// <summary>
+    /// Week the last tomestone piece was bought, or -1 while still saving.
+    ///
+    /// Kept apart from <see cref="FinishedWeek"/> because the two answer different questions and a
+    /// group needs both: what the raid still owes them, and when their set is actually finished.
+    /// The second is never earlier than the first and is often several weeks later.
+    /// </summary>
+    public int TomeFinishedWeek { get; set; } = -1;
+
     public bool IsDone => Open.Count == 0;
+
+    public bool IsTomeDone => TomeOpen.Count == 0;
+
+    /// <summary>Nothing left from either shop.</summary>
+    public bool IsFullyDone => IsDone && IsTomeDone;
 
     public PlayerPlan Clone() => new()
     {
@@ -69,7 +98,12 @@ public sealed class PlayerPlan
         ItemsReceived = ItemsReceived,
         Open = [..Open],
         Tokens = (int[])Tokens.Clone(),
+        Tomes = Tomes,
+
+        // Copied rather than shared: a run buys things out of it.
+        TomeOpen = [..TomeOpen],
         FinishedWeek = FinishedWeek,
+        TomeFinishedWeek = TomeFinishedWeek,
 
         // Shared, not copied: they are worked out before a run and never written during one.
         SlotGains = SlotGains,
@@ -100,11 +134,23 @@ public sealed class PlayerPlan
         for (var encounter = 1; encounter <= MaxEncounters; encounter++)
             plan.Tokens[encounter] = member.TokensFor(encounter);
 
+        plan.Tomes = TomeLedger.StartingBalance(tier);
+
         var raidRingTaken = false;
 
         foreach (var slot in Slots.All)
         {
             var need = member.NeedFor(slot);
+
+            // Both tomestone sources cost tomestones, and neither is a raid resource — so this runs
+            // before the raid check rather than inside it. An augmented piece is on both lists: the
+            // material comes out of a chest, the thing it goes into comes out of a vendor.
+            if (need.Source is GearSource.Tome or GearSource.TomeAugmented && !need.BaseObtained &&
+                tier.TomeCostForSlot(slot) is { } price and > 0)
+            {
+                plan.TomeOpen.Add(new TomeNeed(slot, price, need.Source == GearSource.TomeAugmented));
+            }
+
             if (!need.Source.NeedsRaidResource() || need.IsSatisfied)
                 continue;
 
@@ -137,7 +183,57 @@ public sealed class PlayerPlan
                 plan.Open.Add(new OpenNeed(slot, upgradeFight.Value, true, side));
         }
 
+        // The tomestone weapon is nobody's target set — it is a stopgap somebody takes because the
+        // raid weapon is weeks away. So it never appears as a need, and the 500 it costs would go
+        // unnoticed if the stone were not recorded. It is over a week of income and it delays every
+        // other piece that player was saving for, which is exactly what makes "who needs the fewest
+        // tomestones" the right way to choose who takes the stone in the first place.
+        if (member.WeaponTokenObtained && !plan.TomeOpen.Any(n => Slots.CofferSlot(n.Slot) == GearSlot.Weapon) &&
+            tier.TomeCostForSlot(GearSlot.Weapon) is { } weapon and > 0)
+        {
+            plan.TomeOpen.Add(new TomeNeed(GearSlot.Weapon, weapon, false));
+        }
+
         return plan;
+    }
+
+    /// <summary>
+    /// Whether a material for this side could be put to use, rather than held.
+    ///
+    /// The question the group actually asks when a twine drops: can this person augment anything
+    /// with it? They can if the piece under it is already bought, or if they can buy it now. If it
+    /// is four weeks of saving away, the material sits in their bag while somebody else could have
+    /// worn it the same evening.
+    ///
+    /// Only ever a preference, never a veto — see <c>WeekSimulator.AwardUpgrade</c>. A material
+    /// nobody can use yet still goes to somebody, because holding it beats leaving it in the chest.
+    /// </summary>
+    public bool CanUseUpgrade(GearSide side)
+    {
+        foreach (var need in Open)
+        {
+            if (!need.IsUpgrade || need.Side != side)
+                continue;
+
+            var index = TomeOpen.FindIndex(t => t.Slot == need.Slot);
+
+            // Not on the list means it is already bought, which is the strongest form of yes.
+            if (index < 0 || TomeLedger.CanAfford(this, TomeOpen[index].Cost))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Buys one tomestone piece off the list. False when it was not on it.</summary>
+    public bool TakeTome(GearSlot slot)
+    {
+        var index = TomeOpen.FindIndex(n => n.Slot == slot);
+        if (index < 0)
+            return false;
+
+        TomeOpen.RemoveAt(index);
+        return true;
     }
 
     public bool Wants(GearSlot slot) =>

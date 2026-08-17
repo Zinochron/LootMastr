@@ -252,6 +252,12 @@ public sealed class TierCatalog
 
         resolved = true;
 
+        // The tomestone vendor is not a shop this plugin reads, so its prices are seeded rather than
+        // discovered — and seeded here so a tier written before they existed picks them up instead
+        // of reading as "tomestone gear is free".
+        if (tier.SeedTomeCosts())
+            config.Save();
+
         foreach (var encounter in tier.Encounters)
             encounter.TokenItemId = items.TryGetIdByName(encounter.TokenItemName, out var id) ? id : 0;
 
@@ -523,6 +529,7 @@ public sealed class TierCatalog
         DeriveItemLevels(tier);
         ApplyStandardLayout(tier);
         DeriveCostRules(tier);
+        tier.SeedTomeCosts();
         config.Save();
 
         Services.Log.Information(

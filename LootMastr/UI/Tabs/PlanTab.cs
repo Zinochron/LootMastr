@@ -241,18 +241,9 @@ public sealed class PlanTab : ITab
         ImGui.TextUnformatted("Who finishes when");
         ImGui.Separator();
 
-        if (result.BeyondHorizon(result.LastFinishWeek))
-        {
-            Widgets.Coloured(Widgets.Wanted,
-                             $"Not everyone is done within {result.Horizon} weeks. Raise the horizon in " +
-                             "Settings to see how much longer it takes.");
-        }
-        else
-        {
-            ImGui.TextUnformatted($"Everyone is done in week {result.LastFinishWeek}.");
-        }
+        DrawHeadline(result);
 
-        using var table = ImRaii.Table("##forecast", 4,
+        using var table = ImRaii.Table("##forecast", 6,
                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
         if (!table.Success)
             return;
@@ -260,7 +251,9 @@ public sealed class PlanTab : ITab
         ImGui.TableSetupColumn("Player");
         ImGui.TableSetupColumn("Role", ImGuiTableColumnFlags.WidthFixed, 60f * ImGuiHelpers.GlobalScale);
         ImGui.TableSetupColumn("Still needs", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
-        ImGui.TableSetupColumn("Done", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Raid done", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Tomes left", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Set done", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
         ImGui.TableHeadersRow();
 
         var plans = planner.BuildPlans().ToDictionary(p => p.Key);
@@ -291,7 +284,94 @@ public sealed class PlanTab : ITab
                 Widgets.Coloured(Widgets.Bad, $"> W{result.Horizon}");
             else
                 ImGui.TextUnformatted($"W{week}");
+
+            // What the vendor still wants. A player with no tomestone gear planned reads "—" rather
+            // than 0: nothing to buy and "bought it all already" are different states, and only one
+            // of them means the set is finished.
+            ImGui.TableNextColumn();
+            var owed = plan == null ? 0 : TomeLedger.Outstanding(plan);
+            var planned = plan != null && (owed > 0 || HasTomeGear(member));
+
+            if (!planned)
+                Widgets.Coloured(Widgets.Muted, "—");
+            else if (owed == 0)
+                Widgets.Coloured(Widgets.Done, "done");
+            else
+                ImGui.TextUnformatted($"{owed:N0}");
+
+            Widgets.Tooltip(owed == 0
+                                ? "Nothing left to buy from the tomestone vendor."
+                                : $"{owed:N0} tomestones still to spend, at " +
+                                  $"{tiers.Tier.TomestonesPerWeek} a week.");
+
+            ImGui.TableNextColumn();
+            var whole = result.WholeSetWeek(member.Key);
+
+            if (open == 0 && owed == 0)
+                Widgets.Coloured(Widgets.Done, "done");
+            else if (result.BeyondHorizon(whole))
+                Widgets.Coloured(Widgets.Bad, $"> W{result.Horizon}");
+            else
+                Widgets.Coloured(whole > week ? Widgets.Augment : Widgets.Muted, $"W{whole}");
+
+            Widgets.Tooltip("When the whole set is finished — the later of the raid half and the " +
+                            "tomestone half.");
         }
+    }
+
+    /// <summary>Whether this player's target set has any tomestone gear in it at all.</summary>
+    private static bool HasTomeGear(RosterMember member)
+    {
+        foreach (var slot in Slots.All)
+        {
+            if (member.NeedFor(slot).Source is GearSource.Tome or GearSource.TomeAugmented)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The two clocks, in one sentence, with the raid one in front.
+    ///
+    /// That order is deliberate. The raid week is the number a group can do something about — clear
+    /// more, share differently — and it is the one every loot decision moves. The tomestone week is
+    /// a fact about the calendar, and putting it second says so without hiding it.
+    /// </summary>
+    private void DrawHeadline(SimulationResult result)
+    {
+        if (result.BeyondHorizon(result.LastFinishWeek))
+        {
+            Widgets.Coloured(Widgets.Wanted,
+                             $"Not everyone is done within {result.Horizon} weeks. Raise the horizon in " +
+                             "Settings to see how much longer it takes.");
+        }
+        else
+        {
+            Widgets.Coloured(Widgets.Done, $"All raid items in week {result.LastFinishWeek}.");
+            Widgets.Tooltip("Every coffer and every upgrade material handed out. Tomestone pieces are " +
+                            "the other half, and they are on their own clock.");
+        }
+
+        var whole = result.LastTomeFinishWeek;
+
+        if (whole <= 0)
+            return;
+
+        ImGui.SameLine(0f, 8f);
+
+        if (result.BeyondHorizon(whole))
+        {
+            Widgets.Coloured(Widgets.Bad, $"— full sets not inside {result.Horizon} weeks.");
+        }
+        else
+        {
+            ImGui.TextDisabled($"— full sets, tomestone gear included, in week {whole}.");
+        }
+
+        Widgets.Tooltip($"Everyone collects {tiers.Tier.TomestonesPerWeek} a week and started the " +
+                        $"tier with {tiers.Tier.PriorTomeWeeks} week(s) banked. Clearing faster does " +
+                        "not move this number — only buying less does.");
     }
 
     /// <summary>
@@ -497,7 +577,7 @@ public sealed class PlanTab : ITab
     {
         var bought = result.Awards.Where(a => a.Week == week && a.Bought).ToList();
 
-        Widgets.Coloured(Widgets.Augment, "Book exchange");
+        Widgets.Coloured(Widgets.Augment, "Exchange");
 
         using var inner = ImRaii.PushIndent();
 
@@ -511,7 +591,12 @@ public sealed class PlanTab : ITab
 
         foreach (var award in bought)
         {
-            ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
+            // Which shop it came from, on the line rather than only in the price: a week that hands
+            // somebody a body piece twice is two different purchases, and the reader has to be able
+            // to see that at a glance rather than by reading the numbers after them.
+            var what = award.WithTomestones ? $"{award.What} (tomes)" : $"{award.What} (books)";
+
+            ImGui.TextUnformatted($"{what}  →  {award.PlayerName}");
 
             ImGui.SameLine();
             ImGui.TextDisabled(CostOf(tier, award));
@@ -529,6 +614,11 @@ public sealed class PlanTab : ITab
     /// <summary>What a purchase costs, including the part that has to be traded for first.</summary>
     private static string CostOf(TierDefinition tier, PlannedAward award)
     {
+        // Two shops, two currencies. A tomestone purchase has no fight behind it and no books to
+        // trade, so it says its price and stops there.
+        if (award.WithTomestones)
+            return $"{award.TomeCost:N0} tomestones";
+
         var cost = award.Upgrade != null
                        ? tier.CostForUpgrade(award.Upgrade.Value)
                        : award.Slot != null

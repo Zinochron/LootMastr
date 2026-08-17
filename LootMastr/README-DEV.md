@@ -903,6 +903,62 @@ Three changes, and the first is the actual bug:
   names anyone unrated, because an unrated player scores a zero gain — indistinguishable, under a
   damage ranking, from a player nothing is worth anything to.
 
+### The second currency, and the slower clock
+
+Books arrive one per fight per clear. Tomestones arrive at 450 a week and no amount of clearing
+changes that, which makes them **the only rate in this plugin a group cannot go faster at**. A static
+can be done with coffers in week five and still be four weeks off a finished set.
+
+The planner used to be blind to it. `GearSource.Tome` fails `NeedsRaidResource()`, never enters
+`PlayerPlan.Open`, and was therefore free and instant. Two things follow from fixing that, and the
+first is the one that changes loot decisions:
+
+**A material is only worth handing over if the piece under it can be worn.** A twine in the bag of
+somebody who cannot buy the body piece for four weeks is four weeks the group did not have to lose.
+`PlayerPlan.CanUseUpgrade` answers "owns it, or can buy it now", and `WeekSimulator.Usable` narrows
+a material's field to those players — in the chest and in the projection, from the same method, so
+the two cannot name different people for the same twine.
+
+It is a **preference, not a veto**. If not one candidate can use it, the normal order decides and
+somebody holds it: leaving it in the chest would be worse than leaving it in a bag.
+
+**The forecast has two clocks.** `SimulationResult.FinishWeeks` is when the raid stops owing
+somebody anything; `TomeFinishWeeks` is when their set is finished. The second is the later of the
+two by construction — a player still owed a coffer is not done however long ago they bought their
+last tome piece.
+
+`TomeLedger.WeekAffordedBy` computes the finishing week in closed form, and the simulator arrives at
+the same number by spending week by week. That is deliberate duplication: income is flat, so the
+order purchases are made in cannot move the **last** one, and the harness asserts the two agree. A
+disagreement is a bug in one of them rather than a matter of taste.
+
+#### Where the prices come from
+
+`TierCostRule.TomeCost`, on the same rule as the book price. The two shops group the slots
+**identically** — accessories together, head/hands/feet together, body and legs together, the weapon
+alone — so a second table would be a second copy of that grouping, free to drift.
+
+The book prices are read out of the shop the player is standing at and are deliberately not
+editable. The tomestone prices are the opposite case: that vendor is a shop this plugin never opens,
+so `SeedTomeCosts` fills in the going rates (825 / 495 / 375 / 500) and the Tier tab lets them be
+corrected. Same rule as `DeriveCostRules` — a number somebody typed in is a decision and is never
+overwritten.
+
+#### The stopgap weapon
+
+The tomestone weapon is nobody's target set. It is a stopgap somebody takes because the raid weapon
+is weeks away, so it never appears as a need — and the 500 it costs would go unnoticed if the stone
+were not recorded. It is over a week of income and it delays every other piece that player was
+saving for, which is exactly what makes "who needs the fewest tomestones" the right way to choose
+who takes the stone in the first place.
+
+#### One thing that had to fill itself in
+
+`SlotNeed.BaseObtained` is new, and a roster that predates it holds false everywhere — which would
+read as "nobody owns a single tomestone piece" and hand out materials nobody can use. The gear scan
+sets it from what is worn: tomestone gear in a slot proves the piece is bought, whether or not it is
+the augmented version and whether or not it is the exact target.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight
