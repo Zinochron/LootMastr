@@ -45,108 +45,25 @@ public sealed class TierTab : ITab
         DrawUpgrades();
 
         ImGuiHelpers.ScaledDummy(10f);
-        DrawCostRules();
-
-        ImGuiHelpers.ScaledDummy(10f);
         DrawExchange();
     }
 
     /// <summary>
-    /// Book costs, by category rather than by item — which is how the game prices them, and why
-    /// eight rows cover a table that would otherwise need one line per piece.
-    /// </summary>
-    private void DrawCostRules()
-    {
-        ImGui.TextUnformatted("Book costs");
-        Widgets.HelpMarker("What the planner charges for buying a piece with books. These are what " +
-                           "the arithmetic runs on; the discovered exchange below is only consulted " +
-                           "for anything no rule covers.");
-        ImGui.Separator();
-
-        var tier = tiers.Tier;
-
-        foreach (var mismatch in tier.CostMismatches())
-            Widgets.Coloured(Widgets.Wanted, $"? {mismatch}");
-
-        using (var table = ImRaii.Table("##costRules", 4,
-                                        ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
-        {
-            if (table.Success)
-            {
-                ImGui.TableSetupColumn("Buys");
-                ImGui.TableSetupColumn("Books", ImGuiTableColumnFlags.WidthFixed, 70f * ImGuiHelpers.GlobalScale);
-                ImGui.TableSetupColumn("From", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
-                ImGui.TableSetupColumn("Covers");
-                ImGui.TableHeadersRow();
-
-                for (var i = 0; i < tier.CostRules.Count; i++)
-                {
-                    var rule = tier.CostRules[i];
-                    using var id = ImRaii.PushId(i);
-
-                    ImGui.TableNextRow();
-                    ImGui.TableNextColumn();
-                    ImGui.AlignTextToFramePadding();
-                    ImGui.TextUnformatted(rule.Label);
-
-                    ImGui.TableNextColumn();
-                    ImGui.SetNextItemWidth(-1f);
-                    var cost = rule.Cost;
-                    if (ImGui.InputInt("##cost", ref cost, 0))
-                    {
-                        rule.Cost = System.Math.Max(0, cost);
-                        config.Save();
-                    }
-
-                    ImGui.TableNextColumn();
-                    DrawEncounterPicker(rule);
-
-                    ImGui.TableNextColumn();
-                    ImGui.TextDisabled(rule.Upgrade != null
-                                           ? SideLabel(rule.Upgrade.Value)
-                                           : string.Join(", ", rule.Slots.Select(s => s.ShortCofferLabel())));
-                }
-            }
-        }
-
-        DrawConversions();
-    }
-
-    private void DrawEncounterPicker(TierCostRule rule)
-    {
-        var name = tiers.Tier.Encounter(rule.Encounter)?.Name ?? $"#{rule.Encounter}";
-
-        if (ImGui.SmallButton($"{name}##from"))
-            ImGui.OpenPopup("##fromPopup");
-
-        using var popup = ImRaii.Popup("##fromPopup");
-        if (!popup.Success)
-            return;
-
-        foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
-        {
-            if (!ImGui.Selectable(encounter.Name))
-                continue;
-
-            rule.Encounter = encounter.Index;
-            config.Save();
-        }
-    }
-
-    /// <summary>
-    /// The last fight's books trade for earlier ones, which is worth stating explicitly: it changes
-    /// who is stuck. A player short on accessory books but sitting on spare weapon books is not.
+    /// Whether the last fight's books trade down, stated in one line.
+    ///
+    /// It changes who is stuck, so it has to be visible: a player short on accessory books but
+    /// sitting on spare weapon books is not short on anything. It used to sit under an editable
+    /// table of the tier's book costs, and that table is gone — the costs come out of the shop the
+    /// player is standing at, and hand-editing what the game itself told us was an invitation to
+    /// break a working tier.
     /// </summary>
     private void DrawConversions()
     {
-        ImGuiHelpers.ScaledDummy(4f);
-        ImGui.TextUnformatted("Trading books in");
-
         var tier = tiers.Tier;
 
         if (tier.Conversions.Count == 0)
         {
-            Widgets.Coloured(Widgets.Muted, "No trades — every book is only good for its own fight.");
+            Widgets.Coloured(Widgets.Muted, "No downtrading — every book is only good for its own fight.");
             return;
         }
 
@@ -155,7 +72,7 @@ public sealed class TierTab : ITab
             var from = tier.Encounter(conversion.FromEncounter)?.Name ?? $"#{conversion.FromEncounter}";
             var into = string.Join(", ", conversion.ToEncounters.Select(e => tier.Encounter(e)?.Name ?? $"#{e}"));
 
-            ImGui.TextUnformatted($"{conversion.Ratio} × {from} → 1 × any of: {into}");
+            Widgets.Coloured(Widgets.Done, $"Downtrading: {conversion.Ratio} × {from} → 1 × any of {into}");
         }
 
         Widgets.HelpMarker("The planner only trades books it does not need for that fight's own " +
@@ -486,6 +403,10 @@ public sealed class TierTab : ITab
     private void DrawUpgrades()
     {
         ImGui.TextUnformatted("Upgrade materials");
+        Widgets.HelpMarker("The three things that turn tomestone gear into its augmented version. " +
+                           "Anything the tier's books buy that is not a piece of gear is offered " +
+                           "first — that is where the materials always are, and it saves knowing " +
+                           "what this expansion decided to call them.");
         ImGui.Separator();
 
         foreach (var upgrade in tiers.Tier.Upgrades)
@@ -517,13 +438,61 @@ public sealed class TierTab : ITab
             if (!popup.Success)
                 continue;
 
-            if (!Widgets.ItemSearch(items, ref query, out var picked))
+            if (DrawMaterialSuggestions(upgrade) || !Widgets.ItemSearch(items, ref query, out var picked))
                 continue;
 
             upgrade.ItemId = picked;
             upgrade.ItemName = items.GetItemName(picked);
             config.Save();
         }
+    }
+
+    /// <summary>
+    /// The discovered exchange entries that are not gear, offered as a list.
+    ///
+    /// Those are the ones the reward table shows as unassigned, and an upgrade material is always
+    /// one of them — the shop the books buy from sells the coffers, the materials, and a handful of
+    /// mounts and minions. Searching the whole item sheet for a name nobody remembers was the only
+    /// way to fill these in, and it is still there underneath for the tier where this comes up empty.
+    /// </summary>
+    private bool DrawMaterialSuggestions(TierUpgrade upgrade)
+    {
+        var candidates = tiers.Tier.Rewards.Where(r => !r.IsAssigned).ToList();
+        if (candidates.Count == 0)
+            return false;
+
+        ImGui.TextDisabled("From the exchange");
+        ImGui.Separator();
+
+        var chosen = false;
+
+        foreach (var reward in candidates)
+        {
+            using var id = ImRaii.PushId((int)reward.ItemId);
+
+            Widgets.Icon(items.GetItem(reward.ItemId).IconId, 18f);
+            ImGui.SameLine();
+
+            if (!ImGui.Selectable(reward.ItemName))
+                continue;
+
+            upgrade.ItemId = reward.ItemId;
+            upgrade.ItemName = reward.ItemName;
+
+            // Also file it in the reward table, so the same item stops being offered as a material
+            // for the other two sides and the exchange stops calling it unassigned.
+            reward.Slot = null;
+            reward.Upgrade = upgrade.Side;
+
+            config.Save();
+            chosen = true;
+        }
+
+        ImGuiHelpers.ScaledDummy(4f);
+        ImGui.TextDisabled("Or search every item");
+        ImGui.Separator();
+
+        return chosen;
     }
 
     private void DrawExchange()
@@ -533,7 +502,17 @@ public sealed class TierTab : ITab
                            "knows what buying it would achieve.");
         ImGui.Separator();
 
+        DrawConversions();
+
         var tier = tiers.Tier;
+
+        // Where a rule and the shop disagree about a price. Worth surfacing next to the shop data
+        // rather than beside the rules — this is the half that can be checked against the game.
+        foreach (var mismatch in tier.CostMismatches())
+            Widgets.Coloured(Widgets.Wanted, $"? {mismatch}");
+
+        ImGuiHelpers.ScaledDummy(4f);
+
         if (tier.Rewards.Count == 0)
         {
             Widgets.Coloured(Widgets.Muted, "Nothing discovered yet.");

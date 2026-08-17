@@ -26,7 +26,8 @@ public sealed class PlanTab : ITab
     private readonly LootPlanner planner;
     private readonly TierCatalog tiers;
 
-    private SimulationResult? forecast;
+    private SimulationResult? coming;
+    private SimulationResult? schedule;
     private int cachedSignature;
 
     public PlanTab(Configuration config, RosterStore roster, LootPlanner planner, TierCatalog tiers)
@@ -41,7 +42,11 @@ public sealed class PlanTab : ITab
     public string Id => "plan";
 
     /// <summary>Called when the roster or the tier changed under us.</summary>
-    public void Invalidate() => forecast = null;
+    public void Invalidate()
+    {
+        coming = null;
+        schedule = null;
+    }
 
     public void Draw()
     {
@@ -70,16 +75,17 @@ public sealed class PlanTab : ITab
             Invalidate();
         }
 
-        forecast ??= planner.Forecast();
+        coming ??= planner.ComingWeek();
+        schedule ??= planner.Schedule();
 
         ImGuiHelpers.ScaledDummy(6f);
-        DrawForecast(forecast);
+        DrawForecast(schedule);
 
         ImGuiHelpers.ScaledDummy(10f);
-        DrawNextDrops(forecast);
+        DrawNextDrops(coming);
 
         ImGuiHelpers.ScaledDummy(10f);
-        DrawSchedule(forecast);
+        DrawSchedule(schedule);
     }
 
     private void DrawForecast(SimulationResult result)
@@ -286,8 +292,9 @@ public sealed class PlanTab : ITab
         {
             if (drops.Success)
             {
-                Widgets.HelpMarker("What the simulation expects to happen if every fight is cleared " +
-                                   "every week. Book purchases are in the next tab.");
+                Widgets.HelpMarker("The whole tier played forward: every fight cleared every week, " +
+                                   "every coffer handed to whoever the rules put first. Book " +
+                                   "purchases are in the next tab.");
 
                 DrawScheduleWeeks(result);
             }
@@ -296,9 +303,11 @@ public sealed class PlanTab : ITab
         using var exchanges = ImRaii.TabItem("Planned book exchanges");
         if (exchanges.Success)
         {
-            Widgets.HelpMarker("Every piece the plan expects to be bought rather than won, and the " +
-                               "week the books for it are there. Week 1 is what somebody could walk " +
-                               "to the NPC and buy right now.");
+            Widgets.HelpMarker("Every piece the plan expects to be bought rather than won, in the " +
+                               "week the books for it are there.\n\n" +
+                               "Everyone earns one book from every fight each week on top of what " +
+                               "they are already holding, and the last fight's books are traded down " +
+                               "where the tier allows it and a purchase needs it.");
 
             DrawExchangeWeeks(result);
         }

@@ -211,7 +211,7 @@ public sealed class SettingsTab : ITab
             return;
         }
 
-        var result = planner.Forecast();
+        var result = planner.Schedule();
 
         if (result.BeyondHorizon(result.LastFinishWeek))
             Widgets.Coloured(Widgets.Bad, $"Not everyone is geared within {result.Horizon} weeks.");

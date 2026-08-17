@@ -38,14 +38,13 @@ public sealed class LootPlanner
     }
 
     /// <summary>
-    /// The forecast as things stand.
+    /// Just the coming week: every coffer that can turn up, and what the books in hand already buy.
     ///
-    /// The coming week is worked out here rather than inside the simulator, so that each award can
-    /// carry the ranking that produced it — the plan used to show a winner from one calculation
-    /// beside runners-up from another, which is exactly how a table comes to contradict itself. The
-    /// weeks after it are projected by the simulator, which now applies the same rule.
+    /// Worked out here rather than inside the simulator so that each award can carry the ranking
+    /// that produced it — the plan used to show a winner from one calculation beside runners-up
+    /// from another, which is exactly how a table comes to contradict itself.
     /// </summary>
-    public SimulationResult Forecast()
+    public SimulationResult ComingWeek()
     {
         var plans = BuildPlans();
         var pending = new List<PendingAward>();
@@ -58,11 +57,25 @@ public sealed class LootPlanner
         foreach (var award in bought)
             pending.Add(new PendingAward(award.PlayerKey, award.Slot, award.Upgrade));
 
-        var thisWeek = AssignComingWeek(plans, pending);
-        var rest = NewSimulator().Run(plans, startWeek: 2);
+        var drops = AssignComingWeek(plans, pending);
 
-        return rest with { Awards = [..bought, ..thisWeek, ..rest.Awards] };
+        return new SimulationResult(0, new Dictionary<string, int>(), [..bought, ..drops],
+                                    config.LookaheadWeeks);
     }
+
+    /// <summary>
+    /// The whole tier played forward from here: who gets what, in which week, drop or purchase.
+    ///
+    /// A run of its own rather than "the coming week, then the rest". Splitting it that way cost a
+    /// week of books — the coming week was handled outside the simulator, which is the only thing
+    /// that hands books out, so nobody earned anything in week 1 and every purchase in the plan sat
+    /// a week later than it should. Week 1 here means one book from every fight, week 2 two, on top
+    /// of whatever each player is already holding.
+    ///
+    /// It agrees with <see cref="ComingWeek"/> about week 1's drops without being told to, because
+    /// both hand the same drop pool to the same rule.
+    /// </summary>
+    public SimulationResult Schedule() => NewSimulator().Run(BuildPlans());
 
     /// <summary>
     /// Hands out the coming week's drops by ranking, applying each to the plans before deciding the

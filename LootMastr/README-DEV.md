@@ -293,6 +293,13 @@ upgrade materials. Everything else is discovered from the game:
   `DiscoverAugments` is deliberately *not* bound this way. Augmenting is a different NPC, so
   restricting it to the coffer shop would find nothing.
 
+- **The upgrade materials**, indirectly. They are always among the rewards the exchange found and
+  could not file as gear — the shop sells coffers, materials, and a few mounts and minions — so the
+  material picker offers the unassigned rewards before it offers the whole item sheet. Picking one
+  files it against that side in the reward table too, so it stops being offered for the other two.
+  Searching thirty thousand items for a name nobody remembers is still there underneath, for the
+  tier where the discovery came up empty.
+
 - **Book-for-book trades.** Most of the last fight's shop is its books buying the earlier fights'
   books, and reading those rows as gear was the other half of why they all came out as "Weapon".
   A reward that is itself one of the tier's books is recorded as a `TierTokenConversion` instead,
@@ -581,9 +588,16 @@ slot's gear is uniformly priced, so the odd one out is an outlier: Deltascape se
 separately for three books, it files under the weapon slot, and taking the minimum priced every
 weapon in the tier at three.
 
-The Tier tab lists disagreements between a rule and the shop, one line per category. Comparing
-every reward individually produced twenty weapons all disagreeing with the same rule in the same
-way, which says nothing twenty times.
+The Tier tab lists disagreements between a rule and the shop, one line per category, under *Book
+exchange*. Comparing every reward individually produced twenty weapons all disagreeing with the same
+rule in the same way, which says nothing twenty times.
+
+**There is no editor for the costs any more.** There was one, a table of the eight rules with the
+price editable. It came from a time when the numbers had to be typed in; now they are read off the
+shop the player is standing at, and an editable copy of what the game just told us is somewhere to
+break a working tier rather than somewhere to fix one. What is left in its place is the mismatch
+list above and one line saying whether the tier trades books down — the part of that section that
+was actually load-bearing, since it decides who is stuck.
 
 ### Whether every coffer drops
 
@@ -640,6 +654,23 @@ list is two tabs, *Expected schedule* and *Planned book exchanges*. They were on
 bought entries marked "(books)", and that is two different kinds of thing in one column: a coffer is
 a decision made in the instance with seven other people wanting it, an exchange is one player
 walking to an NPC. Reading a week meant separating them by eye every time.
+
+### Two calculations, on purpose this time
+
+`LootPlanner.ComingWeek()` answers "this reset": books in hand spent first, then every coffer each
+fight can put up, each award carrying the ranking it came off. It drives *Next drops* and the Loot
+tab's book column.
+
+`LootPlanner.Schedule()` is one simulator run from week 1 and answers "the whole tier". It drives
+the finish weeks and both week-by-week tabs.
+
+They agree about week 1's drops without being made to, because both hand the same pool to the same
+rule — which is the only kind of agreement worth having. What they do *not* share is a run, and that
+matters: the schedule used to be "the coming week, then the simulator from week 2", and since the
+simulator is the only thing that hands books out, **week 1 gave nobody a book**. Every purchase in
+the plan sat one week later than it should, for as long as that split existed. Now week 1 means one
+book from each fight, week 2 means two, on top of whatever each player already holds — and spare
+last-fight books trade down inside that, through `BookLedger`, exactly as they do anywhere else.
 
 `+1 <fight>` raises the kill count and gives every roster member a book. The Roster tab's clear
 prompt is the accurate path — it only counts the people who were actually in the party — and this

@@ -221,7 +221,7 @@ public sealed class LootTab : ITab
         if (forecast == null || signature != forecastSignature)
         {
             forecastSignature = signature;
-            forecast = planner.Forecast();
+            forecast = planner.ComingWeek();
         }
 
         return forecast;

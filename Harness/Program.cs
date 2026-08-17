@@ -356,6 +356,52 @@ var rules = new PriorityRules();
 }
 
 {
+    // Week 1 is one book from every fight, week 2 is two, on top of whatever is already held. The
+    // projection used to be run as "the coming week, then the rest from week 2", and since only the
+    // simulator hands books out, week 1 quietly gave nobody anything.
+    var noDrops = Tier();
+    noDrops.Encounter(4)!.DropSlots.Clear();
+
+    var m = Member("A", (GearSlot.Weapon, GearSource.Raid));
+    m.Tokens[4] = 7;
+
+    var result = new WeekSimulator(noDrops, rules, 12).Run([Plan(m, RaidRole.Dps, noDrops)]);
+    Check("the first week's book is earned in the first week", result.LastFinishWeek == 1,
+          $"week {result.LastFinishWeek}");
+}
+
+{
+    // Downtrading, inside the schedule rather than in the ledger on its own: nothing this player
+    // needs takes the last fight's books, so all eight of them are spare and trade down.
+    var noDrops = Tier();
+    foreach (var encounter in noDrops.Encounters)
+        encounter.DropSlots.Clear();
+
+    var m = Member("A", (GearSlot.Necklace, GearSource.Raid));
+    m.Tokens[4] = 3;
+
+    var result = new WeekSimulator(noDrops, rules, 12).Run([Plan(m, RaidRole.Dps, noDrops)]);
+    Check("spare last-fight books are traded down to finish sooner", result.LastFinishWeek == 1,
+          $"week {result.LastFinishWeek}");
+
+    // In a tier that does not trade books down at all, the same player waits three weeks for three
+    // accessory books. Note that dropping the three in hand is not the comparison to make: every
+    // week hands out a fourth-fight book too, and with no weapon owed those are spare as well.
+    var noTrades = Tier();
+    foreach (var encounter in noTrades.Encounters)
+        encounter.DropSlots.Clear();
+
+    noTrades.Conversions.Clear();
+
+    var poorer = Member("B", (GearSlot.Necklace, GearSource.Raid));
+    poorer.Tokens[4] = 3;
+
+    var slow = new WeekSimulator(noTrades, rules, 12).Run([Plan(poorer, RaidRole.Dps, noTrades)]);
+    Check("and a tier without downtrading makes them wait for their own", slow.LastFinishWeek == 3,
+          $"week {slow.LastFinishWeek}");
+}
+
+{
     // Books in hand were earned by clears that have already happened, so they can be spent before
     // this week's fights — and something bought is something that no longer needs to be won.
     var m = Member("A", (GearSlot.Weapon, GearSource.Raid));
