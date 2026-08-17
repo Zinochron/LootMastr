@@ -684,28 +684,34 @@ Magical means the job's primary stat is intelligence or mind — which the game 
 list to maintain. Deriving it from the *role* had every caster falling through as physical, because
 a black mage's role is simply "dps".
 
-#### And a second set corrected the first fix
+#### It took three sets, and the shape was not what it looked like
 
-`etro.gg/gearset/1dde8dd8-0953-4760-a5a4-1710a023f064` — a level 100 paladin. Filling in the magical
-trait had come with a physical one of **1.20**, on the strength of the conventional "Maim and
-Mastery". This set says the implied trait is **1.00000**, exactly. Every physical job had been
-overstated by a fifth for one commit.
+| Set | Job | Attack power | Trait | 100 potency |
+|---|---|---|---|---|
+| `d12038d5…` | Black mage | 237 | 1.30 | 13161.4 |
+| `1dde8dd8…` | Paladin | 190 | 1.00 | 7979.5 |
+| `3487d0fa…` | Dancer | 237 | 1.20 | 12367.43 |
 
-It also settled the **tank attack power multiplier at 190**, which had been a guess: no other value
-in a hundred reproduces Etro's published strength multiplier of 2834%.
+Each one is exact, and each one changed the rule:
 
-| | Attack power multiplier | Trait |
-|---|---|---|
-| Magical (INT or MND) | 237 ✓ | 1.30 ✓ |
-| Tank | 190 ✓ | 1.00 ✓ |
-| Melee and physical ranged | 237 | 1.00, **unverified** |
+1. The **black mage** set found the missing trait and gave 1.30 for magical. The physical value came
+   with it as **1.20**, from the conventional "Maim and Mastery" — a guess riding along with a
+   measurement.
+2. The **paladin** set said 1.00, so that guess was wrong and every physical job had been overstated
+   by a fifth. The obvious conclusion — physical is 1.00, magical is 1.30 — was also wrong. It also
+   settled the tank attack power multiplier at 190: no other value in a hundred reproduces Etro's
+   published strength multiplier of 2834%.
+3. The **dancer** set says 1.20 with the full 237. So it is a **tank exception**, not a
+   magical-against-physical split: a tank has no damage trait and a reduced attack multiplier, and
+   everybody else gets 237 with +20% physical or +30% magical.
 
-The asymmetry is smaller than it looks: physical jobs already scale differently through the attack
-power multiplier. What is still open is whether a melee or ranged physical job sits at 1.00 like the
-tank or carries a trait of its own. 1.00 is now the reading with evidence behind it rather than the
-one without, which is the only reason to prefer it — a third set would settle it.
+Which means the original 1.20 was right for the jobs it was written for and wrong only for tanks —
+and two sets in a row could each be satisfied by a rule that the third disproved.
 
-Both sets are harness fixtures, each asserted to a tenth.
+**Melee is the one category with no set behind it.** It shares everything measurable with physical
+ranged — same attack power multiplier, same primary stat, no tenacity — so 1.20 is where the evidence
+points rather than where a convention does. All three sets are harness fixtures, each asserted to a
+tenth, plus a check that the three traits stand in that order at all.
 
 #### Three mistakes worth keeping written down
 
@@ -724,10 +730,14 @@ number 23% low looks perfectly plausible too. What separates them is an outside 
 worth more here than any amount of internal consistency.
 
 **Then every physical number was 20% high**, from filling that trait in with the convention instead
-of a measurement. One outside source is enough to find an error and not enough to fix one — the fix
-was a guess, and it took a second set to catch it. Two anchors, two different jobs; the third would
-be a melee or physical ranged set, and until one turns up that row of the table stays marked
-unverified rather than quietly assumed.
+of a measurement. Then every *non-tank* physical number was 20% **low**, from concluding the opposite
+off a single tank set.
+
+That sequence is the lesson, not any of the three values. One outside source is enough to find an
+error and not enough to fix one; two are enough to be confidently wrong in a new way. Each fix looked
+like it followed from the evidence and each smuggled in a rule the evidence did not cover — first
+"the convention holds", then "physical is one thing". The third set is what made the shape visible.
+A number that reproduces one measurement exactly is not thereby a rule.
 
 The harness asserts all of it: the 2.50 recast exactly, the Etro total to one decimal, and the
 magnitudes as bands wide enough not to be brittle.

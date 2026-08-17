@@ -1123,7 +1123,7 @@ var rules = new PriorityRules();
                    - (13161.4 / 1.30)) < 0.1);
 
     Check("a magical job's trait is 1.30",
-          Math.Abs(JobProfile.TraitFor(magical: true) - 1.30) < 1e-9);
+          Math.Abs(JobProfile.TraitFor(magical: true, tank: false) - 1.30) < 1e-9);
 }
 
 {
@@ -1153,13 +1153,49 @@ var rules = new PriorityRules();
 
     Check("Etro's paladin set: a 2.50 second recast", Math.Abs(estimate.Gcd - 2.50) < 0.001);
 
-    Check("a physical job's trait is 1.00, not the conventional 1.20",
-          Math.Abs(JobProfile.TraitFor(magical: false) - 1.00) < 1e-9);
+    Check("a tank's trait is 1.00",
+          Math.Abs(JobProfile.TraitFor(magical: false, tank: true) - 1.00) < 1e-9);
 
     // No other multiplier reproduces Etro's figure, which is what makes 190 a measurement.
     Check("only 190 gives a tank Etro's strength multiplier",
           Math.Abs(DamageModel.Estimate(set, pld with { AttackPowerMultiplier = 237 }, level)!
                        .Value.DamagePer100Potency - 7979.5) > 100);
+}
+
+{
+    // etro.gg/gearset/3487d0fa-e0e3-4d55-975f-f9843a021cc6 — dancer, i790, 2.50 GCD.
+    //
+    // The third anchor, and it settles the shape of the whole table: this is a **tank exception**,
+    // not the magical-against-physical split it looked like after two sets. A physical job that is
+    // not a tank carries 1.20 and the full 237 — which was the original guess, wrong only for tanks.
+    var level = LevelTable.Known(100)!.Value;
+
+    var dnc = new JobProfile("DNC",
+                             PotencyPerGcd: 310, OgcdPotencyPerSecond: 105, AutoAttackShare: 0.16,
+                             UsesSpellSpeed: false, UsesTenacity: false,
+                             Trait: 1.20, AttackPowerMultiplier: 237);
+
+    var set = new StatBlock(
+        Level: 100, JobModifier: 115, MainStat: 6841, WeaponDamage: 158, WeaponDelayMs: 3120,
+        CriticalHit: 3549, DirectHit: 2035, Determination: 2509,
+        SkillSpeed: 420, SpellSpeed: 420, Tenacity: 420);
+
+    var estimate = DamageModel.Estimate(set, dnc, level)!.Value;
+
+    Check("Etro's dancer set: 12367.4 damage per 100 potency",
+          Math.Abs(estimate.DamagePer100Potency - 12367.43) < 0.1,
+          estimate.DamagePer100Potency.ToString("0.00"));
+
+    Check("a physical job that is not a tank has a trait of 1.20",
+          Math.Abs(JobProfile.TraitFor(magical: false, tank: false) - 1.20) < 1e-9);
+
+    // The three anchors, side by side. Each is a different job, a different trait and — for the tank
+    // — a different attack power multiplier, so no two of them could be satisfied by one wrong rule.
+    Check("the trait table is a tank exception, not a magical split",
+          JobProfile.TraitFor(magical: false, tank: true) <
+          JobProfile.TraitFor(magical: false, tank: false) &&
+          JobProfile.TraitFor(magical: false, tank: false) <
+          JobProfile.TraitFor(magical: true, tank: false));
 }
 
 {

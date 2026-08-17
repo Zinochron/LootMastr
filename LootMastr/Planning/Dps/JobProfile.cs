@@ -40,32 +40,30 @@ public sealed record JobProfile(
             AutoAttackShare: magical ? 0 : 0.08,
             UsesSpellSpeed: magical,
             UsesTenacity: tank,
-            Trait: TraitFor(magical),
+            Trait: TraitFor(magical, tank),
             AttackPowerMultiplier: tank ? 190 : 237);
 
     /// <summary>
     /// The job's damage trait: a flat multiplier on everything it does, and the single easiest term to
-    /// forget. Leaving it at 1.0 for every job made every magical number 23% low, which looks like a
-    /// plausible number and is not.
+    /// forget. Leaving it at 1.0 for every job made every magical number 23% low.
     ///
-    /// Both values are now measured against Etro rather than assumed, and the second one corrected
-    /// the first attempt:
+    /// It took three Etro sets to get this right, and the answer is a **tank exception** rather than
+    /// the magical-against-physical split it first looked like:
     ///
     /// <list type="bullet">
-    /// <item><b>Magical: 1.30.</b> Exactly the factor between this formula and Etro's figure for a
-    /// black mage set.</item>
-    /// <item><b>Physical: 1.00.</b> A paladin set came out at exactly 1.00000. The conventional
-    /// wisdom of a 1.20 "Maim and Mastery" was wrong here, and would have overstated every physical
-    /// job by a fifth.</item>
+    /// <item><b>Tank: 1.00</b>, with an attack power multiplier of 190. A paladin set, exactly.</item>
+    /// <item><b>Physical, not a tank: 1.20</b>, with 237. A dancer set, exactly.</item>
+    /// <item><b>Magical: 1.30</b>, with 237. A black mage set, exactly.</item>
     /// </list>
     ///
-    /// The two are not as asymmetric as they look: physical jobs already scale differently through
-    /// <see cref="AttackPowerMultiplier"/>, which is 190 for a tank against 237 for a caster. What
-    /// remains unverified is whether a <i>melee or ranged physical</i> job sits at 1.00 like the tank
-    /// or carries a trait of its own — that wants a third set to settle, and 1.00 is now the reading
-    /// with evidence behind it rather than the one without.
+    /// Melee is the one category with no set behind it. It shares everything measurable with physical
+    /// ranged — same attack power multiplier, same stat, no tenacity — so 1.20 is where the evidence
+    /// points rather than where a convention does.
     /// </summary>
-    public static double TraitFor(bool magical) => magical ? 1.30 : 1.00;
+    public static double TraitFor(bool magical, bool tank) =>
+        tank ? 1.00
+        : magical ? 1.30
+        : 1.20;
 
     public bool IsDefaulted { get; init; } = true;
 
