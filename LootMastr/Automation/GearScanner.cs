@@ -53,6 +53,14 @@ public sealed class GearScanner : IDisposable
     private readonly Queue<PartyPlayer> queue = new();
     private readonly List<string> skipped = [];
 
+    /// <summary>
+    /// Read, but without their attributes — the half-success the status line used to swallow.
+    ///
+    /// Their gear is on the row and their damage cannot be estimated, and those two facts sit in
+    /// different places in the UI. Naming them here is the only moment the connection is obvious.
+    /// </summary>
+    private readonly List<string> withoutStats = [];
+
     private Phase phase = Phase.Idle;
     private PartyPlayer current;
     private DateTime stepStarted;
@@ -161,6 +169,7 @@ public sealed class GearScanner : IDisposable
 
         queue.Clear();
         skipped.Clear();
+        withoutStats.Clear();
         scanned = 0;
         readLocal = local;
 
@@ -284,11 +293,15 @@ public sealed class GearScanner : IDisposable
                 // Worked out from the items: the examine window hands one over for anybody else, and
                 // nothing does for you. Passing 0 here is what put "i0" on your own sheet.
                 var gear = equipment.ReadLocal();
+                var hasStats = attributes.TryReadLocal(out var measured);
 
                 Apply(member, gear, equipment.ReadLocalMelds(), equipment.AverageItemLevel(gear),
-                      attributes.TryReadLocal(out var measured) ? measured : null);
+                      hasStats ? measured : null);
 
                 scanned++;
+
+                if (!hasStats)
+                    withoutStats.Add(local.Name);
             }
         }
 
@@ -341,16 +354,36 @@ public sealed class GearScanner : IDisposable
 
             if (gear.Count > 0)
             {
+                var hasStats = attributes.TryReadInspected(current.EntityId, out var measured);
+
+                // The items land before the attributes do. Closing the window the moment the gear is
+                // readable used to write the gear and no stats at all, which shows up much later and
+                // somewhere else entirely: a row that says it was read three minutes ago, next to a
+                // damage estimate that cannot be computed. So the wait runs to the step timeout, and
+                // only then settles for what did arrive.
+                if (!hasStats && (DateTime.UtcNow - stepStarted).TotalMilliseconds < StepTimeoutMs)
+                    return;
+
                 var member = roster.Find(current.Name, current.World);
                 if (member != null)
                 {
-                    // Read while the window is up: these totals do not exist once it closes.
                     // Both of these only exist while the window is up. The melds come out of the
                     // examine inventory container rather than the agent, which carries none.
                     Apply(member, gear, equipment.ReadInspectedMelds(), equipment.InspectedItemLevel(),
-                          attributes.TryReadInspected(out var measured) ? measured : null);
+                          hasStats ? measured : null);
 
                     scanned++;
+
+                    if (!hasStats)
+                    {
+                        withoutStats.Add(current.Name);
+
+                        // Which of the two it was matters, and only the log can say: no answer at
+                        // all, or an answer belonging to the character examined before this one.
+                        Services.Log.Warning(
+                            $"GearScanner: no attributes for {current.Name} ({current.EntityId:X}) " +
+                            "within the step timeout.");
+                    }
                 }
 
                 CloseExamine();
@@ -373,9 +406,13 @@ public sealed class GearScanner : IDisposable
     {
         phase = Phase.Idle;
 
-        Status = skipped.Count == 0
-                     ? $"Read {scanned} character(s)."
-                     : $"Read {scanned} character(s); skipped {string.Join(", ", skipped)}.";
+        Status = $"Read {scanned} character(s).";
+
+        if (skipped.Count > 0)
+            Status += $" Skipped {string.Join(", ", skipped)}.";
+
+        if (withoutStats.Count > 0)
+            Status += $" No stats for {string.Join(", ", withoutStats)} — read them again to get a damage estimate.";
     }
 
     private static unsafe void CloseExamine()

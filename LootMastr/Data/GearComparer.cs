@@ -36,6 +36,9 @@ public sealed class GearComparer
         return DamageModel.Estimate(stats, profiles.For(member.MeasuredJobId), level);
     }
 
+    /// <summary>What stands between this player and an estimate, or null when nothing does.</summary>
+    public string? WhyNoEstimate(RosterMember member) => builder.Missing(member);
+
     /// <summary>
     /// What putting <paramref name="itemId"/> in <paramref name="slot"/> would be worth.
     ///

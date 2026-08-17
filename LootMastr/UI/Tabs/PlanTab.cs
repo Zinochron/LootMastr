@@ -113,11 +113,30 @@ public sealed class PlanTab : ITab
 
         if (!planner.CanRankByDamage)
         {
+            // "Nobody's gear has been read" was wrong in the case that actually happens: a scan
+            // writes the gear whether or not the stats came with it, and the stats are the half this
+            // needs. Telling somebody to do a thing they have already done is worse than saying
+            // nothing.
             Widgets.Coloured(Widgets.Muted,
-                             "Nobody's gear has been read, so there is no damage to rank by. " +
-                             "Read gear on the Roster tab.");
+                             roster.Members.Any(m => m.HasBeenScanned)
+                                 ? "Gear has been read, but nobody's stats came with it — those only " +
+                                   "exist while the examine window is open. Read gear again on the " +
+                                   "Roster tab."
+                                 : "Nobody's gear has been read, so there is no damage to rank by. " +
+                                   "Read gear on the Roster tab.");
 
             return;
+        }
+
+        // Anyone unrated scores a zero gain, which under a damage ranking is indistinguishable from
+        // a player nothing is worth anything to. Silent, and it decides who gets a coffer.
+        var unrated = roster.Members.Where(m => !m.HasMeasuredStats).Select(m => m.Name).ToList();
+
+        if (unrated.Count > 0)
+        {
+            Widgets.Coloured(Widgets.Wanted,
+                             $"No stats for {string.Join(", ", unrated)} — they rank as gaining " +
+                             "nothing. Read their gear again on the Roster tab.");
         }
 
         var rules = config.Rules;

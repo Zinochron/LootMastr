@@ -80,8 +80,14 @@ public sealed class AttributeReader
     /// <summary>
     /// Whoever the examine window is showing right now. Read while the window is up, which is the
     /// only moment these numbers exist — the game does not keep them once it closes.
+    ///
+    /// <paramref name="entityId"/> is who the numbers have to belong to, and checking it is not
+    /// pedantry: the items and the attributes arrive in separate answers, so at the instant a new
+    /// examine window opens this table can still hold the <i>previous</i> character's numbers. Gear
+    /// from one player and stats from another would produce a damage figure that is wrong rather
+    /// than missing, and nothing downstream could tell. Pass 0 to read whatever is there.
     /// </summary>
-    public unsafe bool TryReadInspected(out MeasuredStats stats)
+    public unsafe bool TryReadInspected(uint entityId, out MeasuredStats stats)
     {
         stats = default;
 
@@ -90,6 +96,10 @@ public sealed class AttributeReader
             return false;
 
         var inspect = state->Inspect;
+
+        if (entityId != 0 && inspect.EntityId != entityId)
+            return false;
+
         var span = inspect.BaseParams;
 
         var values = new Dictionary<uint, int>(Attributes.Wanted.Length);

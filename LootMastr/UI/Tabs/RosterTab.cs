@@ -331,8 +331,7 @@ public sealed class RosterTab : ITab
         }
         else
         {
-            Widgets.Coloured(Widgets.Muted, "no estimate yet");
-            Widgets.Tooltip("Needs their gear read, and a weapon in the list.");
+            DrawNoEstimate(member);
         }
 
         ImGui.Separator();
@@ -384,10 +383,15 @@ public sealed class RosterTab : ITab
                              "more meld slots than the current one is counted properly.",
                              target.Dps);
         }
+        else if (gear.Estimate(member) == null)
+        {
+            DrawNoEstimate(member);
+        }
         else
         {
             Widgets.Coloured(Widgets.Muted, "no estimate yet");
-            Widgets.Tooltip("Needs their gear read and a target set with items in it.");
+            Widgets.Tooltip("Their own set reads fine, so this is the target set: it needs items in " +
+                            "it, and the item sheet has to have a stat line for them.");
         }
 
         ImGui.Separator();
@@ -438,6 +442,22 @@ public sealed class RosterTab : ITab
 
             DrawNeedPopup(member, slot, need);
         }
+    }
+
+    /// <summary>
+    /// Why there is no number, in the place where the number would have been.
+    ///
+    /// The reason goes on the line rather than into a tooltip because it is usually actionable and
+    /// often one click away — and because "no estimate yet" beside a row that says it was read three
+    /// minutes ago reads as a broken plugin rather than as a missing piece.
+    /// </summary>
+    private void DrawNoEstimate(RosterMember member)
+    {
+        var reason = gear.WhyNoEstimate(member);
+
+        Widgets.Coloured(Widgets.Muted, "no estimate —");
+        ImGui.SameLine(0f, 4f);
+        Widgets.Coloured(Widgets.Wanted, reason ?? "something the damage model needs is missing");
     }
 
     /// <summary>

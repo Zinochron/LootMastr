@@ -881,6 +881,28 @@ is the only way to guarantee that rather than hope for it.
 A player already wearing their whole target set gets a gain of **zero, not "unknown"** — the two
 estimates being the same value says exactly that.
 
+### The scan half-succeeds, and used to say nothing
+
+A scan writes two things that arrive separately: the equipment, out of `AgentInspect.Items`, and the
+attributes, out of `UIState.Inspect.BaseParams`. `Apply` stamps `LastScannedUtc` for the first and
+keeps the second only when it is usable — so **"read three minutes ago" and "no estimate" are not a
+contradiction**, and for a long time nothing on screen said so.
+
+Three changes, and the first is the actual bug:
+
+- **`AwaitData` waits for the attributes, not just the items.** It used to close the examine window
+  the moment the gear was readable, which is a frame or two before the stats land. The wait now runs
+  to the step timeout and only then settles for what arrived.
+- **The stats have to belong to the character that was asked for.** `UIState.Inspect` still holds the
+  *previous* character's numbers until the new answer overwrites it, so `TryReadInspected` takes an
+  entity id and refuses anything else. Gear from one player and stats from another is a damage figure
+  that is wrong rather than missing, and nothing downstream could tell.
+- **Both halves say so when they fail.** The scan's status line names who came back without stats;
+  `StatBlockBuilder.Missing` names which of the five requirements is absent, in the same order
+  `For` checks them, and the roster sheet prints it where the number would have been. The Plan tab
+  names anyone unrated, because an unrated player scores a zero gain — indistinguishable, under a
+  damage ranking, from a player nothing is worth anything to.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight
