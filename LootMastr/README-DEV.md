@@ -675,11 +675,16 @@ auto-attack share. Guessing them put a sage **39% low** against XIVGear — 18,0
 now **one measured number**, `potencyPerSecond`, taken from a rotation simulator for a known set,
 together with the `referenceGcd` it was measured at. **Fifteen of twenty-one jobs are calibrated.**
 
-The sim tables report two things per job, and only one of them is usable here. The **unbuffed
-potency per second** is exactly the quantity this model multiplies damage per 100 potency by. The
-**dps** figure is buffed, and the buffs are job-specific — a dancer's own Technical Step is in theirs
-and a dragoon's is not — so dividing it back out would reintroduce a per-job guess in order to remove
-one. It is not used.
+The sim tables report two things per job, and only one of them goes in. The **unbuffed potency per
+second** is exactly the quantity this model multiplies damage per 100 potency by, so it is taken as
+given.
+
+The **dps** figure is reported "with 5 unique roles" — a party condition this model does not
+represent — and it is not used for calibration. A spot check suggests the two would broadly agree
+where they overlap: a sage's `dps / (pps/100)` comes out at 13,049 against the 13,398 the same tables
+report directly for a red mage, which is the right neighbourhood for a magical job at that item
+level. But "broadly agree" is not a basis to calibrate on when the direct input is sitting in the
+next column.
 
 Bard and machinist have no sim and carry the estimate **scaled by the dancer's correction**: same
 category, one measurement, and the dancer came in 18% under the guess. That is an inference and it is
