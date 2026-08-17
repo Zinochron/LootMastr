@@ -9,13 +9,19 @@ To run it:
 ```bash
 dotnet new console -o /tmp/lootmastr-harness --force
 cp Harness/Program.cs /tmp/lootmastr-harness/
-cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/RosterMember.cs LootMastr/Planning/PlayerPlan.cs LootMastr/Planning/PriorityRules.cs LootMastr/Planning/DropOrder.cs LootMastr/Planning/WeekSimulator.cs /tmp/lootmastr-harness/
+cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/RosterMember.cs LootMastr/Planning/*.cs LootMastr/Planning/Dps/*.cs /tmp/lootmastr-harness/
+rm /tmp/lootmastr-harness/LootPlanner.cs
 dotnet run --project /tmp/lootmastr-harness
 ```
 
-It exits non-zero if anything fails. The eight copied files are the whole of the planner: the list
-should only ever grow when pure logic is pulled out into a file of its own, as `DropOrder.cs` was.
-If it grows for any other reason, something game-facing has leaked into `Planning/`.
+It exits non-zero if anything fails. What gets copied is the whole of `Planning/` bar `LootPlanner`,
+which is the one file there that reaches for the roster and the tier catalogue, plus the four data
+types those files read. **If that ever needs a Lumina or Dalamud reference to compile, something
+game-facing has leaked into `Planning/`** — that is the check this list is really performing.
+
+`Planning/Dps/` in particular carries no game references at all. The damage formula is arithmetic
+and belongs on the side of the line that can be asserted on without a client running, which is how
+a recast of five seconds was caught before anybody saw it on screen.
 
 ## What it pins down
 
@@ -46,6 +52,15 @@ If it grows for any other reason, something game-facing has leaked into `Plannin
   falls to the declared order, and switching the player order off leaves need in charge.
 - The ranking and the simulated week name the same player, at three points on that slider. Two
   rules answering the same question is the bug this pins down.
+- The damage formula: a recast of 2.50 seconds at exactly SUB, truncated to hundredths, and shorter
+  as speed goes up. Every stat that should raise damage does, which is what catches a sign error —
+  the way this formula goes wrong is not subtly, but backwards in one term.
+- Speed changes no single hit and does change the DPS. Tenacity counts for a tank and is left out
+  for everybody else. A caster's recast follows spell speed and ignores skill speed.
+- The absolute scale, as a band rather than an equality: a geared tank's 100 potency in the
+  thousands and their DPS in the tens of thousands. This is the check that catches a stray factor
+  of a hundred, which the first version had — it produced 1.2 million damage per second.
+- A missing weapon, main stat or job modifier produces no estimate at all rather than a low one.
 - Nobody starves when a coffer pool is scarce.
 - The same roster produces the same plan twice.
 

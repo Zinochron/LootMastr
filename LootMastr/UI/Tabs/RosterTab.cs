@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility.Raii;
 using LootMastr.Automation;
 using LootMastr.Data;
 using LootMastr.Import;
+using LootMastr.Planning.Dps;
 using LootMastr.Roster;
 
 namespace LootMastr.UI.Tabs;
@@ -26,6 +27,8 @@ public sealed class RosterTab : ITab
     private readonly TierCatalog tiers;
     private readonly GearScanner scanner;
     private readonly ItemCatalog items;
+    private readonly StatBlockBuilder stats;
+    private readonly JobProfileCatalog profiles;
 
     private string newName = string.Empty;
     private string newWorld = string.Empty;
@@ -34,7 +37,7 @@ public sealed class RosterTab : ITab
 
     public RosterTab(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
                      BisImporter importer, TierCatalog tiers, GearScanner scanner,
-                     ItemCatalog items)
+                     ItemCatalog items, StatBlockBuilder stats, JobProfileCatalog profiles)
     {
         this.config = config;
         this.roster = roster;
@@ -44,6 +47,8 @@ public sealed class RosterTab : ITab
         this.tiers = tiers;
         this.scanner = scanner;
         this.items = items;
+        this.stats = stats;
+        this.profiles = profiles;
     }
 
     public string Title => "Roster";
@@ -196,6 +201,7 @@ public sealed class RosterTab : ITab
         Widgets.Tooltip("Examines this one character. They have to be in the party and in the zone.");
 
         ImGui.TextDisabled(SummaryOf(member));
+        DrawEstimate(member);
 
         if (!string.IsNullOrEmpty(member.ImportWarning))
             Widgets.Coloured(Widgets.Wanted, $"? {member.ImportWarning}");
@@ -215,6 +221,37 @@ public sealed class RosterTab : ITab
         using var right = ImRaii.Child("##target", new Vector2(width, 0f), true);
         if (right.Success)
             DrawTargetColumn(member);
+    }
+
+    /// <summary>
+    /// What this set is worth, in one line.
+    ///
+    /// Estimated DPS is the headline because nobody thinks in potency, and the exact number is in
+    /// the tooltip beside it: damage per 100 potency is arithmetic the game itself does, and it is
+    /// what every comparison between two candidates for a coffer actually rests on. The DPS figure
+    /// multiplies it by a modelled rotation and is the softer of the two — so it says so.
+    /// </summary>
+    private void DrawEstimate(RosterMember member)
+    {
+        if (stats.For(member) is not { } block || stats.LevelFor(block.Level) is not { } level)
+            return;
+
+        var profile = profiles.For(member.MeasuredJobId);
+        if (DamageModel.Estimate(block, profile, level) is not { } estimate)
+            return;
+
+        Widgets.Coloured(Widgets.Done, $"~{estimate.EstimatedDps:N0} dps");
+
+        ImGui.SameLine();
+        ImGui.TextDisabled($"· {estimate.DamagePer100Potency:N0} per 100 potency · {estimate.Gcd:0.00}s GCD");
+
+        Widgets.Tooltip(
+            $"{estimate.DamagePer100Potency:N0} damage per 100 potency — exact, straight out of the stats.\n" +
+            $"{estimate.Gcd:0.00} second global cooldown.\n\n" +
+            $"~{estimate.EstimatedDps:N0} dps converts that with a rotation profile for " +
+            $"{profile.Abbreviation}.\n" +
+            (estimate.Caveat ?? "That profile has been checked against a gear planner.") +
+            "\n\nMeasured off the character, so materia and food are already in it.");
     }
 
     private void DrawCurrentColumn(RosterMember member)

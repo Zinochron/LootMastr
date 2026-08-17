@@ -1,0 +1,44 @@
+{
+  "note": [
+    "How much potency each job lands per second, and how it is split between the global cooldown",
+    "and everything else. This is the only part of the damage estimate that is modelled rather than",
+    "read out of the game, and it exists because the alternative is a rotation simulator per job.",
+    "",
+    "It scales one job's number as a whole. It therefore moves the DPS figure a player is shown and",
+    "does NOT move the ranking between two players of the same job competing for the same coffer,",
+    "which is what the loot plan actually asks. A profile that is ten percent out is a cosmetic",
+    "problem, not a distribution one.",
+    "",
+    "Set calibrated to true for a job once its number has been held against a gear planner for a",
+    "known set. Until then the UI says the DPS figure is an estimate, which it is.",
+    "",
+    "attackPowerMultiplier is the level 100 value: 190 for tanks, 237 for everyone else."
+  ],
+  "profiles": [
+    { "job": "PLD", "potencyPerGcd": 290, "ogcdPotencyPerSecond": 35, "autoAttackShare": 0.12, "spellSpeed": false, "tenacity": true, "trait": 1.0, "attackPowerMultiplier": 190 },
+    { "job": "WAR", "potencyPerGcd": 300, "ogcdPotencyPerSecond": 40, "autoAttackShare": 0.12, "spellSpeed": false, "tenacity": true, "trait": 1.0, "attackPowerMultiplier": 190 },
+    { "job": "DRK", "potencyPerGcd": 295, "ogcdPotencyPerSecond": 45, "autoAttackShare": 0.11, "spellSpeed": false, "tenacity": true, "trait": 1.0, "attackPowerMultiplier": 190 },
+    { "job": "GNB", "potencyPerGcd": 285, "ogcdPotencyPerSecond": 50, "autoAttackShare": 0.11, "spellSpeed": false, "tenacity": true, "trait": 1.0, "attackPowerMultiplier": 190 },
+
+    { "job": "WHM", "potencyPerGcd": 310, "ogcdPotencyPerSecond": 20, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "SCH", "potencyPerGcd": 300, "ogcdPotencyPerSecond": 35, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "AST", "potencyPerGcd": 305, "ogcdPotencyPerSecond": 25, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "SGE", "potencyPerGcd": 310, "ogcdPotencyPerSecond": 30, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+
+    { "job": "MNK", "potencyPerGcd": 340, "ogcdPotencyPerSecond": 95, "autoAttackShare": 0.10, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "DRG", "potencyPerGcd": 360, "ogcdPotencyPerSecond": 105, "autoAttackShare": 0.10, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "NIN", "potencyPerGcd": 350, "ogcdPotencyPerSecond": 100, "autoAttackShare": 0.10, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "SAM", "potencyPerGcd": 400, "ogcdPotencyPerSecond": 55, "autoAttackShare": 0.10, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "RPR", "potencyPerGcd": 370, "ogcdPotencyPerSecond": 90, "autoAttackShare": 0.10, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "VPR", "potencyPerGcd": 345, "ogcdPotencyPerSecond": 95, "autoAttackShare": 0.10, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+
+    { "job": "BRD", "potencyPerGcd": 300, "ogcdPotencyPerSecond": 110, "autoAttackShare": 0.16, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "MCH", "potencyPerGcd": 320, "ogcdPotencyPerSecond": 120, "autoAttackShare": 0.16, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "DNC", "potencyPerGcd": 310, "ogcdPotencyPerSecond": 105, "autoAttackShare": 0.16, "spellSpeed": false, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+
+    { "job": "BLM", "potencyPerGcd": 480, "ogcdPotencyPerSecond": 20, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "SMN", "potencyPerGcd": 400, "ogcdPotencyPerSecond": 60, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "RDM", "potencyPerGcd": 390, "ogcdPotencyPerSecond": 40, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 },
+    { "job": "PCT", "potencyPerGcd": 420, "ogcdPotencyPerSecond": 45, "autoAttackShare": 0.0, "spellSpeed": true, "tenacity": false, "trait": 1.0, "attackPowerMultiplier": 237 }
+  ]
+}

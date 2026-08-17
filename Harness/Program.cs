@@ -1,5 +1,6 @@
 using LootMastr.Data;
 using LootMastr.Planning;
+using LootMastr.Planning.Dps;
 using LootMastr.Roster;
 
 var failures = 0;
@@ -942,6 +943,163 @@ var rules = new PriorityRules();
 {
     var result = new WeekSimulator(tier, rules, 8).Run([]);
     Check("an empty roster is finished at week 0", result.LastFinishWeek == 0);
+}
+
+// --- the damage model ----------------------------------------------------------------------------
+
+// The level constants, first. Two of the three are read from ParamGrow in the plugin; these are the
+// same numbers written down so a pure test needs no excel reader, and the probe confirmed all three.
+
+{
+    Check("level 100 is 440 / 420 / 2780",
+          LevelTable.Known(100) is { Main: 440, Sub: 420, Div: 2780 });
+
+    Check("level 90 is 390 / 400 / 1900",
+          LevelTable.Known(90) is { Main: 390, Sub: 400, Div: 1900 });
+
+    Check("a level nobody raids at gets no table", LevelTable.Known(93) == null);
+
+    Check("and no table means no estimate rather than a borrowed one",
+          LevelTable.For(93, 420, 2780) == null);
+
+    Check("a table needs the game's numbers too", LevelTable.For(100, 0, 0) == null);
+}
+
+{
+    var level = LevelTable.Known(100)!.Value;
+
+    // A substat carrying nothing sits exactly at SUB, and there the recast is the untouched 2.50 s.
+    // The probe read 420 for direct hit, skill speed and spell speed alike on a set with none of
+    // them, which is the same statement from the other direction.
+    Check("no speed at all is a 2.50 second recast", Math.Abs(DamageModel.Recast(420, level) - 2.50) < 0.001,
+          DamageModel.Recast(420, level).ToString("0.00"));
+
+    Check("speed shortens the recast", DamageModel.Recast(2000, level) < 2.50,
+          DamageModel.Recast(2000, level).ToString("0.00"));
+
+    Check("and never lengthens it going up",
+          DamageModel.Recast(1000, level) <= DamageModel.Recast(420, level) &&
+          DamageModel.Recast(3000, level) <= DamageModel.Recast(1000, level));
+
+    // Truncated to hundredths, which is why a recast is always something like 2.47 and never 2.4713.
+    var recast = DamageModel.Recast(1837, level);
+    Check("the recast lands on a hundredth", Math.Abs((recast * 100) - Math.Round(recast * 100)) < 1e-9,
+          recast.ToString("0.0000"));
+}
+
+{
+    var level = LevelTable.Known(100)!.Value;
+    var profile = JobProfile.Default("PLD", caster: false, tank: true);
+
+    // Shaped like the paladin the stat probe was run on: level 100, job modifier 100, and the
+    // substats it measured.
+    var stats = new StatBlock(
+        Level: 100, JobModifier: 100, MainStat: 6278, WeaponDamage: 150, WeaponDelayMs: 2240,
+        CriticalHit: 3016, DirectHit: 420, Determination: 2700,
+        SkillSpeed: 420, SpellSpeed: 420, Tenacity: 1005);
+
+    var estimate = DamageModel.Estimate(stats, profile, level);
+    Check("a full stat block estimates", estimate != null);
+
+    var value = estimate!.Value;
+    Check("and says so when the job has no rotation profile", value.IsEstimated, value.Caveat ?? "no caveat");
+    Check("the recast comes out of the same block", Math.Abs(value.Gcd - 2.50) < 0.001);
+
+    // Bands, not equalities. The absolute scale is the one part of this that cannot be settled
+    // without holding it against a gear planner, so these are wide enough not to be brittle and
+    // narrow enough to catch the mistake this formula actually makes: a stray factor of a hundred.
+    // The first version had one, and a paladin came out at 1.2 million damage per second.
+    Check("a geared tank's 100 potency lands in the thousands",
+          value.DamagePer100Potency is > 3000 and < 15000,
+          value.DamagePer100Potency.ToString("0"));
+
+    Check("and their dps in the tens of thousands at most",
+          value.EstimatedDps is > 5000 and < 30000,
+          value.EstimatedDps.ToString("0"));
+
+    // Monotonicity. These are what catch a sign error or a swapped numerator, which is the way this
+    // formula goes wrong — not by being subtly off, but by being backwards in one term.
+    double Per100(StatBlock s) => DamageModel.Estimate(s, profile, level)!.Value.DamagePer100Potency;
+
+    Check("more critical hit is more damage", Per100(stats with { CriticalHit = 3500 }) > Per100(stats));
+    Check("more determination is more damage", Per100(stats with { Determination = 3000 }) > Per100(stats));
+    Check("more weapon damage is more damage", Per100(stats with { WeaponDamage = 160 }) > Per100(stats));
+    Check("more main stat is more damage", Per100(stats with { MainStat = 6500 }) > Per100(stats));
+    Check("more direct hit is more damage", Per100(stats with { DirectHit = 1000 }) > Per100(stats));
+    Check("more tenacity is more damage for a tank", Per100(stats with { Tenacity = 1500 }) > Per100(stats));
+
+    // Speed does not touch the damage of one hit — it buys more hits, which is the DPS number's job.
+    Check("speed does not change the damage of a hit",
+          Math.Abs(Per100(stats with { SkillSpeed = 1500 }) - Per100(stats)) < 1e-9);
+
+    var faster = DamageModel.Estimate(stats with { SkillSpeed = 1500 }, profile, level)!.Value;
+    Check("but it does raise the dps", faster.EstimatedDps > value.EstimatedDps,
+          $"{value.EstimatedDps:0} -> {faster.EstimatedDps:0}");
+
+    Check("and shortens the recast", faster.Gcd < value.Gcd, $"{value.Gcd:0.00} -> {faster.Gcd:0.00}");
+}
+
+{
+    var level = LevelTable.Known(100)!.Value;
+
+    // Tenacity is a tank stat. On anybody else the stat sits at its base and the term would shave a
+    // fraction off for no reason, so it is not applied at all.
+    var stats = new StatBlock(100, 115, 6000, 150, 3120, 3000, 1500, 2500, 420, 420, 420);
+
+    var caster = JobProfile.Default("BLM", caster: true, tank: false);
+    var tank = JobProfile.Default("PLD", caster: false, tank: true);
+
+    Check("a caster's recast follows spell speed, not skill speed",
+          Math.Abs(DamageModel.Estimate(stats with { SpellSpeed = 1500 }, caster, level)!.Value.Gcd -
+                   DamageModel.Estimate(stats, caster, level)!.Value.Gcd) > 0.001);
+
+    Check("and skill speed does nothing for them",
+          Math.Abs(DamageModel.Estimate(stats with { SkillSpeed = 1500 }, caster, level)!.Value.Gcd -
+                   DamageModel.Estimate(stats, caster, level)!.Value.Gcd) < 1e-9);
+
+    Check("tenacity below its base does not penalise a non-tank",
+          DamageModel.Estimate(stats with { Tenacity = 0 }, caster, level)!.Value.DamagePer100Potency ==
+          DamageModel.Estimate(stats, caster, level)!.Value.DamagePer100Potency);
+
+    Check("but it does count for a tank",
+          DamageModel.Estimate(stats with { Tenacity = 0 }, tank, level)!.Value.DamagePer100Potency <
+          DamageModel.Estimate(stats, tank, level)!.Value.DamagePer100Potency);
+}
+
+{
+    var level = LevelTable.Known(100)!.Value;
+    var profile = JobProfile.Default("SAM", caster: false, tank: false);
+
+    // Half a stat block is worse than none: an estimate built on a missing weapon would rate
+    // somebody far below where they are and nothing on screen would say why.
+    var complete = new StatBlock(100, 112, 6000, 150, 2960, 3000, 1500, 2500, 700, 420, 420);
+
+    Check("no weapon means no estimate",
+          DamageModel.Estimate(complete with { WeaponDamage = 0 }, profile, level) == null);
+
+    Check("no main stat means no estimate",
+          DamageModel.Estimate(complete with { MainStat = 0 }, profile, level) == null);
+
+    Check("no job modifier means no estimate",
+          DamageModel.Estimate(complete with { JobModifier = 0 }, profile, level) == null);
+
+    Check("a complete one does", DamageModel.Estimate(complete, profile, level) != null);
+}
+
+{
+    // Swapping one stat is how every item comparison is expressed, so it has to move the right one.
+    var stats = new StatBlock(100, 100, 6000, 150, 2240, 3000, 1000, 2500, 420, 420, 1000);
+
+    Check("a swap moves critical hit",
+          stats.With(StatBlock.Attributes.CriticalHit, 100).CriticalHit == 3100);
+
+    Check("and determination", stats.With(StatBlock.Attributes.Determination, -50).Determination == 2450);
+
+    Check("and leaves everything else alone",
+          stats.With(StatBlock.Attributes.CriticalHit, 100) with { CriticalHit = 3000 } == stats);
+
+    Check("a stat the formula does not read changes nothing",
+          stats.With(StatBlock.Attributes.Strength, 500) == stats);
 }
 
 Console.WriteLine();

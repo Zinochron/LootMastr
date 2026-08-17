@@ -583,6 +583,49 @@ character it was run on has no melds anywhere, so the probe had nothing to read.
 anything — equipped melds are not stored, because they are already inside the measured totals — and
 the answer is one melded item away whenever it is wanted.
 
+### The damage model
+
+`Planning/Dps/`, and it carries **no game references at all** — the harness compiles it standalone,
+which is how a five second global cooldown was caught before anybody saw it on screen.
+
+Two numbers come out of it and they are not equally solid:
+
+| | What it is | How solid |
+|---|---|---|
+| **Damage per 100 potency** | Arithmetic the game itself does, from the stats | Exact |
+| **Estimated DPS** | That, times how much potency the job lands per second | Modelled |
+
+**Damage per 100 potency decides, estimated DPS explains.** Every comparison between two candidates
+for the same coffer divides two of the first number, so the second one's error cancels out of the
+thing the plugin is actually for. The UI shows DPS because nobody thinks in potency, and puts the
+exact figure in the tooltip beside it.
+
+`JobProfile` is the modelled half — `Data/Jobs/dps-profiles.json`, data like the tier files. It
+scales one job as a whole, so it moves the number a player is shown and does **not** move the
+ranking between two players of the same job. A profile ten percent out is a cosmetic problem, not a
+distribution one. Each entry carries `calibrated`, false until somebody has held it against a gear
+planner, and the tooltip says which it is.
+
+The flooring is not decoration. Every term truncates at a fixed number of decimal places, which is
+what substat tiers *are* — a stat can gain thirty points and change nothing. Rounding instead would
+make every tier boundary invisible and every comparison slightly wrong in a way that never surfaces
+as an error.
+
+#### Two mistakes worth keeping written down
+
+**The recast came out at five seconds.** The reduction was subtracted from 2000 where the game
+subtracts it from 1000 — wrong by exactly double, and invisible in every relative comparison,
+because doubling every recast leaves every ranking intact. Only the absolute anchor caught it: a
+character with no speed sits at 2.50, which the stat probe independently confirmed by measuring 420
+for skill speed, spell speed and direct hit alike on a set carrying none of them.
+
+**A paladin did 1.2 million damage per second.** Potency enters the formula as a percentage, and the
+first version multiplied by 100 on top of that. Again invisible in every ranking.
+
+Both are the argument for carrying an absolute number rather than only an ordering: a wrong ranking
+looks perfectly plausible, and a wrong number does not. The harness asserts both anchors — the 2.50
+recast exactly, and the magnitudes as bands wide enough not to be brittle.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

@@ -4,7 +4,9 @@ using Lumina.Excel.Sheets;
 
 namespace LootMastr.Data;
 
-public readonly record struct JobInfo(uint Id, string Abbreviation, string Name, RaidRole Role, uint IconId)
+public readonly record struct JobInfo(
+    uint Id, string Abbreviation, string Name, RaidRole Role, uint IconId,
+    uint PrimaryStat, int PrimaryModifier)
 {
     public bool IsValid => Id != 0;
 }
@@ -24,7 +26,7 @@ public sealed class JobCatalog
     public JobInfo Get(uint jobId) =>
         jobs.Value.TryGetValue(jobId, out var info)
             ? info
-            : new JobInfo(0, "???", "Unknown", RaidRole.Unknown, 0);
+            : new JobInfo(0, "???", "Unknown", RaidRole.Unknown, 0, 0, 0);
 
     public RaidRole RoleOf(uint jobId) => Get(jobId).Role;
 
@@ -57,16 +59,30 @@ public sealed class JobCatalog
             if (string.IsNullOrEmpty(abbreviation))
                 continue;
 
+            // PrimaryStat is a BaseParam row id — paladin 1, ninja 2, black mage 4, sage 5 — which
+            // the stat probe confirmed. The matching modifier is what the weapon damage term needs.
             result[row.RowId] = new JobInfo(
                 row.RowId,
                 abbreviation,
                 row.Name.ExtractText(),
                 RoleFrom(row.Role),
-                JobIconBase + row.RowId);
+                JobIconBase + row.RowId,
+                row.PrimaryStat,
+                ModifierFor(row, row.PrimaryStat));
         }
 
         return result;
     }
+
+    /// <summary>The job modifier for its own primary stat, as a percentage of the level's MAIN.</summary>
+    private static int ModifierFor(ClassJob row, uint primaryStat) => primaryStat switch
+    {
+        1 => row.ModifierStrength,
+        2 => row.ModifierDexterity,
+        4 => row.ModifierIntelligence,
+        5 => row.ModifierMind,
+        _ => 0,
+    };
 
     /// <summary><c>ClassJob.Role</c>: 1 tank, 2 melee dps, 3 ranged dps, 4 healer.</summary>
     private static RaidRole RoleFrom(byte role) => role switch

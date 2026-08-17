@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.3.3.0</Version>
+    <Version>0.4.0.0</Version>
     <Description>Loot planning and distribution for savage statics.</Description>
     <PackageProjectUrl>https://github.com/Zinochron/LootMastr</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
@@ -16,6 +16,11 @@
   <ItemGroup>
     <!-- Tier definitions are data, not code: a new raid tier is a json file, not a rebuild. -->
     <Content Include="Data\Tiers\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <!-- Job rotation profiles, for the same reason: a patch that moves potencies is a text edit. -->
+    <Content Include="Data\Jobs\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
