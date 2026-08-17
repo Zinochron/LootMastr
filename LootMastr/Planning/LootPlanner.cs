@@ -119,10 +119,10 @@ public sealed class LootPlanner
                 if (winner == null)
                     continue;
 
-                winner.TakeUpgrade(side);
+                winner.TakeUpgrade(side, out var slot);
                 pending.Add(new PendingAward(winner.Key, null, side));
 
-                awards.Add(new PlannedAward(1, encounter.Index, null, side,
+                awards.Add(new PlannedAward(1, encounter.Index, slot, side,
                                             winner.Key, winner.Name, Bought: false,
                                             Considered: Considered(ranking), Why: ranking[0].Reason));
             }

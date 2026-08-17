@@ -9,8 +9,12 @@ namespace LootMastr.Planning;
 /// <summary>One thing a player still has to get out of the raid.</summary>
 public readonly record struct OpenNeed(GearSlot Slot, int Encounter, bool IsUpgrade, GearSide Side)
 {
-    /// <summary>What the drop or the book has to be, for matching against what is on offer.</summary>
-    public string Describe() => IsUpgrade ? $"{Side} upgrade" : Slots.CofferLabel(Slot);
+    /// <summary>
+    /// What this need is, named after the piece rather than the side. A player wanting three armour
+    /// materials owes three different things, and calling them all "Left upgrade" makes one list
+    /// look like a mistake in another.
+    /// </summary>
+    public string Describe() => IsUpgrade ? $"{Slots.CofferLabel(Slot)} upgrade" : Slots.CofferLabel(Slot);
 }
 
 /// <summary>
@@ -127,11 +131,25 @@ public sealed class PlayerPlan
         return true;
     }
 
-    public bool TakeUpgrade(GearSide side)
+    public bool TakeUpgrade(GearSide side) => TakeUpgrade(side, out _);
+
+    /// <summary>
+    /// Drops the first open need for a material of this side, and says which piece it was for.
+    ///
+    /// Which piece matters to whoever reads the plan. A player with augmented head, body and legs
+    /// owes <b>three</b> armour materials, and a schedule calling all three "Left upgrade" shows the
+    /// same line two and three times over — which reads as the plan double-counting rather than as
+    /// what it is.
+    /// </summary>
+    public bool TakeUpgrade(GearSide side, out GearSlot slot)
     {
+        slot = default;
+
         var index = Open.FindIndex(n => n.IsUpgrade && n.Side == side);
         if (index < 0)
             return false;
+
+        slot = Open[index].Slot;
 
         Open.RemoveAt(index);
         ItemsReceived++;

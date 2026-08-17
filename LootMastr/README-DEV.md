@@ -661,6 +661,18 @@ it the plan says "buy the head piece with three second-fight books" to a player 
 is not wrong so much as unfollowable. Reconstructing it from the counts afterwards would be a second
 calculation to disagree with the first — the ledger already knows, so it says.
 
+### A material is named after the piece, not the side
+
+`PlannedAward.What` for an upgrade reads "Body upgrade", not "Left upgrade", and `TakeUpgrade` hands
+back which piece it consumed so the award can say.
+
+This was reported as the schedule showing duplicates: one line plain, the same line again with
+"(books)". It was not duplicating anything. A player with augmented head, body and legs owes
+**three** armour materials, all of them `GearSide.Left`, and a week where one dropped and another
+was bought printed the same words twice. Correct, and indistinguishable from a bug — which for a
+plan somebody has to act on is the same thing. The harness pins it: no player is given the same
+label twice in one week, and every material award names a piece.
+
 ### Two calculations, on purpose this time
 
 `LootPlanner.ComingWeek()` answers "this reset": books in hand spent first, then every coffer each

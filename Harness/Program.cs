@@ -435,6 +435,42 @@ var rules = new PriorityRules();
     Check("leaving nothing left to win", plan.IsDone);
 }
 
+// --- one line per thing, so a plan never looks like it counted twice ------------------------------
+
+{
+    // Augmented head, body and legs is three separate armour materials. They used to be labelled by
+    // side, so all three read "Left upgrade" — and a week handing out two of them showed the same
+    // line twice, once plain and once "(books)", which reads as double-counting rather than as two
+    // materials. Naming them after the piece is what tells them apart.
+    var m = Member("A",
+                   (GearSlot.Head, GearSource.TomeAugmented),
+                   (GearSlot.Body, GearSource.TomeAugmented),
+                   (GearSlot.Legs, GearSource.TomeAugmented));
+
+    var plan = Plan(m, RaidRole.Dps, tier);
+
+    Check("three augmented left-side pieces are three needs", plan.Open.Count == 3,
+          string.Join(", ", plan.Open.Select(n => n.Describe())));
+
+    Check("and they are told apart by the piece, not the side",
+          plan.Open.Select(n => n.Describe()).Distinct().Count() == 3,
+          string.Join(", ", plan.Open.Select(n => n.Describe())));
+
+    var result = new WeekSimulator(tier, rules, 12).Run([Plan(m, RaidRole.Dps, tier)]);
+
+    var repeated = result.Awards
+                         .GroupBy(a => (a.Week, a.PlayerKey, a.What))
+                         .Where(g => g.Count() > 1)
+                         .ToList();
+
+    Check("so no player is given the same thing twice in a week", repeated.Count == 0,
+          string.Join(", ", repeated.Select(g => $"{g.Key.What} ×{g.Count()}")));
+
+    Check("and every material names the piece it is for",
+          result.Awards.Where(a => a.Upgrade != null).All(a => a.Slot != null),
+          string.Join(", ", result.Awards.Where(a => a.Upgrade != null).Select(a => a.What)));
+}
+
 // --- every coffer drops, by default --------------------------------------------------------------
 
 {

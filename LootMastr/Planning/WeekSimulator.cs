@@ -18,7 +18,16 @@ public readonly record struct PlannedAward(
     string? Why = null,
     BookTrade? Traded = null)
 {
-    public string What => Upgrade != null ? $"{Upgrade} upgrade" : Slot?.CofferLabel() ?? "?";
+    /// <summary>
+    /// What this is, in the words the plan is read in.
+    ///
+    /// A material is named after the piece it upgrades, not after its side. Three armour materials
+    /// all called "Left upgrade" is the same line three times, and a reader is right to think the
+    /// plan has counted something twice.
+    /// </summary>
+    public string What => Upgrade != null
+                              ? Slot != null ? $"{Slot.Value.CofferLabel()} upgrade" : $"{Upgrade} upgrade"
+                              : Slot?.CofferLabel() ?? "?";
 }
 
 public sealed record SimulationResult(
@@ -174,10 +183,10 @@ public sealed class WeekSimulator
     private void AwardUpgrade(IReadOnlyList<PlayerPlan> players, GearSide side)
     {
         var winner = Best(players.Where(p => p.WantsUpgrade(side)));
-        if (winner == null || !winner.TakeUpgrade(side))
+        if (winner == null || !winner.TakeUpgrade(side, out var slot))
             return;
 
-        awards.Add(new PlannedAward(currentWeek, currentEncounter, null, side,
+        awards.Add(new PlannedAward(currentWeek, currentEncounter, slot, side,
                                     winner.Key, winner.Name, Bought: false));
     }
 
@@ -228,7 +237,7 @@ public sealed class WeekSimulator
                 player.Open.Remove(choice.Need);
 
                 awards.Add(new PlannedAward(currentWeek, choice.Cost!.Encounter,
-                                            choice.Need.IsUpgrade ? null : Slots.CofferSlot(choice.Need.Slot),
+                                            Slots.CofferSlot(choice.Need.Slot),
                                             choice.Need.IsUpgrade ? choice.Need.Side : null,
                                             player.Key, player.Name, Bought: true, Traded: traded));
             }
