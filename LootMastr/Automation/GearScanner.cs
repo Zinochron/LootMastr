@@ -36,8 +36,15 @@ public sealed class GearScanner : IDisposable
         Finished,
     }
 
+    /// <summary>How long to wait after landing in a duty before reading anyone.</summary>
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromSeconds(8);
+
+    /// <summary>How long to wait again when the settle timer lands mid-pull.</summary>
+    private static readonly TimeSpan CombatRetry = TimeSpan.FromSeconds(15);
+
     private readonly Configuration config;
     private readonly RosterStore roster;
+    private readonly JobCatalog jobs;
     private readonly PartyReader party;
     private readonly EquipmentReader equipment;
     private readonly GearClassifier classifier;
@@ -50,24 +57,96 @@ public sealed class GearScanner : IDisposable
     private DateTime stepStarted;
     private DateTime lastAction = DateTime.MinValue;
     private int scanned;
+    private bool readLocal;
 
-    public GearScanner(Configuration config, RosterStore roster, PartyReader party,
+    /// <summary>Territory we still owe an automatic scan, and when to try it. 0 means none.</summary>
+    private uint pendingTerritory;
+    private DateTime pendingAt;
+
+    public GearScanner(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
                        EquipmentReader equipment, GearClassifier classifier)
     {
         this.config = config;
         this.roster = roster;
+        this.jobs = jobs;
         this.party = party;
         this.equipment = equipment;
         this.classifier = classifier;
 
         Services.Framework.Update += OnUpdate;
+        Services.ClientState.TerritoryChanged += OnTerritoryChanged;
     }
 
     public bool IsRunning => phase != Phase.Idle;
 
     public string Status { get; private set; } = string.Empty;
 
-    public string Start()
+    /// <summary>Everyone in the party, whether or not the roster knows them. The manual button.</summary>
+    public string Start() => Begin(party.Read(), local: true);
+
+    /// <summary>
+    /// Everyone in the party the roster knows and whose current job is the role the roster expects.
+    /// This is what runs on its own after entering a duty.
+    ///
+    /// The role check is the whole safety of doing this unasked. A static's tank turning up on a
+    /// damage job for a farm run is normal, and writing that gear onto their tank row would quietly
+    /// wreck the plan — so a role that does not match is skipped and said out loud, never applied.
+    /// </summary>
+    public string StartForRoster()
+    {
+        var wanted = new List<PartyPlayer>();
+        var mismatched = new List<string>();
+
+        foreach (var player in party.Read())
+        {
+            var member = roster.Find(player.Name, player.World);
+            if (member == null)
+                continue;
+
+            var actual = jobs.RoleOf(player.JobId);
+            var expected = roster.RoleOf(member);
+
+            if (actual != expected)
+            {
+                mismatched.Add($"{player.Name} (on a {actual} job, roster says {expected})");
+                continue;
+            }
+
+            wanted.Add(player);
+        }
+
+        if (wanted.Count == 0)
+        {
+            // Nothing to read and nobody skipped is not worth a message. Zoning into a dungeon
+            // alone would otherwise leave a complaint sitting on the Roster tab.
+            if (mismatched.Count == 0)
+                return "Nobody in the party is in the roster.";
+
+            Status = $"Nobody to read; skipped {string.Join(", ", mismatched)}.";
+            return Status;
+        }
+
+        var result = Begin(wanted, local: wanted.Any(p => p.IsLocalPlayer));
+
+        // Only onto a list this run actually cleared — a refused start leaves the last run's alone.
+        if (IsRunning)
+            skipped.AddRange(mismatched);
+
+        return result;
+    }
+
+    /// <summary>One player, for the button on their own sheet.</summary>
+    public string StartFor(RosterMember member)
+    {
+        var player = party.Read().FirstOrDefault(p => roster.Find(p.Name, p.World) == member);
+
+        if (string.IsNullOrEmpty(player.Name))
+            return $"{member.Name} is not in the party.";
+
+        return Begin([player], local: player.IsLocalPlayer);
+    }
+
+    private string Begin(IEnumerable<PartyPlayer> targets, bool local)
     {
         if (IsRunning)
             return "Already scanning.";
@@ -81,8 +160,9 @@ public sealed class GearScanner : IDisposable
         queue.Clear();
         skipped.Clear();
         scanned = 0;
+        readLocal = local;
 
-        foreach (var player in party.Read())
+        foreach (var player in targets)
         {
             if (player.IsLocalPlayer)
                 continue;
@@ -98,8 +178,51 @@ public sealed class GearScanner : IDisposable
 
         phase = Phase.Local;
         stepStarted = DateTime.UtcNow;
-        Status = "Reading your own gear…";
+        Status = readLocal ? "Reading your own gear…" : "Reading gear…";
         return Status;
+    }
+
+    /// <summary>
+    /// Arms the automatic scan. Not run here: the party list is not populated the instant the zone
+    /// changes, and the condition flags lag it too, so this only writes down that one is owed.
+    /// </summary>
+    private void OnTerritoryChanged(uint territory)
+    {
+        pendingTerritory = territory;
+        pendingAt = DateTime.UtcNow + SettleDelay;
+    }
+
+    private void CheckPendingScan()
+    {
+        if (pendingTerritory == 0 || DateTime.UtcNow < pendingAt)
+            return;
+
+        // Left again while waiting — whatever was owed was owed to a zone we are no longer in.
+        if (Services.ClientState.TerritoryType != pendingTerritory)
+        {
+            pendingTerritory = 0;
+            return;
+        }
+
+        if (!config.ExpertMode || !config.AutoReadGearOnEnter || !Services.Condition[ConditionFlag.BoundByDuty])
+        {
+            pendingTerritory = 0;
+            return;
+        }
+
+        // Landed in a pull. Wait it out rather than giving up — the interesting duties start fast.
+        if (Services.Condition[ConditionFlag.InCombat])
+        {
+            pendingAt = DateTime.UtcNow + CombatRetry;
+            return;
+        }
+
+        pendingTerritory = 0;
+
+        var result = StartForRoster();
+
+        if (config.VerboseChat || IsRunning)
+            Services.Chat.Print($"LootMastr: {result}");
     }
 
     public void Stop(string reason)
@@ -116,7 +239,10 @@ public sealed class GearScanner : IDisposable
     private void OnUpdate(IFramework framework)
     {
         if (phase is Phase.Idle)
+        {
+            CheckPendingScan();
             return;
+        }
 
         if (!Services.ClientState.IsLoggedIn)
         {
@@ -146,7 +272,7 @@ public sealed class GearScanner : IDisposable
 
     private void ScanLocal()
     {
-        var local = party.Read().FirstOrDefault(p => p.IsLocalPlayer);
+        var local = readLocal ? party.Read().FirstOrDefault(p => p.IsLocalPlayer) : default;
 
         if (!string.IsNullOrEmpty(local.Name))
         {
@@ -288,6 +414,7 @@ public sealed class GearScanner : IDisposable
     public void Dispose()
     {
         Services.Framework.Update -= OnUpdate;
+        Services.ClientState.TerritoryChanged -= OnTerritoryChanged;
 
         if (phase != Phase.Idle)
             CloseExamine();

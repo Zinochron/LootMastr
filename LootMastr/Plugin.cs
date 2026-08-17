@@ -66,7 +66,7 @@ public sealed class Plugin : IDalamudPlugin
         clears = new ClearTracker(Configuration, Tiers, Roster, Party);
 
         Equipment = new EquipmentReader(Items);
-        Scanner = new GearScanner(Configuration, Roster, Party, Equipment, Classifier);
+        Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Classifier);
         watcher = new AddonWatcher();
 
         var tabs = new List<ITab>

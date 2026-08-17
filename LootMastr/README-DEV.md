@@ -505,6 +505,29 @@ pane is an `ImRaii.Child` so a long name clips instead of shoving the other colu
 Editing a need goes through **`DrawNeedPopup`**, shared with the simple grid. Two views with their
 own idea of how a need is edited is how you end up with two subtly different sets of rules.
 
+### Reading gear without being asked
+
+Expert mode lives or dies on the equipped side being current, and nobody presses a button eight
+times a week. `GearScanner` therefore arms itself on `IClientState.TerritoryChanged` and reads the
+party on its own — `Configuration.AutoReadGearOnEnter`, on by default, expert mode only.
+
+Three things it waits for, and each one was worth waiting for:
+
+- **Eight seconds.** The party list is not populated the instant the zone changes and the condition
+  flags lag it, so `TerritoryChanged` only writes down that a scan is owed; nothing is read there.
+- **`BoundByDuty`.** Otherwise every trip to the market board examines the party.
+- **Out of combat.** If the settle timer lands mid-pull it re-arms rather than giving up — the
+  duties worth scanning start fast.
+
+**The role check is the whole safety of doing this unasked.** A static's tank turning up on a damage
+job for a farm run is normal; writing that gear onto their tank row would quietly wreck the plan. So
+`StartForRoster` reads only players the roster knows *and* whose current job is the role the roster
+expects, and a mismatch is skipped and named — never applied, never silent.
+
+`Start()` (the button) is unchanged and still reads everyone present, roster or not.
+`StartFor(member)` is the single-target entry point the sheets needed; all three funnel into one
+`Begin`, so the queue, the cooldown handling and the "never clears Obtained" rule cannot drift apart.
+
 ## Everything here is unique
 
 Raid gear, augmented gear and the materials can only be held once. Two consequences that are easy

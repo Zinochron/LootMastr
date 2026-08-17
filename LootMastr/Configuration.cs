@@ -97,5 +97,14 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public bool ExpertMode { get; set; }
 
+    /// <summary>
+    /// Whether to read everyone's gear on its own after entering a duty.
+    ///
+    /// Expert mode lives or dies on the equipped side being current, and nobody presses a button
+    /// eight times a week. Only roster members on a job of the role the roster expects are read;
+    /// anyone else is skipped and named.
+    /// </summary>
+    public bool AutoReadGearOnEnter { get; set; } = true;
+
     public void Save() => Services.PluginInterface.SavePluginConfig(this);
 }

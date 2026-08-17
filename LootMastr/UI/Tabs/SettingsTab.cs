@@ -120,8 +120,24 @@ public sealed class SettingsTab : ITab
                            "This is what a damage estimate needs, and it is only maintainable " +
                            "because the gear scan fills the equipped side in on its own.");
 
-        if (expert)
-            Widgets.Coloured(Widgets.Muted, "Roster shows exact gear. Read gear to fill it in.");
+        if (!expert)
+            return;
+
+        var auto = config.AutoReadGearOnEnter;
+        if (ImGui.Checkbox("Read everyone's gear on entering a duty", ref auto))
+        {
+            config.AutoReadGearOnEnter = auto;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Eight seconds after landing, and never in combat — if the pull has " +
+                           "already started it waits it out.\n\n" +
+                           "Only players in the roster are read, and only while their current job " +
+                           "is the role the roster expects. Somebody on a damage job for a farm run " +
+                           "is skipped and named rather than written onto their tank row.");
+
+        if (!auto)
+            Widgets.Coloured(Widgets.Muted, "The equipped side only updates when you press Read gear.");
     }
 
     /// <summary>

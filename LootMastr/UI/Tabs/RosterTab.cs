@@ -182,9 +182,18 @@ public sealed class RosterTab : ITab
         {
             ImGui.SameLine();
             Widgets.Coloured(Widgets.Wanted, "gear not read yet");
-            Widgets.Tooltip("Press \"Read gear\" above. Until then the left column is empty and " +
-                            "nothing can be compared.");
+            Widgets.Tooltip("Read it below, or let it happen on its own when the group next enters " +
+                            "a duty. Until then the left column is empty and nothing can be compared.");
         }
+
+        ImGui.SameLine();
+        using (ImRaii.Disabled(scanner.IsRunning))
+        {
+            if (ImGui.SmallButton("Read this player"))
+                Services.Chat.Print($"LootMastr: {scanner.StartFor(member)}");
+        }
+
+        Widgets.Tooltip("Examines this one character. They have to be in the party and in the zone.");
 
         ImGui.TextDisabled(SummaryOf(member));
 
