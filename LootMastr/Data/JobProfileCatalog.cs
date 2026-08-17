@@ -34,8 +34,11 @@ public sealed class JobProfileCatalog
         if (profiles.Value.TryGetValue(abbreviation, out var profile))
             return profile;
 
+        // Magical means the job's own primary stat is intelligence or mind — which the game says, so
+        // there is no list to keep. Reading it off the role instead had every caster falling through
+        // as physical, because a black mage's role is simply "dps".
         return JobProfile.Default(abbreviation,
-                                  caster: job.Role is RaidRole.Healer,
+                                  magical: job.PrimaryStat is 4 or 5,
                                   tank: job.Role is RaidRole.Tank);
     }
 

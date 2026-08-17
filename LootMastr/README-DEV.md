@@ -611,7 +611,34 @@ what substat tiers *are* — a stat can gain thirty points and change nothing. R
 make every tier boundary invisible and every comparison slightly wrong in a way that never surfaces
 as an error.
 
-#### Two mistakes worth keeping written down
+#### Anchored on a real Etro set
+
+`etro.gg/gearset/d12038d5-d734-41a7-ab72-148f10bc871d` — a level 100 black mage set — is the
+fixture the model is pinned to, and Etro is generous enough to publish its own intermediates:
+
+| Term | Ours | Etro |
+|---|---|---|
+| Weapon damage | 208 | 208% |
+| INT multiplier | 3545% | 3545% |
+| Determination | 109.5% | 109.5% |
+| Critical hit rate | 27.5% | 27.5% |
+| Critical hit multiplier | 162.5% | 162.5% |
+| Direct hit rate | 28% | 28% |
+| Spell speed | 101.7% | 101.7% |
+| Recast | 2.45 s | 2.45 s |
+| **100 potency** | **13161.4** | **13161.4** |
+
+Every intermediate matched on the first try. The total was **23% low**, and the missing factor was
+exactly 1.30000: the **job's damage trait**, which had been left at 1.0 for every job. Magick and
+Mastery is 1.30 on a magical job, Maim and Mastery 1.20 on a physical one. The 1.30 is now verified;
+the 1.20 is the convention and still wants a physical set to confirm, along with the tank attack
+power multiplier of 190.
+
+Magical means the job's primary stat is intelligence or mind — which the game says, so there is no
+list to maintain. Deriving it from the *role* had every caster falling through as physical, because
+a black mage's role is simply "dps".
+
+#### Three mistakes worth keeping written down
 
 **The recast came out at five seconds.** The reduction was subtracted from 2000 where the game
 subtracts it from 1000 — wrong by exactly double, and invisible in every relative comparison,
@@ -622,9 +649,13 @@ for skill speed, spell speed and direct hit alike on a set carrying none of them
 **A paladin did 1.2 million damage per second.** Potency enters the formula as a percentage, and the
 first version multiplied by 100 on top of that. Again invisible in every ranking.
 
-Both are the argument for carrying an absolute number rather than only an ordering: a wrong ranking
-looks perfectly plausible, and a wrong number does not. The harness asserts both anchors — the 2.50
-recast exactly, and the magnitudes as bands wide enough not to be brittle.
+**Every number was 23% low**, from the missing trait — and this one was *not* caught internally. It
+took a user noticing that Etro said something else. A wrong ranking looks perfectly plausible; a
+number 23% low looks perfectly plausible too. What separates them is an outside source, which is
+worth more here than any amount of internal consistency.
+
+The harness asserts all of it: the 2.50 recast exactly, the Etro total to one decimal, and the
+magnitudes as bands wide enough not to be brittle.
 
 ### Reading gear without being asked
 

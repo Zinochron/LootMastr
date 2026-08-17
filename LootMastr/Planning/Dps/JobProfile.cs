@@ -33,15 +33,26 @@ public sealed record JobProfile(
     /// damage per 100 potency, and the loot plan compares it against players of the same job — so
     /// the missing piece is the one that matters least.
     /// </summary>
-    public static JobProfile Default(string abbreviation, bool caster, bool tank) =>
+    public static JobProfile Default(string abbreviation, bool magical, bool tank) =>
         new(abbreviation,
             PotencyPerGcd: 320,
             OgcdPotencyPerSecond: 40,
-            AutoAttackShare: caster ? 0 : 0.08,
-            UsesSpellSpeed: caster,
+            AutoAttackShare: magical ? 0 : 0.08,
+            UsesSpellSpeed: magical,
             UsesTenacity: tank,
-            Trait: tank ? 1.0 : 1.0,
+            Trait: TraitFor(magical),
             AttackPowerMultiplier: tank ? 190 : 237);
+
+    /// <summary>
+    /// The job's damage trait — Magick and Mastery on a magical job, Maim and Mastery on a physical
+    /// one. A flat multiplier on everything the job does, and the single easiest term to forget:
+    /// leaving it at 1.0 made every number 23% low, which looks like a plausible number and is not.
+    ///
+    /// <b>1.30 for magical is verified</b> — it is exactly the factor between this formula and the
+    /// figure Etro publishes for a black mage set, to one decimal place. 1.20 for physical is the
+    /// convention and has not been checked against a planner yet.
+    /// </summary>
+    public static double TraitFor(bool magical) => magical ? 1.30 : 1.20;
 
     public bool IsDefaulted { get; init; } = true;
 

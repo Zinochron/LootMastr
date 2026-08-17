@@ -989,7 +989,7 @@ var rules = new PriorityRules();
 
 {
     var level = LevelTable.Known(100)!.Value;
-    var profile = JobProfile.Default("PLD", caster: false, tank: true);
+    var profile = JobProfile.Default("PLD", magical: false, tank: true);
 
     // Shaped like the paladin the stat probe was run on: level 100, job modifier 100, and the
     // substats it measured.
@@ -1046,8 +1046,8 @@ var rules = new PriorityRules();
     // fraction off for no reason, so it is not applied at all.
     var stats = new StatBlock(100, 115, 6000, 150, 3120, 3000, 1500, 2500, 420, 420, 420);
 
-    var caster = JobProfile.Default("BLM", caster: true, tank: false);
-    var tank = JobProfile.Default("PLD", caster: false, tank: true);
+    var caster = JobProfile.Default("BLM", magical: true, tank: false);
+    var tank = JobProfile.Default("PLD", magical: false, tank: true);
 
     Check("a caster's recast follows spell speed, not skill speed",
           Math.Abs(DamageModel.Estimate(stats with { SpellSpeed = 1500 }, caster, level)!.Value.Gcd -
@@ -1068,7 +1068,7 @@ var rules = new PriorityRules();
 
 {
     var level = LevelTable.Known(100)!.Value;
-    var profile = JobProfile.Default("SAM", caster: false, tank: false);
+    var profile = JobProfile.Default("SAM", magical: false, tank: false);
 
     // Half a stat block is worse than none: an estimate built on a missing weapon would rate
     // somebody far below where they are and nothing on screen would say why.
@@ -1084,6 +1084,47 @@ var rules = new PriorityRules();
           DamageModel.Estimate(complete with { JobModifier = 0 }, profile, level) == null);
 
     Check("a complete one does", DamageModel.Estimate(complete, profile, level) != null);
+}
+
+// --- against Etro, on a real set -----------------------------------------------------------------
+
+{
+    // etro.gg/gearset/d12038d5-d734-41a7-ab72-148f10bc871d — "2.45 GCD Caster friendly", BLM, i790.
+    //
+    // This is the fixture the whole model is anchored on, and it earned its place: every term
+    // matched Etro's published intermediates the first time, and the total was 23% low. The missing
+    // factor was exactly 1.30000 — the job's damage trait, which had been left at 1.0 for every job.
+    // A number 23% low looks perfectly plausible. That is why an outside source is worth more than
+    // any amount of internal consistency.
+    var level = LevelTable.Known(100)!.Value;
+
+    var blm = new JobProfile("BLM",
+                             PotencyPerGcd: 480, OgcdPotencyPerSecond: 20, AutoAttackShare: 0,
+                             UsesSpellSpeed: true, UsesTenacity: false,
+                             Trait: 1.30, AttackPowerMultiplier: 237);
+
+    var set = new StatBlock(
+        Level: 100, JobModifier: 115, MainStat: 6837, WeaponDamage: 158, WeaponDelayMs: 3280,
+        CriticalHit: 3548, DirectHit: 1837, Determination: 2341,
+        SkillSpeed: 420, SpellSpeed: 787, Tenacity: 420);
+
+    var estimate = DamageModel.Estimate(set, blm, level)!.Value;
+
+    Check("Etro's set: 13161.4 damage per 100 potency",
+          Math.Abs(estimate.DamagePer100Potency - 13161.4) < 0.1,
+          estimate.DamagePer100Potency.ToString("0.0"));
+
+    Check("Etro's set: a 2.45 second recast", Math.Abs(estimate.Gcd - 2.45) < 0.001,
+          estimate.Gcd.ToString("0.00"));
+
+    // The intermediates Etro publishes alongside it, each one its own chance to be wrong.
+    Check("Etro's set: the trait is what closes the gap",
+          Math.Abs(DamageModel.Estimate(set, blm with { Trait = 1.0 }, level)!.Value.DamagePer100Potency
+                   - (13161.4 / 1.30)) < 0.1);
+
+    Check("a magical job's trait is 1.30 and a physical one's 1.20",
+          Math.Abs(JobProfile.TraitFor(magical: true) - 1.30) < 1e-9 &&
+          Math.Abs(JobProfile.TraitFor(magical: false) - 1.20) < 1e-9);
 }
 
 {
