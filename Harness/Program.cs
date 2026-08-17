@@ -1143,6 +1143,52 @@ var rules = new PriorityRules();
           stats.With(StatBlock.Attributes.Strength, 500) == stats);
 }
 
+// --- three answers to "who needs it more" ---------------------------------------------------------
+
+{
+    static string Won(PriorityRules with, params Contender[] candidates) =>
+        DropOrder.Rank(with, candidates)[0].Who.Key;
+
+    // Somebody who has had four pieces and would gain a great deal, against somebody who has had
+    // none and would gain a little. This is the case the three rankings genuinely disagree about,
+    // and a group is entitled to either answer.
+    var served = new Contender("Served", RaidRole.Dps, 0, 4, 3, DpsGain: 5.0);
+    var empty = new Contender("Empty", RaidRole.Dps, 1, 0, 3, DpsGain: 1.0);
+
+    Check("by missing gear, whoever has had least",
+          Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.MissingGear }, served, empty) == "Empty");
+
+    Check("by damage, whoever gains most",
+          Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.DpsGain }, served, empty) == "Served");
+
+    // Both, on one scale: four items won against four percent more damage. Five beats four, just.
+    Check("by both, four percent overtakes four items won",
+          Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.Both }, served, empty) == "Served");
+
+    var closer = empty with { DpsGain = 1.5 };
+    Check("and three and a half does not",
+          Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.Both }, served, closer) == "Empty");
+
+    // The role gate still sits above all three, or the whole point of it is lost the moment somebody
+    // switches the ranking over.
+    var healer = new Contender("Healer", RaidRole.Healer, 0, 0, 6, DpsGain: 9.0);
+    var dps = new Contender("Dps", RaidRole.Dps, 1, 4, 1, DpsGain: 0.1);
+
+    foreach (var basis in new[] { NeedBasis.MissingGear, NeedBasis.DpsGain, NeedBasis.Both })
+    {
+        Check($"the role gate holds when ranking {basis}",
+              Won(new PriorityRules { Spread = 1.0, Basis = basis }, healer, dps) == "Dps");
+    }
+
+    // No gain known reads as no gain, so a roster with nobody scanned ranks by the queue rather than
+    // declaring everyone equally deserving.
+    var blind1 = new Contender("A", RaidRole.Dps, 0, 3, 2);
+    var blind2 = new Contender("B", RaidRole.Dps, 1, 0, 2);
+
+    Check("with no damage known, the order decides",
+          Won(new PriorityRules { Spread = 1.0, Basis = NeedBasis.DpsGain }, blind1, blind2) == "A");
+}
+
 // --- a ring is a ring, whichever finger it is on --------------------------------------------------
 
 {

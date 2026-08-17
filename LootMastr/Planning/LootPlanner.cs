@@ -29,13 +29,25 @@ public sealed class LootPlanner
     private readonly Configuration config;
     private readonly TierCatalog tiers;
     private readonly RosterStore roster;
+    private readonly GearComparer? gear;
 
-    public LootPlanner(Configuration config, TierCatalog tiers, RosterStore roster)
+    /// <summary>
+    /// <paramref name="gear"/> is optional, and its absence is the normal case for a group that has
+    /// never read anyone's equipment. Without it there are no damage gains and the rules fall back to
+    /// counting items, which is what they did before any of this existed.
+    /// </summary>
+    public LootPlanner(Configuration config, TierCatalog tiers, RosterStore roster,
+                       GearComparer? gear = null)
     {
         this.config = config;
         this.tiers = tiers;
         this.roster = roster;
+        this.gear = gear;
     }
+
+    /// <summary>Whether a damage-based ranking can say anything at all right now.</summary>
+    public bool CanRankByDamage =>
+        gear != null && roster.Members.Any(m => m.HasMeasuredStats);
 
     /// <summary>
     /// Just the coming week: every coffer that can turn up, and what the books in hand already buy.
@@ -143,10 +155,10 @@ public sealed class LootPlanner
         ranking.Count == 0 ? null : plans.FirstOrDefault(p => p.Key == ranking[0].Member.Key);
 
     public IReadOnlyList<Candidate> RankForSlot(GearSlot slot, IEnumerable<PendingAward>? applied = null) =>
-        Rank(plan => plan.Wants(slot), applied);
+        Rank(plan => plan.Wants(slot), plan => plan.GainFor(slot), applied);
 
     public IReadOnlyList<Candidate> RankForUpgrade(GearSide side, IEnumerable<PendingAward>? applied = null) =>
-        Rank(plan => plan.WantsUpgrade(side), applied);
+        Rank(plan => plan.WantsUpgrade(side), plan => plan.GainForUpgrade(side), applied);
 
     /// <summary>
     /// Everyone who still needs this drop, in the group's own order.
@@ -156,7 +168,8 @@ public sealed class LootPlanner
     /// making one of them wait a long time. The previous version ran a full simulation <i>per
     /// candidate</i> and ordered by the result, which was both slower and impossible to explain.
     /// </summary>
-    private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, IEnumerable<PendingAward>? applied)
+    private IReadOnlyList<Candidate> Rank(Func<PlayerPlan, bool> wants, Func<PlayerPlan, double> gainOf,
+                                          IEnumerable<PendingAward>? applied)
     {
         var basePlans = BuildPlans(applied);
         var eligible = basePlans.Where(wants).ToList();
@@ -166,7 +179,8 @@ public sealed class LootPlanner
         var baseline = NewSimulator().Run(Clone(basePlans));
 
         var contenders = eligible
-                         .Select(p => new Contender(p.Key, p.Role, p.Order, p.ItemsReceived, p.Open.Count))
+                         .Select(p => new Contender(p.Key, p.Role, p.Order, p.ItemsReceived, p.Open.Count,
+                                                    gainOf(p)))
                          .ToList();
 
         var results = new List<Candidate>(eligible.Count);
@@ -256,6 +270,9 @@ public sealed class LootPlanner
                           .Select((m, i) => PlayerPlan.From(m, roster.RoleOf(m), tier, i))
                           .ToList();
 
+        if (config.Rules.Basis != NeedBasis.MissingGear)
+            FillGains(plans);
+
         if (applied == null)
             return plans;
 
@@ -272,6 +289,50 @@ public sealed class LootPlanner
         }
 
         return plans;
+    }
+
+    /// <summary>
+    /// What each open need would be worth to each player, in damage percent.
+    ///
+    /// Measured once here rather than inside the simulator's inner loop, and held constant for the
+    /// run. Taking the body piece does slightly change what the legs would be worth, through the
+    /// stat totals — that is second order, and the alternative is a damage model running thousands
+    /// of times per frame.
+    ///
+    /// A material's worth is the best of the pieces it could go into: handing somebody a twine lets
+    /// them upgrade whichever one helps most, so that is the number to rank them by.
+    /// </summary>
+    private void FillGains(IReadOnlyList<PlayerPlan> plans)
+    {
+        if (gear == null)
+            return;
+
+        foreach (var plan in plans)
+        {
+            var member = roster.Members.FirstOrDefault(m => m.Key == plan.Key);
+            if (member == null || !member.HasMeasuredStats)
+                continue;
+
+            foreach (var need in plan.Open)
+            {
+                var target = member.NeedFor(need.Slot).BisItemId;
+                if (target == 0)
+                    continue;
+
+                if (gear.Gain(member, need.Slot, target) is not { } change)
+                    continue;
+
+                if (need.IsUpgrade)
+                {
+                    var best = plan.UpgradeGains.GetValueOrDefault(need.Side);
+                    plan.UpgradeGains[need.Side] = Math.Max(best, change.Percent);
+                }
+                else
+                {
+                    plan.SlotGains[Slots.CofferSlot(need.Slot)] = change.Percent;
+                }
+            }
+        }
     }
 
     private static List<PlayerPlan> Clone(IEnumerable<PlayerPlan> plans) =>

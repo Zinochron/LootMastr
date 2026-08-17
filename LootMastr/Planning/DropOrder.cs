@@ -5,8 +5,14 @@ using LootMastr.Data;
 
 namespace LootMastr.Planning;
 
-/// <summary>What the rule needs to know about one player in the running for one drop.</summary>
-public readonly record struct Contender(string Key, RaidRole Role, int Order, int ItemsReceived, int OpenNeeds);
+/// <summary>
+/// What the rule needs to know about one player in the running for one drop.
+///
+/// <paramref name="DpsGain"/> is a percentage, and 0 means "not known" as much as it means "worth
+/// nothing" — which is why the rule only reads it when the group has asked it to.
+/// </summary>
+public readonly record struct Contender(
+    string Key, RaidRole Role, int Order, int ItemsReceived, int OpenNeeds, double DpsGain = 0);
 
 /// <summary>Where a contender came out, and the two positions that put them there.</summary>
 public readonly record struct Placing(Contender Who, int Queue, int Spread, double Score);
@@ -49,24 +55,22 @@ public static class DropOrder
                     .Select(c => c.Key)
                     .ToList();
 
-        // The other end: whoever has been served least, and failing that has most left to get.
+        // The other end: whoever needs it most, by whichever measure the group asked for.
         var spread = candidates
-                     .OrderBy(c => c.ItemsReceived)
-                     .ThenByDescending(c => c.OpenNeeds)
+                     .OrderBy(c => Served(rules, c, candidates))
                      .ThenBy(c => rules.UseRoleOrder ? rules.RankOf(c.Role) : 0)
                      .ThenBy(c => c.Order)
                      .Select(c => c.Key)
                      .ToList();
 
         var share = Math.Clamp(rules.Spread, 0d, 1d);
-        var mostOpen = candidates.Max(c => c.OpenNeeds);
 
         var placings = candidates.Select(c =>
         {
             var q = queue.IndexOf(c.Key);
             var s = spread.IndexOf(c.Key);
 
-            return new Placing(c, q, s, ((1 - share) * q) + (share * Served(c, mostOpen)));
+            return new Placing(c, q, s, ((1 - share) * q) + (share * Served(rules, c, candidates)));
         }).ToList();
 
         // Role, when it is on, is a gate rather than a term: a healer waits while a tank still wants
@@ -96,10 +100,29 @@ public static class DropOrder
     /// Open needs break ties inside a whole item — a player level with another on items won, but
     /// with more still to get, is the needier of the two, and never by enough to outweigh a win.
     /// </summary>
-    private static double Served(Contender candidate, int mostOpen)
+    private static double Served(PriorityRules rules, Contender candidate, IReadOnlyList<Contender> field)
     {
-        var tiebreak = mostOpen <= 0 ? 0d : (double)candidate.OpenNeeds / (mostOpen + 1);
-        return candidate.ItemsReceived - tiebreak;
+        // One scale for everything: **one place in the order, one item already won, and one percent
+        // of damage all weigh the same.** That is the calibration the whole slider rests on, and it
+        // is the reason the two need measures can be added together at all.
+        return rules.Basis switch
+        {
+            NeedBasis.DpsGain => -candidate.DpsGain,
+            NeedBasis.Both => ByItems(candidate, field) - candidate.DpsGain,
+            _ => ByItems(candidate, field),
+        };
+
+        static double ByItems(Contender candidate, IReadOnlyList<Contender> field)
+        {
+            var mostOpen = 0;
+
+            foreach (var other in field)
+                mostOpen = Math.Max(mostOpen, other.OpenNeeds);
+
+            // Open needs break ties inside a single item and can never outweigh one.
+            var tiebreak = mostOpen <= 0 ? 0d : (double)candidate.OpenNeeds / (mostOpen + 1);
+            return candidate.ItemsReceived - tiebreak;
+        }
     }
 
     /// <summary>
@@ -117,8 +140,18 @@ public static class DropOrder
         if (rules.UsePlayerOrder)
             parts.Add($"#{placing.Who.Order + 1} in the player order");
 
-        parts.Add(placing.Who.ItemsReceived == 0 ? "nothing won yet" : $"{placing.Who.ItemsReceived} won so far");
-        parts.Add(placing.Who.OpenNeeds == 1 ? "1 piece left" : $"{placing.Who.OpenNeeds} pieces left");
+        if (rules.Basis != NeedBasis.DpsGain)
+        {
+            parts.Add(placing.Who.ItemsReceived == 0 ? "nothing won yet" : $"{placing.Who.ItemsReceived} won so far");
+            parts.Add(placing.Who.OpenNeeds == 1 ? "1 piece left" : $"{placing.Who.OpenNeeds} pieces left");
+        }
+
+        if (rules.Basis != NeedBasis.MissingGear)
+        {
+            parts.Add(placing.Who.DpsGain == 0
+                          ? "no damage gain known"
+                          : $"{placing.Who.DpsGain:+0.00;-0.00}% damage");
+        }
 
         return string.Join("; ", parts);
     }

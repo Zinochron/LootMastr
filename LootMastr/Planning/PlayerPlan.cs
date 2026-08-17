@@ -39,6 +39,22 @@ public sealed class PlayerPlan
     /// <summary>Books held, indexed 1..4. Index 0 is unused so the fight number reads directly.</summary>
     public int[] Tokens { get; init; } = new int[MaxEncounters + 1];
 
+    /// <summary>
+    /// What each kind of drop would be worth to this player, as a percentage of their damage.
+    ///
+    /// Worked out once before a projection starts and then held constant, which is an approximation
+    /// worth naming: taking the body piece does slightly change what the legs would be worth, through
+    /// the stat totals. The effect is second order and the alternative is re-running a damage model
+    /// inside the simulator's inner loop — so it is measured once, and the ranking it produces is
+    /// stable for it.
+    ///
+    /// Empty is the normal case. A group that has not read anyone's gear has no gains, and the rules
+    /// fall back to counting items.
+    /// </summary>
+    public Dictionary<GearSlot, double> SlotGains { get; init; } = new();
+
+    public Dictionary<GearSide, double> UpgradeGains { get; init; } = new();
+
     /// <summary>Week the player ran out of open needs, or -1 while still short of something.</summary>
     public int FinishedWeek { get; set; } = -1;
 
@@ -54,7 +70,17 @@ public sealed class PlayerPlan
         Open = [..Open],
         Tokens = (int[])Tokens.Clone(),
         FinishedWeek = FinishedWeek,
+
+        // Shared, not copied: they are worked out before a run and never written during one.
+        SlotGains = SlotGains,
+        UpgradeGains = UpgradeGains,
     };
+
+    /// <summary>What a coffer for this slot would be worth, as a percentage. 0 when not known.</summary>
+    public double GainFor(GearSlot slot) => SlotGains.GetValueOrDefault(Slots.CofferSlot(slot));
+
+    /// <summary>What a material for this side would be worth, on the best piece it could go into.</summary>
+    public double GainForUpgrade(GearSide side) => UpgradeGains.GetValueOrDefault(side);
 
     /// <summary>
     /// Reads a roster member's need list against a tier. Slots whose source costs the raid nothing

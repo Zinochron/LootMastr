@@ -59,7 +59,11 @@ public sealed class Plugin : IDalamudPlugin
         Roster = new RosterStore(Configuration, Jobs);
         importer = new BisImporter(Configuration, Classifier, Jobs, Tiers, Items);
 
-        Planner = new LootPlanner(Configuration, Tiers, Roster);
+        Profiles = new JobProfileCatalog(Jobs);
+        Stats = new StatBlockBuilder(Items, Jobs);
+        Gear = new GearComparer(Items, Jobs, Stats, Profiles);
+
+        Planner = new LootPlanner(Configuration, Tiers, Roster, Gear);
 
         Loot = new LootWindowReader(Items, Tiers);
         guard = new SafetyGuard(Party, Loot);
@@ -72,9 +76,6 @@ public sealed class Plugin : IDalamudPlugin
         Equipment = new EquipmentReader(Items);
         Attributes = new AttributeReader();
         Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Attributes, Classifier);
-        Profiles = new JobProfileCatalog(Jobs);
-        Stats = new StatBlockBuilder(Items, Jobs);
-        Gear = new GearComparer(Items, Jobs, Stats, Profiles);
         watcher = new AddonWatcher();
 
         var tabs = new List<ITab>

@@ -172,7 +172,7 @@ public sealed class WeekSimulator
 
     private void AwardCoffer(IReadOnlyList<PlayerPlan> players, GearSlot slot)
     {
-        var winner = Best(players.Where(p => p.Wants(slot)));
+        var winner = Best(players.Where(p => p.Wants(slot)), p => p.GainFor(slot));
         if (winner == null || !winner.TakeSlot(slot))
             return;
 
@@ -182,7 +182,7 @@ public sealed class WeekSimulator
 
     private void AwardUpgrade(IReadOnlyList<PlayerPlan> players, GearSide side)
     {
-        var winner = Best(players.Where(p => p.WantsUpgrade(side)));
+        var winner = Best(players.Where(p => p.WantsUpgrade(side)), p => p.GainForUpgrade(side));
         if (winner == null || !winner.TakeUpgrade(side, out var slot))
             return;
 
@@ -195,18 +195,22 @@ public sealed class WeekSimulator
     /// coming week use. The simulator used to have a rule of its own here, and that is exactly how
     /// the plan and the chest came to name different people for the same coffer.
     /// </summary>
-    private PlayerPlan? Best(IEnumerable<PlayerPlan> candidates)
+    private PlayerPlan? Best(IEnumerable<PlayerPlan> candidates, Func<PlayerPlan, double> gain)
     {
         var list = candidates.ToList();
         if (list.Count == 0)
             return null;
 
-        var ranked = DropOrder.Rank(rules, list.Select(Contend).ToList());
+        // The gain is per drop, so it is handed in rather than read off the plan: what a body coffer
+        // is worth and what a ring is worth are different numbers for the same player.
+        var contenders = list.Select(p => Contend(p, gain(p))).ToList();
+
+        var ranked = DropOrder.Rank(rules, contenders);
         return ranked.Count == 0 ? null : list.First(p => p.Key == ranked[0].Who.Key);
     }
 
-    private static Contender Contend(PlayerPlan plan) =>
-        new(plan.Key, plan.Role, plan.Order, plan.ItemsReceived, plan.Open.Count);
+    private static Contender Contend(PlayerPlan plan, double gain) =>
+        new(plan.Key, plan.Role, plan.Order, plan.ItemsReceived, plan.Open.Count, gain);
 
     /// <summary>
     /// Books are spent as soon as they cover something, on whatever is most contested — that is

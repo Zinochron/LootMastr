@@ -28,6 +28,7 @@ public sealed class PlanTab : ITab
 
     private SimulationResult? coming;
     private SimulationResult? schedule;
+    private Dictionary<NeedBasis, int>? basisWeeks;
     private int cachedSignature;
 
     public PlanTab(Configuration config, RosterStore roster, LootPlanner planner, TierCatalog tiers)
@@ -46,6 +47,7 @@ public sealed class PlanTab : ITab
     {
         coming = null;
         schedule = null;
+        basisWeeks = null;
     }
 
     public void Draw()
@@ -75,6 +77,12 @@ public sealed class PlanTab : ITab
             Invalidate();
         }
 
+        if (config.ExpertMode)
+        {
+            ImGuiHelpers.ScaledDummy(4f);
+            DrawRanking();
+        }
+
         coming ??= planner.ComingWeek();
         schedule ??= planner.Schedule();
 
@@ -86,6 +94,122 @@ public sealed class PlanTab : ITab
 
         ImGuiHelpers.ScaledDummy(10f);
         DrawSchedule(schedule);
+    }
+
+    /// <summary>
+    /// What "needs it more" should mean. Only in expert mode, because the damage answer needs
+    /// everyone's gear read and there is nothing to choose between otherwise.
+    ///
+    /// The comparison line is the point of this. Both plans are cheap to run, so rather than telling
+    /// somebody that maximising damage might cost the group a week, it runs both and says whether it
+    /// does — for their roster, this week.
+    /// </summary>
+    private void DrawRanking()
+    {
+        ImGui.TextUnformatted("Ranking");
+        Widgets.HelpMarker("What the sharing-out end of the slider measures. The role order and the " +
+                           "player order are unaffected — this is only the other half.");
+        ImGui.Separator();
+
+        if (!planner.CanRankByDamage)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             "Nobody's gear has been read, so there is no damage to rank by. " +
+                             "Read gear on the Roster tab.");
+
+            return;
+        }
+
+        var rules = config.Rules;
+
+        foreach (var (basis, label, help) in Bases)
+        {
+            if (ImGui.RadioButton(label, rules.Basis == basis) && rules.Basis != basis)
+            {
+                rules.Basis = basis;
+                config.Save();
+                Invalidate();
+            }
+
+            Widgets.HelpMarker(help);
+            ImGui.SameLine(0f, 16f);
+        }
+
+        ImGui.NewLine();
+        DrawBasisComparison();
+    }
+
+    private static readonly (NeedBasis Basis, string Label, string Help)[] Bases =
+    [
+        (NeedBasis.MissingGear, "By missing gear",
+            "Whoever has won least. A rule about people, and the one that needs no gear read at all."),
+        (NeedBasis.DpsGain, "By damage gain",
+            "Whoever the piece is worth most to, and nothing else. Somebody who has already had four " +
+            "pieces keeps getting them if that is where the damage is."),
+        (NeedBasis.Both, "By both",
+            "On one scale: a point of damage percent and an item already won weigh the same. Somebody " +
+            "who has had four pieces needs to gain four percent more than the next player to stay ahead."),
+    ];
+
+    /// <summary>
+    /// What choosing damage over gear costs, or saves, run rather than asserted.
+    ///
+    /// The honest worry about maximising damage is that it strands somebody: the group's last player
+    /// finishes later because every coffer went where it helped most rather than where it was needed.
+    /// That is a question with an answer, and both runs are cheap.
+    /// </summary>
+    private void DrawBasisComparison()
+    {
+        var weeks = basisWeeks ??= CompareBases();
+        var mine = weeks[config.Rules.Basis];
+        var best = weeks.Values.Min();
+
+        if (mine <= best)
+        {
+            Widgets.Coloured(Widgets.Done, $"Everyone is geared in week {mine} — no other ranking is faster.");
+        }
+        else
+        {
+            var faster = weeks.First(w => w.Value == best);
+            var name = Bases.First(b => b.Basis == faster.Key).Label.ToLowerInvariant();
+
+            Widgets.Coloured(Widgets.Wanted,
+                             $"This costs the group {mine - best} week(s): {mine} against {best} {name}.");
+        }
+
+        Widgets.Tooltip(string.Join("\n", Bases.Select(b => $"{b.Label}: everyone geared in week {weeks[b.Basis]}")));
+    }
+
+    /// <summary>
+    /// Every ranking's finish week, run once and cached with the rest of the plan.
+    ///
+    /// Three full projections, each of which measures a damage gain per open need. Cheap once and
+    /// absurd sixty times a second — this used to run on every frame the tab was open.
+    ///
+    /// The chosen basis is swapped out and back under a <c>finally</c>: the planner reads it from the
+    /// live rules, and leaving somebody's setting on whatever the last comparison used would be a
+    /// silent config change.
+    /// </summary>
+    private Dictionary<NeedBasis, int> CompareBases()
+    {
+        var rules = config.Rules;
+        var chosen = rules.Basis;
+        var weeks = new Dictionary<NeedBasis, int>();
+
+        try
+        {
+            foreach (var basis in new[] { NeedBasis.MissingGear, NeedBasis.DpsGain, NeedBasis.Both })
+            {
+                rules.Basis = basis;
+                weeks[basis] = planner.Schedule().LastFinishWeek;
+            }
+        }
+        finally
+        {
+            rules.Basis = chosen;
+        }
+
+        return weeks;
     }
 
     private void DrawForecast(SimulationResult result)

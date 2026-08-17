@@ -424,6 +424,55 @@ share — and all three of those are now settings rather than something inferred
 The simulation is still run. It no longer decides anything; it says **when** everyone would be
 finished, which is its own question and the one the Plan tab's top table asks.
 
+### Three answers to "who needs it more"
+
+`PriorityRules.Basis`, expert mode only, because the damage answer needs everyone's gear read:
+
+| Basis | The sharing-out end measures |
+|---|---|
+| `MissingGear` | Who has won least. A rule about people, and the default. |
+| `DpsGain` | Who the piece is worth most to, and nothing else. |
+| `Both` | Both, on one scale. |
+
+**One scale for everything: one place in the order, one item already won, and one percent of damage
+all weigh the same.** That is what makes `Both` addable rather than arbitrary, and it is the same
+calibration the slider already rested on. Somebody who has had four pieces needs to gain four percent
+more than the next player to stay ahead of them.
+
+The role gate sits above all three — the harness asserts that for each basis, because the whole point
+of gearing damage first is lost the moment switching the ranking quietly overturns it.
+
+**A gain of zero means "not known" as much as "worth nothing"**, which is why a roster with nobody
+scanned ranks by the queue rather than declaring everyone equally deserving. `LootPlanner.CanRankByDamage`
+is what the UI asks before offering the choice at all.
+
+#### The gains reach the projection
+
+The obvious way to do this would have ranked week 1 by damage and every week after it by the queue,
+since `WeekSimulator` is pure and cannot run a damage model. That is the exact class of bug this
+codebase has already paid for twice.
+
+So the gains are measured **once**, before a projection starts, and carried on `PlayerPlan` as a
+slot → percent table. `Best` takes the gain as a parameter because it is per drop — what a body
+coffer is worth and what a ring is worth are different numbers for the same player.
+
+Holding them constant for the run is an approximation worth naming: taking the body piece does
+slightly change what the legs would be worth, through the stat totals. Second order, and the
+alternative is a damage model running in the simulator's inner loop.
+
+A material's worth is the **best** of the pieces it could go into. Handing somebody a twine lets them
+upgrade whichever helps most, so that is the number to rank them by.
+
+#### The comparison line is run, not asserted
+
+The honest worry about maximising damage is that it strands somebody — the last player finishes later
+because every coffer went where it helped most rather than where it was needed. That is a question
+with an answer, so the Plan tab runs all three rankings and says which finishes soonest, for this
+roster, this week.
+
+It is cached with the rest of the plan. Three full projections, each measuring a damage gain per open
+need, is cheap once and absurd sixty times a second — which is what the first version did.
+
 ### One rule, so the tables cannot disagree
 
 There used to be two. The loot window used the per-candidate ranking; the projection used a rule of

@@ -19,6 +19,19 @@ namespace LootMastr.Planning;
 /// <see cref="UsePlayerOrder"/>, and <see cref="Spread"/> between the two extremes. Everything the
 /// plan shows follows from those, through <see cref="DropOrder"/>.
 /// </summary>
+/// <summary>Which quantity the sharing-out end of the slider measures.</summary>
+public enum NeedBasis
+{
+    /// <summary>Who has won least. A rule about people, and the one that needs no gear read.</summary>
+    MissingGear,
+
+    /// <summary>Who the piece is worth most to. Needs everyone's gear read to say anything.</summary>
+    DpsGain,
+
+    /// <summary>Both, on one scale: a point of damage percent and an item already won weigh the same.</summary>
+    Both,
+}
+
 [Serializable]
 public sealed class PriorityRules
 {
@@ -55,6 +68,15 @@ public sealed class PriorityRules
     /// the loot out <i>within</i> a role rather than handing it past one.
     /// </summary>
     public double Spread { get; set; } = 0.5;
+
+    /// <summary>
+    /// What "needs it more" means on the sharing-out side of the slider.
+    ///
+    /// Sharing out has always meant one thing — whoever has won least — and that is a fair rule
+    /// about people. Expert mode can answer a different question: which of them the piece is worth
+    /// most to. Both are defensible and a group should be able to say which it wants.
+    /// </summary>
+    public NeedBasis Basis { get; set; } = NeedBasis.MissingGear;
 
     /// <summary>Where a role sits in the order. Lower goes first; anything unknown goes last.</summary>
     public int RankOf(RaidRole role)
