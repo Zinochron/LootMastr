@@ -1260,6 +1260,22 @@ var rules = new PriorityRules();
 }
 
 {
+    // A cross-check from a different source entirely. The xivgear sims report a damage per 100
+    // potency for jobs whose dps solver is missing — 13398.5 for a red mage, 12402.7 for a bard — and
+    // the two are the same tier with near-identical stat lines. Their ratio should therefore be the
+    // ratio of their traits, and nothing else.
+    //
+    // Four Etro sets said 1.30 and 1.20. This says 1.0803 where 1.30/1.20 is 1.0833: two independent
+    // sources agreeing to a third of a percent, which is worth more than either on its own.
+    const double casterOverRanged = 13398.462 / 12402.733;
+    var traitRatio = JobProfile.TraitFor(magical: true, tank: false) / JobProfile.TraitForPhysicalRanged();
+
+    Check("the sims' damage ratio matches the trait ratio",
+          Math.Abs(casterOverRanged - traitRatio) / traitRatio < 0.01,
+          $"{casterOverRanged:0.0000} against {traitRatio:0.0000}");
+}
+
+{
     // Swapping one stat is how every item comparison is expressed, so it has to move the right one.
     var stats = new StatBlock(100, 100, 6000, 150, 2240, 3000, 1000, 2500, 420, 420, 1000);
 

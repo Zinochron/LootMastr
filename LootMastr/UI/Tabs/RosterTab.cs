@@ -249,7 +249,7 @@ public sealed class RosterTab : ITab
             $"{estimate.DamagePer100Potency:N0} damage per 100 potency — exact, straight out of the stats.\n" +
             $"{estimate.Gcd:0.00} second global cooldown.\n\n" +
             $"~{estimate.EstimatedDps:N0} dps converts that with a rotation profile.\n" +
-            (estimate.Caveat ?? "That profile has been checked against a gear planner."));
+            (estimate.Caveat ?? "The potency figure came from a rotation simulator."));
     }
 
     /// <summary>

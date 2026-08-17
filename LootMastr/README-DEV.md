@@ -673,7 +673,17 @@ exact figure in the tooltip beside it.
 It used to be three guessed numbers per job: a potency per GCD, an off-cooldown rate and an
 auto-attack share. Guessing them put a sage **39% low** against XIVGear — 18,070 against 25,108. It is
 now **one measured number**, `potencyPerSecond`, taken from a rotation simulator for a known set,
-together with the `referenceGcd` it was measured at.
+together with the `referenceGcd` it was measured at. **Fifteen of twenty-one jobs are calibrated.**
+
+The sim tables report two things per job, and only one of them is usable here. The **unbuffed
+potency per second** is exactly the quantity this model multiplies damage per 100 potency by. The
+**dps** figure is buffed, and the buffs are job-specific — a dancer's own Technical Step is in theirs
+and a dragoon's is not — so dividing it back out would reintroduce a per-job guess in order to remove
+one. It is not used.
+
+Bard and machinist have no sim and carry the estimate **scaled by the dancer's correction**: same
+category, one measurement, and the dancer came in 18% under the guess. That is an inference and it is
+labelled as one. The four casters have no measured sibling and are untouched.
 
 ```
 potencyPerSecondAt(gcd) = potencyPerSecond × (gcdShare × referenceGcd / gcd + (1 − gcdShare))
@@ -740,8 +750,15 @@ Every number is exact against its set. What kept changing was the *rule*:
 4. The **dragoon** set says 1.00. A melee reads like a tank, so **physical ranged is the odd one
    out** — three distinct traits over four categories, reducible to no single axis.
 
-So: four categories, one measurement each, and the only remaining inference is that the other jobs in
-a category match the one that was measured. `RaidRole` cannot express this — it folds melee and ranged
+**A fifth source then confirmed it independently.** The XIVGear sim tables report a damage per 100
+potency for jobs whose dps solver is missing: 13398.5 for a red mage against 12402.7 for a bard, same
+tier, near-identical stat lines. Their ratio is **1.0803** where the trait ratio 1.30 / 1.20 is
+**1.0833** — a third of a percent apart, from a completely different source than the Etro sets. Two
+independent agreements are worth considerably more than either alone, which is the whole lesson of
+the four sets above.
+
+So: four categories, one measurement each plus a cross-check, and the only remaining inference is
+that the other jobs in a category match the one that was measured. `RaidRole` cannot express this — it folds melee and ranged
 into "dps", which is right for a loot queue and wrong for a damage multiplier — so
 `JobCatalog.IsPhysicalRanged` reads the game's finer role plus the primary stat: role 3 is ranged, and
 dexterity separates a dancer from a black mage.

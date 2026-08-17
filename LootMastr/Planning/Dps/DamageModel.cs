@@ -74,8 +74,8 @@ public static class DamageModel
             gcd,
             perHundred / 100.0 * profile.PotencyPerSecondAt(gcd),
             profile.IsDefaulted
-                ? $"No rotation profile for {profile.Abbreviation} — the damage per 100 potency is " +
-                  "exact, the DPS figure is a rough conversion."
+                ? $"No simulated potency figure for {profile.Abbreviation} yet — the damage per 100 " +
+                  "potency is exact, the dps is an estimate."
                 : null);
     }
 
