@@ -533,27 +533,55 @@ Two consequences worth stating, because they simplify a lot:
   nobody is wearing it.
 - **Food is the same.** Only `RosterMember.TargetFoodItemId`, from the import.
 
-### The four things a schema could not answer
+### What the stat probe settled
 
-`Debug → Write stat probe`. Four pieces of game data were readable as *shapes* and not as values,
-and a damage model built on a plausible reading of each would be wrong by some percentage nobody
-could ever find. The probe prints them next to something checkable:
+`Debug → Write stat probe` exists because four pieces of game data were readable as *shapes* and not
+as values. Two runs answered all but one of them. The probe stays, because a patch can move any of
+this and the same two clicks re-check it.
 
-1. **`ParamGrow` has no MAIN/SUB/DIV columns.** The formula needs those three numbers per level and
-   the sheet's columns are called `BaseSpeed`, `LevelModifier`, `HpModifier` and so on. Until the
-   mapping is confirmed the level table is hardcoded, and the probe dumps the columns for 80/90/100
-   so the community numbers can be matched against them.
-2. **`BaseParamSpecial` — HQ bonus, or HQ totals?** Printed beside the normal values on a craftable
-   piece, where a delta is small and a total is not.
-3. **`ClassJob.PrimaryStat` — a `BaseParam` row id, or its own enum?** If it is the former, a
-   paladin reads 1 and a black mage 4.
-4. **`InventoryItem.Materia[i]` — materia sheet row, or item id?** The catalogue's reverse table is
-   keyed by item id; the probe says which it got.
+**The level constants are two thirds read from the game now.** `ParamGrow` has no column called
+MAIN, SUB or DIV, but two of them are in there under other names:
 
-It also tries `InventoryType.Examine`, which *might* hold an inspected character's real
-`InventoryItem`s, melds included. If it does, the one remaining gap closes — the gain of a new piece
-is otherwise computed without its materia, which makes it slightly conservative. Worth a look, not
-worth depending on.
+| Level | `BaseSpeed` | `LevelModifier` |
+|---|---|---|
+| 80 | 380 | 1300 |
+| 90 | 400 | 1900 |
+| 100 | 420 | 2780 |
+
+Those are **SUB** and **DIV** exactly, at all three levels. `LevelTable` therefore reads them from
+the sheet rather than carrying them.
+
+**MAIN is not in that sheet** and stays a constant — 340 / 390 / 440 for 80 / 90 / 100. It is not a
+guess, though: a level 100 paladin's untouched stats measured 421 dexterity, 441 mind and 265
+intelligence against job modifiers of 95, 100 and 60, which is `floor(440 × mod / 100)` plus a clan
+bonus of one to three every time. Three independent confirmations of 440. The other two levels are
+unverified and no longer matter much.
+
+A second confirmation fell out of the same numbers: **an untouched substat sits at exactly SUB.**
+Direct hit, skill speed and spell speed all measured 420 on a set carrying none of them.
+
+**`ClassJob.PrimaryStat` is a `BaseParam` row id.** PLD 1, NIN 2, BLM 4, SGE 5 — strength, dexterity,
+intelligence, mind. And `ModifierStrength` and friends are the job modifier the weapon damage term
+needs: 100 for a paladin, 112 for a samurai, 115 for a black mage's intelligence.
+
+**`BaseParamSpecial` is the high quality bonus, not the high quality total.** A craftable saw reads
+`normal [70]=29 [71]=16` against `special [70]=3 [71]=3`. HQ value is normal plus special.
+
+**Weapon damage is not in the attribute table.** `PlayerAttribute` 12 and 13 both measured **0** on a
+paladin holding a sword. Delay is there and correct (2240 for a 2.24 second weapon), but damage has
+to come off the item — which is exact anyway, since weapon damage cannot be melded.
+
+**`InventoryType.Examine` holds the inspected character's real `InventoryItem`s.** `loaded=True`,
+fourteen slots, right item names, right high quality flags, and non-zero meld counts. This is more
+than was expected: melds *are* readable for other players after all, through the inventory container
+rather than through `AgentInspect`. Nothing depends on it yet — measured totals already cover the
+current set — but it is the way in if the gain of a new piece ever needs its materia modelled
+properly rather than assumed to carry over.
+
+**Still open: whether `InventoryItem.Materia[i]` is a `Materia` sheet row or an item id.** The
+character it was run on has no melds anywhere, so the probe had nothing to read. It does not block
+anything — equipped melds are not stored, because they are already inside the measured totals — and
+the answer is one melded item away whenever it is wanted.
 
 ### Reading gear without being asked
 
