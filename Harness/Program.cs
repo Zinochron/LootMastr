@@ -1445,6 +1445,39 @@ var rules = new PriorityRules();
     var fromNothing = GearDelta.Between([], better);
     Check("filling an empty slot gains the whole piece",
           fromNothing.Count == 3 && fromNothing.All(c => c.Delta > 0));
+
+    // --- melds ---------------------------------------------------------------------------------
+    //
+    // Materia has to land on the same entry as the stat it strengthens. Two entries for one stat and
+    // Between() counts whichever it meets first, which is a silent wrong answer rather than a crash.
+    var melded = GearDelta.Plus(Piece((str, 400), (crt, 300)), Piece((crt, 54), (det, 36)));
+
+    Check("a materia adds to a stat the piece already has",
+          melded.Count(c => c.BaseParam == crt) == 1 &&
+          melded.Single(c => c.BaseParam == crt).Delta == 354);
+
+    Check("and one the piece does not have is added",
+          melded.Single(c => c.BaseParam == det).Delta == 36);
+
+    // The case the user's meld rules single out, and the reason both sides have to carry their own
+    // materia: crafted gear takes five, raid gear exactly two. Traded slot for slot the raid piece is
+    // the better item and still loses substats — counting only the items would call it a pure gain.
+    var crafted = GearDelta.Plus(Piece((str, 468), (crt, 296), (det, 207)),
+                                 Piece((crt, 54), (det, 54), (dh, 162)));
+
+    var raid = GearDelta.Plus(Piece((str, 477), (crt, 333), (dh, 233)), Piece((crt, 54), (det, 54)));
+
+    var traded = GearDelta.Between(crafted, raid);
+
+    Check("trading five melds for two is not a pure gain", traded.Any(c => c.Delta < 0),
+          string.Join(", ", traded.Select(c => $"[{c.BaseParam}]{c.Delta:+0;-0}")));
+
+    Check("the main stat still goes up", traded.Single(c => c.BaseParam == str).Delta == 9);
+
+    // Melds that do not move must cancel exactly, or every comparison drifts by whatever is in them.
+    var samePiece = GearDelta.Plus(better, Piece((crt, 54), (dh, 54)));
+    Check("identical melds on both sides cancel",
+          GearDelta.Between(samePiece, samePiece).All(c => c.Delta == 0));
 }
 
 {

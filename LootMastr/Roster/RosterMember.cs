@@ -64,11 +64,20 @@ public sealed class SlotNeed
     /// Materia melded into the target piece, as materia <b>item</b> ids — which is how both gear
     /// planners spell them.
     ///
-    /// Only the target side is stored. What somebody currently has melded does not need to be:
-    /// their finished attributes are read straight off the character and already contain it. This
-    /// is for the set nobody is wearing yet, where there is nothing to measure.
+    /// The set nobody is wearing yet, so there is nothing to measure and it has to be read from the
+    /// planner. See <see cref="EquippedMateria"/> for the other half.
     /// </summary>
     public List<uint> BisMateria { get; set; } = [];
+
+    /// <summary>
+    /// Materia melded into the piece actually being worn, as materia item ids.
+    ///
+    /// Needed for the same reason the target's is: the measured stat totals already contain these,
+    /// so comparing two pieces has to take the old melds out before putting the new ones in. Without
+    /// it a crafted piece holding five materia traded for a raid piece holding two reads as a clean
+    /// upgrade whether or not it is one.
+    /// </summary>
+    public List<uint> EquippedMateria { get; set; } = [];
 
     /// <summary>Actual: item id last seen equipped on the character. 0 when never seen.</summary>
     public uint EquippedItemId { get; set; }
@@ -118,8 +127,10 @@ public sealed class SlotNeed
         Obtained = Obtained,
         UpgradeObtained = UpgradeObtained,
         BisItemId = BisItemId,
+        BisMateria = [..BisMateria],
         EquippedItemId = EquippedItemId,
         EquippedSource = EquippedSource,
+        EquippedMateria = [..EquippedMateria],
     };
 }
 
@@ -180,6 +191,15 @@ public sealed class RosterMember
 
     public int MeasuredLevel { get; set; }
 
+    /// <summary>
+    /// Whether the last scan managed to read what is melded into each piece.
+    ///
+    /// False is the honest state for a roster stored before melds were read at all, and the
+    /// comparison falls back to "the melds carry over" rather than counting the target's melds
+    /// against nothing — which would overstate every upgrade.
+    /// </summary>
+    public bool MeldsKnown { get; set; }
+
     /// <summary>Food the target set assumes, as an item id. 0 for none.</summary>
     public uint TargetFoodItemId { get; set; }
 
@@ -229,6 +249,7 @@ public sealed class RosterMember
 
         (first.EquippedItemId, second.EquippedItemId) = (second.EquippedItemId, first.EquippedItemId);
         (first.EquippedSource, second.EquippedSource) = (second.EquippedSource, first.EquippedSource);
+        (first.EquippedMateria, second.EquippedMateria) = (second.EquippedMateria, first.EquippedMateria);
 
         return true;
 

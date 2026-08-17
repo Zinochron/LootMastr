@@ -25,6 +25,9 @@ a recast of five seconds was caught before anybody saw it on screen.
 
 ## What it pins down
 
+- Swapping a piece counts both sides complete: a materia adds to a stat the item already has rather
+  than becoming a second entry for it, and trading a crafted piece holding five melds for a raid piece
+  holding two is never a pure gain however much better the item is.
 - Need lists only contain slots that actually cost the raid something — plain tome and crafted
   pieces never compete for a drop.
 - Gear is classified from item level plus name alone, with no shop data: raid and augmented tome

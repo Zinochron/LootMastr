@@ -594,12 +594,12 @@ window is open** — closing it takes them with it.
 relying on blindly, but it was verified column by column across all 73 entries, and it is what lets
 one set of constants serve both readers. They live in `Data/Attributes`.
 
-Two consequences worth stating, because they simplify a lot:
+One consequence worth stating, because it simplifies a lot: **food is never measured separately.**
+It is already inside the totals. Only `RosterMember.TargetFoodItemId` is stored, from the import.
 
-- **Equipped materia is never stored.** It is already inside the measured totals. Only
-  `SlotNeed.BisMateria` exists, for the target set — the one thing that cannot be measured, because
-  nobody is wearing it.
-- **Food is the same.** Only `RosterMember.TargetFoodItemId`, from the import.
+Materia used to be the same story, and is not any more — see *Both sides carry their melds* below.
+Both halves are stored: `SlotNeed.BisMateria` from the import, `SlotNeed.EquippedMateria` from the
+scan, with `RosterMember.MeldsKnown` separating "no melds" from "nobody has looked".
 
 ### What the stat probe settled
 
@@ -642,14 +642,15 @@ to come off the item — which is exact anyway, since weapon damage cannot be me
 **`InventoryType.Examine` holds the inspected character's real `InventoryItem`s.** `loaded=True`,
 fourteen slots, right item names, right high quality flags, and non-zero meld counts. This is more
 than was expected: melds *are* readable for other players after all, through the inventory container
-rather than through `AgentInspect`. Nothing depends on it yet — measured totals already cover the
-current set — but it is the way in if the gain of a new piece ever needs its materia modelled
-properly rather than assumed to carry over.
+rather than through `AgentInspect`. `EquipmentReader.MeldsFrom` is built on it, and it is what lets
+both sides of a comparison carry their own materia instead of assuming it carries over.
 
 **Still open: whether `InventoryItem.Materia[i]` is a `Materia` sheet row or an item id.** The
-character it was run on has no melds anywhere, so the probe had nothing to read. It does not block
-anything — equipped melds are not stored, because they are already inside the measured totals — and
-the answer is one melded item away whenever it is wanted.
+character it was run on has no melds anywhere, so the probe had nothing to read. Rather than wait for
+a melded character, `ItemCatalog.TryResolveMeld` **accepts either**: it tries the materia item-id map
+first and falls back to a `(row, grade)` lookup. Both maps are built in the same pass that was already
+walking `Materia`, so the cost of not knowing is one dictionary. Whichever the field turns out to
+hold, the reader resolves it.
 
 ### The damage model
 
@@ -802,16 +803,50 @@ magnitudes as bands wide enough not to be brittle.
 `GearDelta` (pure) and `GearComparer` (the game-facing half). One rule holds the whole thing
 together:
 
-> **Only the items' own stats change hands.** Materia is left out of the difference entirely.
+> **Both pieces change hands complete — their own stats and their melds.**
 
-That is a decision, not an omission. The current set's melds are already inside the measured totals
-the comparison starts from, and what somebody would meld into a piece they do not own yet is not
-knowable. Leaving materia out of the delta *is* the assumption that the melds carry over — the
-closest thing to true, and it errs **low** on a piece with more meld slots than the old one. Every
-tooltip that shows a gain says so, because an estimate whose one assumption is on the screen is a
-different thing from one that has quietly made it.
+#### Both sides carry their melds
 
-Two details that are easy to get wrong and silent when you do:
+This started as the opposite rule. Materia was left out of the difference entirely, on the reasoning
+that the current set's melds are already inside the measured totals and what somebody would meld into
+a piece they do not own yet is not knowable — which made leaving it out *the assumption that the melds
+carry over*, stated on screen and erring low.
+
+Both halves of that turned out to be knowable, and the user pointed out why:
+
+- The target set's melds come from the import. `SlotNeed.BisMateria` has been read since E2 and was
+  simply not used.
+- The equipped set's melds come from `InventoryType.EquippedItems` and `InventoryType.Examine`, which
+  the stat probe had already shown carry real `InventoryItem`s with non-zero meld counts.
+
+With both known the arithmetic is not merely better, it is **exact**, and it is exact for the same
+reason the assumption was needed in the first place — the measured totals contain the current melds:
+
+```
+after = measured − (old item + old melds) + (new item + target melds)
+```
+
+The case that makes it matter is the one the meld capacity rules single out. Crafted gear takes five
+materia (three high tier and two low, or two and three on accessories); raid and augmented tome gear
+take exactly two high tier. A raid piece traded for a crafted one is the better item and still gives
+up three materia worth of substats. Under the old rule that read as a pure gain.
+
+`RosterMember.MeldsKnown` is what keeps the fallback honest. A roster stored before melds were read
+holds empty lists, and counting a target set's materia against nothing would overstate **every**
+upgrade — worse than the assumption it replaced. So when the melds have not been read, neither side
+carries any and the comparison behaves exactly as it did before. The tooltips say which of the two
+happened; `RosterTab.MeldNote` is the one place that sentence is written.
+
+One thing is still assumed, and it is in the doc comment on `GearDelta.Plus`: **no stat is melded
+past the item's cap.** The game reduces a materia that would overshoot, and the cap is not in any
+sheet column this plugin reads. A set built in a gear planner never overshoots, so for a target set
+this is exact; a set melded by hand can read a point or two high.
+
+Three details that are easy to get wrong and silent when you do:
+
+**A materia has to land on the same entry as the stat it strengthens.** `GearDelta.Plus` adds rather
+than appends. Two entries for one stat and `Between` counts whichever it meets first — a wrong
+answer, not a crash. The same helper folds the high quality bonus, which has the identical shape.
 
 **A sidegrade has to count what was lost.** Walking only the new piece's stats makes a dropped stat
 invisible, and then every sidegrade reads as a pure gain. `GearDelta.Between` therefore walks both

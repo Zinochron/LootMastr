@@ -313,9 +313,8 @@ public sealed class RosterTab : ITab
             Widgets.Tooltip($"{items.GetItemName(target)}\n\n" +
                             $"{change.Before.DamagePer100Potency:N0} → " +
                             $"{change.After.DamagePer100Potency:N0} per 100 potency.\n\n" +
-                            "Counted on the item's own stats. Whatever is melded into the piece they " +
-                            "are wearing now is assumed to carry over, so a piece with more meld " +
-                            "slots than the old one is worth a little more than this says.");
+                            "Counted on both pieces' stats and their materia — what is melded now " +
+                            "comes off, what the target set melds goes on.");
         }
     }
 
@@ -381,9 +380,8 @@ public sealed class RosterTab : ITab
         {
             DrawEstimateLine(target.After,
                              "What they would do with every target piece — the finish line.\n\n" +
-                             "Counted on the items' own stats, with the melds they are wearing now " +
-                             "assumed to carry over. A target set with more meld slots than the " +
-                             "current one is worth a little more than this says.",
+                             "Counted on both sets' stats and their materia, so a target set with " +
+                             "more meld slots than the current one is counted properly.",
                              target.Dps);
         }
         else
@@ -424,7 +422,7 @@ public sealed class RosterTab : ITab
                         ImGui.OpenPopup($"##need{slot}");
                 }
 
-                Widgets.Tooltip(DescribeCell(member, slot, need, state) + GainNote(gain));
+                Widgets.Tooltip(DescribeCell(member, slot, need, state) + GainNote(member, gain));
             }
             else
             {
@@ -443,14 +441,23 @@ public sealed class RosterTab : ITab
     }
 
     /// <summary>
-    /// The gain, spelled out for the tooltip.
+    /// How the materia was handled, which is not the same sentence in both cases.
     ///
-    /// The one assumption in it is stated rather than left implicit: the melds on the piece they are
-    /// wearing are taken to carry over, because what would go into a piece nobody owns is not
-    /// knowable. That errs low on an upgrade with more meld slots, and saying so is the difference
-    /// between an estimate and a claim.
+    /// With both sets' melds known the arithmetic is exact and says so. Without them it falls back to
+    /// the old assumption that they carry over, and that has to be on the screen rather than in the
+    /// source: it is the difference between an estimate and a claim, and the reader cannot tell the
+    /// two states apart from the number alone.
     /// </summary>
-    private static string GainNote(GearGain? gain)
+    private static string MeldNote(RosterMember member) =>
+        member.MeldsKnown
+            ? "Counted on both pieces' stats and their materia: what is melded now comes off, what " +
+              "the target set melds goes on."
+            : "Counted on the items' own stats. What is melded into this set has not been read yet, " +
+              "so the melds are taken to carry over — which errs low on a piece with more meld " +
+              "slots than the old one.";
+
+    /// <summary>The gain, spelled out for the tooltip.</summary>
+    private static string GainNote(RosterMember member, GearGain? gain)
     {
         if (gain is not { } change)
             return string.Empty;
@@ -465,8 +472,7 @@ public sealed class RosterTab : ITab
         if (Math.Abs(change.After.Gcd - change.Before.Gcd) > 0.001)
             lines += $"\nGCD {change.Before.Gcd:0.00} → {change.After.Gcd:0.00}";
 
-        return lines + "\n\nCounted on the items' own stats. The melds on the piece they are wearing " +
-               "now are assumed to carry over.";
+        return $"{lines}\n\n{MeldNote(member)}";
     }
 
     /// <summary>The slot's name at a fixed width, so both columns line up without being a table.</summary>

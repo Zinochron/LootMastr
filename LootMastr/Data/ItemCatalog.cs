@@ -117,11 +117,32 @@ public sealed class ItemCatalog
     public bool TryGetMateria(uint itemId, out ItemStat effect) =>
         model.Value.Materia.TryGetValue(itemId, out effect);
 
+    /// <summary>
+    /// The materia item a melded slot holds, from whatever the game put in it.
+    ///
+    /// <c>InventoryItem.Materia</c> carries an id and a grade, and which id it is was never settled:
+    /// the stat probe was run on a character with no melds anywhere, so it had nothing to read. Both
+    /// readings are therefore tried — the item table first, then the <c>Materia</c> sheet's own row
+    /// and grade — and the answer comes back as an item id either way, so nothing downstream has to
+    /// know which it was.
+    /// </summary>
+    public bool TryResolveMeld(ushort id, byte grade, out uint itemId)
+    {
+        if (model.Value.Materia.ContainsKey(id))
+        {
+            itemId = id;
+            return true;
+        }
+
+        return model.Value.MateriaByRow.TryGetValue((id, grade), out itemId);
+    }
+
     private sealed record Model(
         Dictionary<uint, ItemInfo> Items,
         Dictionary<string, uint> ByName,
         Dictionary<uint, ItemStats> Stats,
-        Dictionary<uint, ItemStat> Materia);
+        Dictionary<uint, ItemStat> Materia,
+        Dictionary<(ushort Row, byte Grade), uint> MateriaByRow);
 
     private static Model Build()
     {
@@ -161,18 +182,25 @@ public sealed class ItemCatalog
             byName.TryAdd(name, row.RowId);
         }
 
-        var materia = BuildMateria();
+        var (materia, byRow) = BuildMateria();
 
         Services.Log.Information($"ItemCatalog built: {items.Count} items, {stats.Count} with stats, " +
                                  $"{materia.Count} materia.");
 
-        return new Model(items, byName, stats, materia);
+        return new Model(items, byName, stats, materia, byRow);
     }
 
-    /// <summary>Materia item id → the stat it grants. A few hundred rows, so its own small pass.</summary>
-    private static Dictionary<uint, ItemStat> BuildMateria()
+    /// <summary>
+    /// The materia sheet, turned inside out twice.
+    ///
+    /// It is a row per materia type holding one item and one value per grade. Melds are spelled as
+    /// item ids by both gear planners and as something-plus-a-grade by the game, so both ways in are
+    /// built: item id → stat, and (row, grade) → item id.
+    /// </summary>
+    private static (Dictionary<uint, ItemStat>, Dictionary<(ushort, byte), uint>) BuildMateria()
     {
-        var result = new Dictionary<uint, ItemStat>();
+        var byItem = new Dictionary<uint, ItemStat>();
+        var byRow = new Dictionary<(ushort, byte), uint>();
 
         foreach (var row in Services.Data.GetExcelSheet<Materia>())
         {
@@ -188,11 +216,12 @@ public sealed class ItemCatalog
                 if (itemId == 0 || row.Value[grade] == 0)
                     continue;
 
-                result[itemId] = new ItemStat(stat, row.Value[grade]);
+                byItem[itemId] = new ItemStat(stat, row.Value[grade]);
+                byRow[((ushort)row.RowId, (byte)grade)] = itemId;
             }
         }
 
-        return result;
+        return (byItem, byRow);
     }
 
     /// <summary>

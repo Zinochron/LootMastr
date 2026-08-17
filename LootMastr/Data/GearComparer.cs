@@ -57,10 +57,12 @@ public sealed class GearComparer
         var job = jobs.Get(member.MeasuredJobId);
         var profile = profiles.For(member.MeasuredJobId);
 
-        var worn = member.NeedFor(slot).EquippedItemId;
-        var wornStats = worn != 0 && items.TryGetStats(worn, out var found) ? StatsOf(found) : [];
-
-        var changes = GearDelta.Between(wornStats, StatsOf(candidate));
+        // Both sides carry their melds. The measured totals this starts from already contain what is
+        // melded now, so a swap has to take those out again and put the new piece's in — otherwise a
+        // crafted piece holding five materia traded for a raid piece holding two reads as a clean
+        // upgrade whether or not it is one.
+        var changes = GearDelta.Between(WornStats(member, slot),
+                                        Melded(candidate, MeldsForCandidate(member, slot, itemId)));
 
         // A weapon carries damage and delay, which are not stats and do not appear in that list.
         var weaponDamage = slot == GearSlot.Weapon ? candidate.WeaponDamage : 0;
@@ -92,8 +94,8 @@ public sealed class GearComparer
     /// from the other.</item>
     /// </list>
     ///
-    /// It inherits the same stated assumption: melds carry over, so a target set with more meld slots
-    /// than the current one is worth a little more than this says.
+    /// Both sides carry their own melds, so a target set with more meld slots than the current one is
+    /// counted properly rather than assumed away.
     /// </summary>
     public GearGain? TargetGain(RosterMember member)
     {
@@ -116,11 +118,9 @@ public sealed class GearComparer
             if (!items.TryGetStats(need.BisItemId, out var target))
                 continue;
 
-            var worn = need.EquippedItemId != 0 && items.TryGetStats(need.EquippedItemId, out var found)
-                           ? StatsOf(found)
-                           : [];
+            var worn = WornStats(member, slot);
 
-            after = GearDelta.Apply(after, job.PrimaryStat, GearDelta.Between(worn, StatsOf(target)),
+            after = GearDelta.Apply(after, job.PrimaryStat, GearDelta.Between(worn, TargetStats(member, slot, target)),
                                     slot == GearSlot.Weapon ? target.WeaponDamage : 0,
                                     slot == GearSlot.Weapon ? target.DelayMs : 0);
 
@@ -149,6 +149,52 @@ public sealed class GearComparer
                    : Gain(member, slot, need.BisItemId);
     }
 
+    /// <summary>What is worn in a slot, with whatever is melded into it. Empty when nothing is.</summary>
+    private List<StatChange> WornStats(RosterMember member, GearSlot slot)
+    {
+        var need = member.NeedFor(slot);
+
+        if (need.EquippedItemId == 0 || !items.TryGetStats(need.EquippedItemId, out var worn))
+            return [];
+
+        // Only when the melds were actually read. A roster stored before they were reads as "no
+        // melds", and counting a target set's materia against nothing overstates every upgrade —
+        // so in that case neither side carries any and the comparison falls back to assuming they
+        // carry over, which is what it did before.
+        return Melded(worn, member.MeldsKnown ? need.EquippedMateria : []);
+    }
+
+    /// <summary>The target piece for a slot, with the melds the imported set puts in it.</summary>
+    private List<StatChange> TargetStats(RosterMember member, GearSlot slot, ItemStats target) =>
+        Melded(target, member.MeldsKnown ? member.NeedFor(slot).BisMateria : []);
+
+    /// <summary>
+    /// The melds to assume on a candidate piece.
+    ///
+    /// When the candidate <i>is</i> the target for that slot, the imported set says what goes in it
+    /// and that is exact. For anything else there is nothing to go on, so it carries none and the
+    /// comparison is conservative in the same direction as before.
+    /// </summary>
+    private static IReadOnlyList<uint> MeldsForCandidate(RosterMember member, GearSlot slot, uint itemId)
+    {
+        var need = member.NeedFor(slot);
+        return member.MeldsKnown && need.BisItemId == itemId ? need.BisMateria : [];
+    }
+
+    /// <summary>An item's stats plus its melds, as one list of changes.</summary>
+    private List<StatChange> Melded(ItemStats stats, IReadOnlyList<uint> melds)
+    {
+        var effects = new List<StatChange>(melds.Count);
+
+        foreach (var materia in melds)
+        {
+            if (items.TryGetMateria(materia, out var effect))
+                effects.Add(new StatChange(effect.BaseParam, effect.Value));
+        }
+
+        return GearDelta.Plus(StatsOf(stats), effects);
+    }
+
     /// <summary>
     /// An item's stats as changes.
     ///
@@ -167,16 +213,11 @@ public sealed class GearComparer
         if (!stats.CanBeHq)
             return result;
 
+        var bonuses = new List<StatChange>(stats.HqParams.Count);
+
         foreach (var bonus in stats.HqParams)
-        {
-            var index = result.FindIndex(s => s.BaseParam == bonus.BaseParam);
+            bonuses.Add(new StatChange(bonus.BaseParam, bonus.Value));
 
-            if (index >= 0)
-                result[index] = new StatChange(bonus.BaseParam, result[index].Delta + bonus.Value);
-            else
-                result.Add(new StatChange(bonus.BaseParam, bonus.Value));
-        }
-
-        return result;
+        return GearDelta.Plus(result, bonuses);
     }
 }

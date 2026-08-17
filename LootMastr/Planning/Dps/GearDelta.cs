@@ -28,14 +28,11 @@ public readonly record struct GearGain(DamageEstimate Before, DamageEstimate Aft
 /// <summary>
 /// Moves a set from one piece of gear to another.
 ///
-/// <b>Only the items' own stats change hands.</b> Materia is left out of the difference entirely,
-/// and that is a decision rather than an omission: the current set's melds are already inside the
-/// measured totals this starts from, and what would be melded into a piece nobody owns yet is not
-/// knowable. Leaving them out is exactly the assumption that the melds carry over, which is the
-/// closest thing to true and errs low on a new piece with more meld slots than the old one.
-///
-/// The UI says so. An estimate whose one assumption is written on the screen is a different thing
-/// from one that has quietly made it.
+/// Both pieces arrive with their melds already folded into their stat lists, which is what makes the
+/// arithmetic exact rather than approximate. The measured totals a comparison starts from contain
+/// whatever is melded <i>now</i>, so a swap has to take those out again and put the new piece's in.
+/// Nothing here needs to know that — it is the caller's job to hand over complete pieces — but it is
+/// why the caller does.
 /// </summary>
 public static class GearDelta
 {
@@ -52,6 +49,37 @@ public static class GearDelta
         }
 
         return weaponDamage > 0 ? result.WithWeapon(weaponDamage, weaponDelayMs) : result;
+    }
+
+    /// <summary>
+    /// One stat list with another added on top of it — a piece plus its melds, or plus its high
+    /// quality bonus.
+    ///
+    /// Adding rather than replacing, and that is the whole point: a critical hit materia in a piece
+    /// that already has critical hit has to land on the same entry, or <see cref="Between"/> sees two
+    /// entries for one stat and counts whichever it meets first.
+    ///
+    /// <b>Assumes no stat is melded past the item's cap.</b> The game reduces a materia that would
+    /// overshoot, and the cap is not in any sheet column this plugin reads. A set built in a gear
+    /// planner never overshoots, so for a target set this is exact; for a set somebody melded by hand
+    /// it can read a point or two high.
+    /// </summary>
+    public static List<StatChange> Plus(IReadOnlyList<StatChange> stats, IReadOnlyList<StatChange> extra)
+    {
+        var result = new List<StatChange>(stats.Count + extra.Count);
+        result.AddRange(stats);
+
+        foreach (var stat in extra)
+        {
+            var index = result.FindIndex(s => s.BaseParam == stat.BaseParam);
+
+            if (index >= 0)
+                result[index] = new StatChange(stat.BaseParam, result[index].Delta + stat.Delta);
+            else
+                result.Add(stat);
+        }
+
+        return result;
     }
 
     /// <summary>

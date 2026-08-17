@@ -285,7 +285,7 @@ public sealed class GearScanner : IDisposable
                 // nothing does for you. Passing 0 here is what put "i0" on your own sheet.
                 var gear = equipment.ReadLocal();
 
-                Apply(member, gear, equipment.AverageItemLevel(gear),
+                Apply(member, gear, equipment.ReadLocalMelds(), equipment.AverageItemLevel(gear),
                       attributes.TryReadLocal(out var measured) ? measured : null);
 
                 scanned++;
@@ -345,7 +345,9 @@ public sealed class GearScanner : IDisposable
                 if (member != null)
                 {
                     // Read while the window is up: these totals do not exist once it closes.
-                    Apply(member, gear, equipment.InspectedItemLevel(),
+                    // Both of these only exist while the window is up. The melds come out of the
+                    // examine inventory container rather than the agent, which carries none.
+                    Apply(member, gear, equipment.ReadInspectedMelds(), equipment.InspectedItemLevel(),
                           attributes.TryReadInspected(out var measured) ? measured : null);
 
                     scanned++;
@@ -387,7 +389,8 @@ public sealed class GearScanner : IDisposable
     /// Writes one character's equipment onto their roster row. Slots the scan did not see are
     /// cleared, so taking a piece off shows up; the obtained flags are only ever turned on.
     /// </summary>
-    private void Apply(RosterMember member, IReadOnlyDictionary<GearSlot, uint> gear, int itemLevel,
+    private void Apply(RosterMember member, IReadOnlyDictionary<GearSlot, uint> gear,
+                       IReadOnlyDictionary<GearSlot, List<uint>> melds, int itemLevel,
                        MeasuredStats? measured)
     {
         foreach (var slot in Slots.All)
@@ -398,12 +401,19 @@ public sealed class GearScanner : IDisposable
             {
                 need.EquippedItemId = 0;
                 need.EquippedSource = GearSource.None;
+                need.EquippedMateria = [];
                 continue;
             }
 
             need.EquippedItemId = itemId;
             need.EquippedSource = classifier.Classify(itemId);
+            need.EquippedMateria = melds.TryGetValue(slot, out var melded) ? [..melded] : [];
         }
+
+        // A container that did not load reads as "no melds anywhere", which is indistinguishable from
+        // a set with none. Recording which it was keeps the comparison from counting a target set's
+        // materia against nothing and overstating every upgrade.
+        member.MeldsKnown = melds.Count > 0;
 
         // Before anything is compared, not after. The game reports the ring pair in its own order and
         // a gear planner in whichever the set was built in, so a player wearing both target rings the
