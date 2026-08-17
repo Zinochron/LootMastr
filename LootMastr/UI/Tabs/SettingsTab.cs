@@ -121,7 +121,12 @@ public sealed class SettingsTab : ITab
 
         var spread = (float)rules.Spread;
 
-        ImGui.SetNextItemWidth(-1f);
+        // Half the window rather than all of it: a slider only has to be long enough to aim with,
+        // and the two labels under it have to stay attached to its ends to mean anything.
+        var left = ImGui.GetCursorPosX();
+        var width = System.Math.Max(220f * ImGuiHelpers.GlobalScale, ImGui.GetContentRegionAvail().X * 0.5f);
+
+        ImGui.SetNextItemWidth(width);
         if (ImGui.SliderFloat("##spread", ref spread, 0f, 1f, "%.2f"))
         {
             rules.Spread = spread;
@@ -132,8 +137,10 @@ public sealed class SettingsTab : ITab
         ImGui.TextDisabled("Full priority loot");
         ImGui.SameLine();
 
-        var right = ImGui.CalcTextSize("Broad loot distribution").X;
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - right);
+        var rightEdge = left + width - ImGui.CalcTextSize("Broad loot distribution").X;
+        if (rightEdge > ImGui.GetCursorPosX())
+            ImGui.SetCursorPosX(rightEdge);
+
         ImGui.TextDisabled("Broad loot distribution");
 
         Widgets.Coloured(Widgets.Muted, spread switch
