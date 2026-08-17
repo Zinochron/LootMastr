@@ -397,10 +397,21 @@ settings and nothing else:
 | `UsePlayerOrder` | Whether the roster's own order counts inside a role. |
 | `Spread` (0…1) | How much of the loot to share out. 0 funnels it to the top of the order; 1 gives every drop to whoever is furthest behind. |
 
-The arithmetic is two positions in the same units. Each candidate has a place in the declared order
-(role, then roster) and a place by neediness (fewest won, then most left), and `Spread` mixes them:
-`(1 − spread) × queue + spread × need`. Role is applied above that as a gate rather than as a term,
-so sliding all the way to "share it out" shares within a role rather than handing a piece past one.
+The arithmetic mixes a **place** against a **quantity**, on one scale: `(1 − spread) × position +
+spread × served`, where position is the candidate's place in the declared order and served is how
+many items they have already won. **One item won counts as one place.** Role is applied above that as
+a gate rather than as a term, so sliding all the way to "share it out" shares within a role rather
+than handing a piece past one.
+
+That calibration is the whole of the slider's feel, and getting it wrong made the slider useless.
+The first version mixed two *ranks* — position in the declared order against position on a sorted
+neediness list. With two candidates both axes are {0, 1}, so the scores are always `s` against
+`1 − s` and the order flips at exactly 0.5 no matter how far apart the two are. It was reported as
+"the slider behaves like a switch", and it was. Normalising the ranks would not have helped: the
+extremes are 0 and 1 by construction either way. Only an absolute quantity moves the tipping point.
+Now someone at the top of the order who has won three items is passed at 0.25, one who has won a
+single item at 0.50, and one who has won nothing is never passed at all. Open needs break ties
+inside a single item and can never outweigh one.
 
 **This replaced five weights feeding a simulation, and the reason was not accuracy.** The old model
 ranked candidates by running a full simulation *per candidate* and comparing finish weeks. It gave

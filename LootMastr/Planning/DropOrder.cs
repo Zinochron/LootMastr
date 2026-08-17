@@ -59,15 +59,14 @@ public static class DropOrder
                      .ToList();
 
         var share = Math.Clamp(rules.Spread, 0d, 1d);
+        var mostOpen = candidates.Max(c => c.OpenNeeds);
 
         var placings = candidates.Select(c =>
         {
             var q = queue.IndexOf(c.Key);
             var s = spread.IndexOf(c.Key);
 
-            // Two positions in the same units, mixed by the one slider. At 0 the top of the order
-            // takes everything it can use; at 1 the drop goes to whoever is furthest behind.
-            return new Placing(c, q, s, ((1 - share) * q) + (share * s));
+            return new Placing(c, q, s, ((1 - share) * q) + (share * Served(c, mostOpen)));
         }).ToList();
 
         // Role, when it is on, is a gate rather than a term: a healer waits while a tank still wants
@@ -80,6 +79,27 @@ public static class DropOrder
                .ThenBy(p => p.Who.Order)
                .ThenBy(p => p.Who.Key, StringComparer.Ordinal)
                .ToList();
+    }
+
+    /// <summary>
+    /// How well served a candidate already is, on an absolute scale: **one item already won counts
+    /// as one place in the order**. That calibration is the whole of the slider's behaviour.
+    ///
+    /// It used to be a position on a sorted list, and that made the slider binary. Both axes were
+    /// ranks, so with two candidates the scores were always <c>s</c> against <c>1 − s</c> and the
+    /// order flipped at exactly 0.5 — however far apart the two actually were. Normalising the ranks
+    /// would not have helped; the extremes are 0 and 1 by construction either way. Only an absolute
+    /// quantity moves the tipping point: someone first in the order who has already won three items
+    /// is passed at a spread of 0.25, someone who has won one is passed at 0.5, and someone who has
+    /// won nothing is never passed at all.
+    ///
+    /// Open needs break ties inside a whole item — a player level with another on items won, but
+    /// with more still to get, is the needier of the two, and never by enough to outweigh a win.
+    /// </summary>
+    private static double Served(Contender candidate, int mostOpen)
+    {
+        var tiebreak = mostOpen <= 0 ? 0d : (double)candidate.OpenNeeds / (mostOpen + 1);
+        return candidate.ItemsReceived - tiebreak;
     }
 
     /// <summary>

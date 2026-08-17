@@ -684,6 +684,44 @@ var rules = new PriorityRules();
           Won(new PriorityRules { Spread = 1.0, UseRoleOrder = false }, healer, dps) == "Healer");
 }
 
+// --- the slider moves with the distance, not just past the middle --------------------------------
+
+{
+    // It used to mix two rank positions, so with two candidates the scores were s against 1 - s and
+    // the order flipped at exactly 0.5 however far apart the two were. One item already won now
+    // counts as one place in the order, so the tipping point sits where the difference is.
+    static string Won(double spread, params Contender[] candidates) =>
+        DropOrder.Rank(new PriorityRules { Spread = spread }, candidates)[0].Who.Key;
+
+    // First in the order, three items in hand, against someone with nothing: passed at a quarter.
+    var hoarding = new Contender("Hoarding", RaidRole.Dps, 0, 3, 2);
+    var empty = new Contender("Empty", RaidRole.Dps, 1, 0, 2);
+
+    Check("three items ahead is passed well before the middle",
+          Won(0.2, hoarding, empty) == "Hoarding" && Won(0.3, hoarding, empty) == "Empty",
+          $"0.2 -> {Won(0.2, hoarding, empty)}, 0.3 -> {Won(0.3, hoarding, empty)}");
+
+    // One item ahead: the old behaviour, and the calibration this is anchored on.
+    var slightly = new Contender("Slightly", RaidRole.Dps, 0, 1, 2);
+
+    Check("one item ahead still turns over at the middle",
+          Won(0.45, slightly, empty) == "Slightly" && Won(0.55, slightly, empty) == "Empty",
+          $"0.45 -> {Won(0.45, slightly, empty)}, 0.55 -> {Won(0.55, slightly, empty)}");
+
+    // Level on items won: the top of the order keeps it wherever the slider sits, because there is
+    // no reason to pass over somebody who has had no more than anyone else.
+    var level = new Contender("Level", RaidRole.Dps, 0, 0, 2);
+
+    Check("nobody is passed over for someone no needier", Won(1.0, level, empty) == "Level");
+
+    // And with three, the same: the gap decides, not the midpoint.
+    var third = new Contender("Third", RaidRole.Dps, 2, 0, 2);
+
+    Check("with three candidates the same distance rule holds",
+          Won(0.3, hoarding, empty, third) == "Empty" && Won(0.1, hoarding, empty, third) == "Hoarding",
+          $"0.1 -> {Won(0.1, hoarding, empty, third)}, 0.3 -> {Won(0.3, hoarding, empty, third)}");
+}
+
 {
     // Funnelling means one player's whole list, not one lucky coffer.
     var first = Member("First", (GearSlot.Body, GearSource.Raid), (GearSlot.Legs, GearSource.Raid));

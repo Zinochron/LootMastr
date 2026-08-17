@@ -107,29 +107,42 @@ public sealed class SettingsTab : ITab
     {
         var rules = config.Rules;
 
+        ImGui.TextUnformatted("Share the loot out");
+        Widgets.HelpMarker("Left: the top of the order takes everything it can use — one player " +
+                           "geared as fast as the raid allows.\n\n" +
+                           "Right: every drop goes to whoever is furthest behind, wherever they sit " +
+                           "in the list.\n\n" +
+                           "In between the two are mixed on one scale: an item already won counts as " +
+                           "one place in the order. So a player at the top who has won three pieces " +
+                           "is passed at 0.25, one who has won a single piece at 0.50, and one who " +
+                           "has won nothing is never passed at all.\n\n" +
+                           "The role order above is a gate on top of this, so sharing the loot out " +
+                           "shares it within a role rather than handing it past one.");
+
         var spread = (float)rules.Spread;
-        if (ImGui.SliderFloat("Share the loot out", ref spread, 0f, 1f, "%.2f"))
+
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat("##spread", ref spread, 0f, 1f, "%.2f"))
         {
             rules.Spread = spread;
             config.Save();
         }
 
-        Widgets.HelpMarker("Left: the top of the order takes everything it can use — one player " +
-                           "geared as fast as the raid allows.\n\n" +
-                           "Right: every drop goes to whoever is furthest behind, wherever they sit " +
-                           "in the list.\n\n" +
-                           "In between, the two are mixed: someone near the top wins unless a player " +
-                           "below them is a long way further back.\n\n" +
-                           "The role order above is a gate on top of this, so sharing the loot out " +
-                           "shares it within a role rather than handing it past one.");
+        // Both ends named, because "0.35" says nothing at all about which way it leans.
+        ImGui.TextDisabled("Full priority loot");
+        ImGui.SameLine();
+
+        var right = ImGui.CalcTextSize("Broad loot distribution").X;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - right);
+        ImGui.TextDisabled("Broad loot distribution");
 
         Widgets.Coloured(Widgets.Muted, spread switch
         {
             <= 0.05f => "Everything to the top of the order.",
-            <= 0.35f => "Mostly to the top of the order.",
-            < 0.65f => "Position and need, evenly weighed.",
-            < 0.95f => "Mostly to whoever is furthest behind.",
-            _ => "Always to whoever is furthest behind.",
+            <= 0.35f => "The top of the order, unless someone below has won a good deal more.",
+            < 0.65f => "Position and what people have already won, evenly weighed.",
+            < 0.95f => "Mostly to whoever has won least.",
+            _ => "Always to whoever has won least.",
         });
     }
 
