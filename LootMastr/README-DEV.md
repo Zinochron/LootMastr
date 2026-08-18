@@ -1053,6 +1053,22 @@ Switching statics invalidates nothing by hand: `RosterStore.Signature()` counts
 already notices a ticked box. `TierCatalog` remembers *which static* it resolved for rather than
 whether it resolved at all — same trick, no event to wire up and eventually forget.
 
+#### One json name, one member — or the plugin does not start
+
+Newtonsoft refuses to build a contract when two members of a class claim the same json name, and it
+refuses **at load**. So the plugin does not start, shows no window, and logs nothing of its own to
+point at; the only symptom is absence.
+
+This has come up twice. The forwarders avoid it by being `[JsonIgnore]`. `ShowOnlyNextRecipient` did
+not: it moved out of `StaticSettings` into `Configuration` and kept its name, which was already taken
+by the legacy field reading version 1 configs. Neither member was wrong on its own. It writes as
+`WinnerOnly` now.
+
+**The rule: nothing may serialise under a name in the version 1 block.** That block is above the
+list, and a checker over the config classes is the only thing that catches this without a game —
+which is what found it, on the second attempt, after the first version of the checker skipped
+exactly the members it existed for, because their attribute sits on the same line as the property.
+
 #### The migration
 
 Version 1 stored one implicit static flat. The fold into version 2 is the first real migration in

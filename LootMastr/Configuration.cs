@@ -46,6 +46,7 @@ public class Configuration : IPluginConfiguration
     /// The distinction is the same one <c>RosterStore</c> already draws between <c>Active</c> and
     /// <c>Visible</c> — a rule about loot, versus a preference about a screen.
     /// </summary>
+    [JsonProperty("WinnerOnly")]
     public bool ShowOnlyNextRecipient { get; set; }
 
     /// <summary>Show second characters in the roster list. Purely a view; changes no distribution.</summary>
@@ -209,6 +210,12 @@ public class Configuration : IPluginConfiguration
     //
     // Under the json names the old file used, so Newtonsoft still fills them in; the forwarders
     // above carry the C# names. Two members, one json name, and only one of them serialises.
+    //
+    // **No property above may serialise under one of the names below.** Newtonsoft refuses to build
+    // a contract with two members claiming one name, and it refuses at load — so the plugin does not
+    // start, shows no window, and logs nothing of its own to point at. That is how ShowOnlyNextRecipient
+    // broke it when it moved out of the static and kept its name: the property was new, the legacy
+    // field was old, and neither was wrong on its own. It writes as "WinnerOnly" now.
     //
     // Kept rather than deleted because deleting them is what makes a migration unrepeatable: an
     // install that skips a version, or a config restored from a backup, still lands here.

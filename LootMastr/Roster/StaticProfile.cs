@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LootMastr.Data;
 using LootMastr.Planning;
+using Newtonsoft.Json;
 
 namespace LootMastr.Roster;
 
@@ -117,6 +118,10 @@ public sealed class SyncSetup
 
     public DateTime? LastSyncUtc { get; set; }
 
+    // Derived, all three, and kept out of the file. They are read-only so nothing could load them
+    // back in — but written next to a token they read like permissions, and a config file that
+    // appears to grant admin is a config file somebody will eventually try to edit.
+    [JsonIgnore]
     public bool IsClaimed => Enabled && !string.IsNullOrEmpty(Token);
 
     /// <summary>
@@ -126,8 +131,10 @@ public sealed class SyncSetup
     /// nobody to take turns with. Only once a server is involved and it has said <c>read</c> does
     /// this go false, because only then is there somebody whose work would be overwritten.
     /// </summary>
+    [JsonIgnore]
     public bool CanWrite => !IsClaimed || Role != StaticRole.Read;
 
+    [JsonIgnore]
     public bool IsAdmin => IsClaimed && Role == StaticRole.Admin;
 }
 
