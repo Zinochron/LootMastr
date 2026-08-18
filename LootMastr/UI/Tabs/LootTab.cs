@@ -90,7 +90,7 @@ public sealed class LootTab : ITab
         var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
         if (encounters.Count == 0)
         {
-            Widgets.Coloured(Widgets.Muted, "No fights defined — see the Tier tab.");
+            Widgets.Coloured(Widgets.Muted, "No fights defined — open the tier from the header.");
             return;
         }
 

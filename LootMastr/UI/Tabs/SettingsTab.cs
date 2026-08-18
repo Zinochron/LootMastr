@@ -415,7 +415,7 @@ public sealed class SettingsTab : ITab
 
         if (!enabled)
         {
-            Widgets.Coloured(Widgets.Muted, "Mark a player as an alt on the Roster tab.");
+            Widgets.Coloured(Widgets.Muted, "Mark a player as an alt in Manage statics.");
             return;
         }
 

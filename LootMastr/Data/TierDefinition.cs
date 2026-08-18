@@ -365,7 +365,7 @@ public sealed class TierDefinition
         }
     }
 
-    /// <summary>Problems worth showing in the tier tab. Empty means everything resolved.</summary>
+    /// <summary>Problems worth showing in the tier window. Empty means everything resolved.</summary>
     public IEnumerable<string> Problems()
     {
         foreach (var encounter in Encounters.OrderBy(e => e.Index))

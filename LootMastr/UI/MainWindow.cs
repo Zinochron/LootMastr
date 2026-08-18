@@ -17,17 +17,20 @@ public sealed class MainWindow : Window, IDisposable
     private readonly StaticStore statics;
     private readonly TierCatalog tiers;
     private readonly Action openStatics;
+    private readonly Action openTiers;
 
     /// <summary>Set to have the next draw jump to a specific tab, e.g. when opened via the config button.</summary>
     private string? pendingTabId;
 
-    public MainWindow(IEnumerable<ITab> tabs, StaticStore statics, TierCatalog tiers, Action openStatics)
+    public MainWindow(IEnumerable<ITab> tabs, StaticStore statics, TierCatalog tiers,
+                      Action openStatics, Action openTiers)
         : base($"LootMastr {Build.Version}###LootMastrMain")
     {
         this.tabs = new List<ITab>(tabs);
         this.statics = statics;
         this.tiers = tiers;
         this.openStatics = openStatics;
+        this.openTiers = openTiers;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -147,16 +150,16 @@ public sealed class MainWindow : Window, IDisposable
                 ImGui.Separator();
 
                 if (ImGui.Selectable("Edit this tier…"))
-                    pendingTabId = "tier";
+                    openTiers();
             }
         }
 
         ImGui.SameLine(0f, 4f);
 
         if (ImGui.SmallButton("...##editTier"))
-            pendingTabId = "tier";
+            openTiers();
 
-        Widgets.Tooltip("Open the tier tab.");
+        Widgets.Tooltip("What this tier drops, what its books buy, and what the vendor charges.");
 
         ImGui.SameLine(0f, 16f);
         DrawSyncButton(profile);

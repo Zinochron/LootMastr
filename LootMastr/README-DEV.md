@@ -1073,15 +1073,22 @@ this plugin's history and the only change that cannot be undone by putting a set
   file said false". Without that, an install predating `AutoReadGearOnEnter` would have had it
   switched off by the upgrade.
 
-### Two windows, and one line above the tabs
+### Three windows, and one line above the tabs
 
-Managing statics is a **second window**, not a seventh tab. The tabs are what a raid leader has open
+Managing statics and editing a tier are **windows**, not tabs. The tabs are what a raid leader has open
 during a pull; adding a player, marking a second character and handing out write access are none of
 them things that happen then, and all of them want room the tab bar does not have.
 
 Everything in that window edits the **current** static. Picking a different one in the list switches
 to it, which is one click and removes a whole second code path — no editor ever works on a roster
 that is not the one the rest of the plugin is showing.
+
+The tier moved for the same reason the statics did, plus one of its own: it is touched once when a
+tier opens and after that only when something in it turns out to be wrong, and while it is open it
+wants the whole screen. Four item levels, four fights, three materials, a price table and the
+discovered exchange were never going to share a tab bar with the loot list.
+
+What is left in the main window is what a raid night uses: loot, roster, plan, settings, debug.
 
 The header above the tab bar names the static and the tier, because it is true of every tab at once
 and because getting it wrong is expensive in a way nothing else in that window is: ticking a piece
@@ -1099,6 +1106,7 @@ failure.
 | Main/alt button | Manage statics | It decides who is in the plan, like adding and removing. |
 | Remove player | Manage statics | Same. |
 | Read gear, re-file imports | Roster tab | These *are* raid-night actions. |
+| The whole tier editor | Its own window | Setup, and it wants the width. |
 | Show alts | Roster tab | A preference about the view, not a rule about loot. |
 
 That last row is the distinction worth keeping straight. `RosterStore.Active` answers "who is in the

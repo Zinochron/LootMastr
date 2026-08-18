@@ -1,36 +1,56 @@
 using System;
 using System.Linq;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Dalamud.Interface.Windowing;
 using LootMastr.Data;
 
-namespace LootMastr.UI.Tabs;
+namespace LootMastr.UI;
 
 /// <summary>
 /// What the tier drops and what its books buy. Everything here is editable, because a tier
 /// definition written before a patch lands should be fixable in game rather than in a rebuild.
+///
+/// Its own window, for the same reason managing statics is: this is setup, not a raid night. It is
+/// touched once when a tier opens and then only when something in it turns out to be wrong, and
+/// while it is open it wants the whole screen — four item levels, four fights, three materials, a
+/// price table and the discovered exchange do not want to share a tab bar with the loot list.
 /// </summary>
-public sealed class TierTab : ITab
+public sealed class TiersWindow : Window, IDisposable
 {
     private readonly Configuration config;
     private readonly TierCatalog tiers;
     private readonly ItemCatalog items;
 
-    public TierTab(Configuration config, TierCatalog tiers, ItemCatalog items)
+    public TiersWindow(Configuration config, TierCatalog tiers, ItemCatalog items)
+        : base("LootMastr — tier###LootMastrTier")
     {
         this.config = config;
         this.tiers = tiers;
         this.items = items;
-    }
 
-    public string Title => "Tier";
-    public string Id => "tier";
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(620, 420),
+            MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
+        };
+
+        Size = new Vector2(900, 640);
+        SizeCondition = ImGuiCond.FirstUseEver;
+    }
 
     /// <summary>Shared by every item picker; only one popup is ever open at a time.</summary>
     private string query = string.Empty;
 
-    public void Draw()
+    public void Open()
+    {
+        IsOpen = true;
+        BringToFront();
+    }
+
+    public override void Draw()
     {
         DrawToolbar();
         DrawProblems();
@@ -790,5 +810,7 @@ public sealed class TierTab : ITab
         _ => "accessory upgrade",
     };
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }
