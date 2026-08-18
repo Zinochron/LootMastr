@@ -37,6 +37,7 @@ public sealed class StaticsWindow : Window, IDisposable
     private string newWorld = string.Empty;
     private string renameBuffer = string.Empty;
     private string renaming = string.Empty;
+    private bool renameFresh;
 
     // Sync form. The password is a field on this window and nowhere else: it goes to the server
     // once, is cleared the moment it has been sent, and is never written to the config.
@@ -385,14 +386,26 @@ public sealed class StaticsWindow : Window, IDisposable
         {
             ImGui.SetNextItemWidth(-1f);
 
-            if (ImGui.InputText("##rename", ref renameBuffer, 48, ImGuiInputTextFlags.EnterReturnsTrue))
+            // The field has to be given the keyboard, and not until the frame after it exists.
+            // Without this it is drawn unfocused, the check below sees an inactive field on the very
+            // frame it appeared, and the rename cancels itself before anybody can type — which is
+            // exactly what it looked like: an edit box that flashed and vanished.
+            if (renameFresh)
+            {
+                ImGui.SetKeyboardFocusHere();
+                renameFresh = false;
+            }
+
+            ImGui.InputText("##rename", ref renameBuffer, 48, ImGuiInputTextFlags.EnterReturnsTrue);
+
+            // Committed however the field is left — Enter, Escape or a click elsewhere. Throwing a
+            // rename away because the mouse moved is worse than keeping one somebody was still
+            // typing, and Escape restores the original text anyway, so that case renames nothing.
+            if (ImGui.IsItemDeactivated())
             {
                 statics.Rename(profile, renameBuffer);
                 renaming = string.Empty;
             }
-
-            if (!ImGui.IsItemActive() && !ImGui.IsItemFocused())
-                renaming = string.Empty;
         }
         else
         {
@@ -440,6 +453,7 @@ public sealed class StaticsWindow : Window, IDisposable
         {
             renaming = profile.Id;
             renameBuffer = profile.Name;
+            renameFresh = true;
         }
 
         ImGui.SameLine(0f, 4f);
