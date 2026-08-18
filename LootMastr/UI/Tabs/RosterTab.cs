@@ -695,35 +695,46 @@ public sealed class RosterTab : ITab
     }
 
     /// <summary>
-    /// Whether this is a second character, and the only place it can be said.
+    /// Main or alt, as a button that says which it currently is.
     ///
-    /// A word rather than a checkbox column: it is true of one or two rows in a roster of eight, and
-    /// a column of empty boxes would cost every row width to say nothing. Ctrl+click to change,
-    /// which is the same weight the plugin already puts on removing somebody — this decides whether
-    /// they are in the plan at all.
+    /// It reads <c>main</c> for everybody until somebody presses it, which is the only honest
+    /// default — a second character is a thing a person decides, never something a plugin infers
+    /// from a name or a job.
+    ///
+    /// A plain click, no modifier. The earlier version needed Ctrl on the grounds that this decides
+    /// whether a player is in the plan at all, and that was the wrong lesson to take from the remove
+    /// button: an invisible gesture is not a safe one, it is a gesture nobody finds. Marking an alt
+    /// is also trivially reversible, which removing a player is not.
     /// </summary>
     private void DrawAltMark(RosterMember member)
     {
+        // Off and not one already: nothing to say, and no button on eight rows for a feature the
+        // group is not using.
         if (!config.AltCharacters && !member.IsAlt)
             return;
 
         ImGui.SameLine();
 
         var hidden = member.IsAlt && !config.AltCharacters;
+        var colour = !member.IsAlt ? Widgets.Muted : hidden ? Widgets.Muted : Widgets.Augment;
 
-        Widgets.Coloured(hidden ? Widgets.Muted : Widgets.Augment, "alt");
-
-        if (ImGui.IsItemClicked() && ImGui.GetIO().KeyCtrl)
+        using (ImRaii.PushColor(ImGuiCol.Text, colour))
         {
-            member.IsAlt = !member.IsAlt;
-            config.Save();
+            if (ImGui.SmallButton($"{(member.IsAlt ? "alt" : "main")}##alt"))
+            {
+                member.IsAlt = !member.IsAlt;
+                config.Save();
+            }
         }
 
-        Widgets.Tooltip(hidden
-                            ? "A second character, and alt characters are switched off — so this " +
-                              "player is left out of the plan entirely.\n\nCtrl+click to unmark."
-                            : "A second character. Takes nothing but the weapon stone and its " +
-                              "material.\n\nCtrl+click to unmark.");
+        Widgets.Tooltip(!member.IsAlt
+                            ? "A main character — in the plan, and in the running for everything.\n\n" +
+                              "Press to make this a second character."
+                            : hidden
+                                ? "A second character, and alt characters are switched off — so this " +
+                                  "player is left out of the plan entirely.\n\nPress to make them a main."
+                                : "A second character. Takes nothing but the weapon stone and its " +
+                                  "material.\n\nPress to make them a main.");
     }
 
     private void DrawPlayerCell(RosterMember member)
@@ -732,24 +743,11 @@ public sealed class RosterTab : ITab
 
         Widgets.Icon(job.IconId, 18f);
 
-        var marking = config.AltCharacters && !member.IsAlt && ImGui.GetIO().KeyCtrl;
-
-        // Ctrl is the modifier for the alt mark, so a held Ctrl must not also open the job picker —
-        // one click, one thing.
-        if (ImGui.IsItemClicked() && !marking)
+        if (ImGui.IsItemClicked())
             ImGui.OpenPopup("##job");
 
         var role = roster.RoleOf(member);
-        Widgets.Tooltip($"{job.Name} ({role})\n\nClick to change job." +
-                        (config.AltCharacters && !member.IsAlt
-                             ? "\nCtrl+click to mark as a second character."
-                             : string.Empty));
-
-        if (marking && ImGui.IsItemClicked())
-        {
-            member.IsAlt = true;
-            config.Save();
-        }
+        Widgets.Tooltip($"{job.Name} ({role})\n\nClick to change job.");
 
         DrawJobPicker(member);
 

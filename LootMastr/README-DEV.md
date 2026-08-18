@@ -1013,6 +1013,13 @@ The two filters compose in one order and it matters: **alts leave the field firs
 gate narrows what is left.** A material an alt could use is never a reason to take it off a main who
 cannot use it yet.
 
+Marking one is a **button** on the roster row that says which the player currently is — `main` for
+everybody until somebody presses it, because a second character is a thing a person decides and never
+something a plugin infers. It was briefly a Ctrl+click, on the grounds that this decides whether a
+player is in the plan at all; that was the wrong lesson to take from the remove button. An invisible
+gesture is not a safe one, it is a gesture nobody finds — and unlike removing a player, marking an
+alt is undone by pressing the same button again.
+
 `Configuration.AltCharacters` off means *gone* — `RosterStore.Active` drops them, and everything that
 decides or forecasts reads that list. Only the roster editor reads `Members`, because that is the one
 screen where a hidden player has to stay visible or they could never be brought back.
