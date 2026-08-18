@@ -174,6 +174,17 @@ public sealed class RosterStore
     public IReadOnlyList<RosterMember> Active =>
         config.AltCharacters ? config.Roster : config.Roster.Where(m => !m.IsAlt).ToList();
 
+    /// <summary>
+    /// The roster as the roster tab lists it.
+    ///
+    /// Deliberately <b>not</b> <see cref="Active"/>. That one answers "who is in the running for a
+    /// drop" and is a rule; this answers "what do I want to look at" and is a preference. A second
+    /// character switched off is still in the plan's sense hidden either way, but somebody who has
+    /// alts switched on may perfectly well not want six extra rows while reading gear.
+    /// </summary>
+    public IReadOnlyList<RosterMember> Visible =>
+        config.Settings.ShowAlts ? config.Roster : config.Roster.Where(m => !m.IsAlt).ToList();
+
     /// <summary>Roster order, but damage dealers first — the order suggestions are shown in.</summary>
     public IEnumerable<RosterMember> ByPriority() =>
         config.Roster.OrderBy(m => RoleOf(m) == RaidRole.Dps ? 0 : 1)

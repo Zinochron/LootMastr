@@ -19,6 +19,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem windowSystem = new("LootMastr");
     private readonly MainWindow mainWindow;
+    private readonly StaticsWindow staticsWindow;
     private readonly BisImporter importer;
     private readonly SafetyGuard guard;
     private readonly ChatAnnouncer announcer;
@@ -90,19 +91,22 @@ public sealed class Plugin : IDalamudPlugin
         var tabs = new List<ITab>
         {
             new LootTab(Configuration, Assigner, announcer, Roster, Tiers, Planner, clears),
-            new RosterTab(Configuration, Roster, Jobs, Party, importer, Tiers, Scanner, Items, Gear, Planner),
+            new RosterTab(Configuration, Roster, Jobs, importer, Tiers, Scanner, Items, Gear, Planner),
             new PlanTab(Configuration, Roster, Planner, Tiers),
             new TierTab(Configuration, Tiers, Items),
             new DebugTab(Loot, Party, Tiers, tracker, watcher, Items, Jobs),
             new SettingsTab(Configuration, Roster, Planner),
         };
 
-        mainWindow = new MainWindow(tabs);
+        staticsWindow = new StaticsWindow(Configuration, Statics, Roster, Jobs, Party);
+        mainWindow = new MainWindow(tabs, Statics, Tiers, staticsWindow.Open);
+
         windowSystem.AddWindow(mainWindow);
+        windowSystem.AddWindow(staticsWindow);
 
         Services.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open LootMastr. Also: /lootmastr roster, /lootmastr settings.",
+            HelpMessage = "Open LootMastr. Also: /lootmastr roster, /lootmastr statics, /lootmastr settings.",
         });
 
         Services.PluginInterface.UiBuilder.Draw += windowSystem.Draw;
@@ -121,6 +125,11 @@ public sealed class Plugin : IDalamudPlugin
 
             case "roster":
                 mainWindow.OpenAt("roster");
+                break;
+
+            case "statics":
+            case "static":
+                staticsWindow.Open();
                 break;
 
             case "plan":
@@ -161,6 +170,7 @@ public sealed class Plugin : IDalamudPlugin
 
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
+        staticsWindow.Dispose();
         importer.Dispose();
         tracker.Dispose();
         clears.Dispose();

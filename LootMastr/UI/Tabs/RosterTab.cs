@@ -23,7 +23,6 @@ public sealed class RosterTab : ITab
     private readonly Configuration config;
     private readonly RosterStore roster;
     private readonly JobCatalog jobs;
-    private readonly PartyReader party;
     private readonly BisImporter importer;
     private readonly TierCatalog tiers;
     private readonly GearScanner scanner;
@@ -34,19 +33,16 @@ public sealed class RosterTab : ITab
     /// <summary>Whose preview is open, and the plan it was built from. Empty means none.</summary>
     private string previewFor = string.Empty;
 
-    private string newName = string.Empty;
-    private string newWorld = string.Empty;
     private string urlBuffer = string.Empty;
     private string urlBufferFor = string.Empty;
 
-    public RosterTab(Configuration config, RosterStore roster, JobCatalog jobs, PartyReader party,
+    public RosterTab(Configuration config, RosterStore roster, JobCatalog jobs,
                      BisImporter importer, TierCatalog tiers, GearScanner scanner,
                      ItemCatalog items, GearComparer gear, LootPlanner planner)
     {
         this.config = config;
         this.roster = roster;
         this.jobs = jobs;
-        this.party = party;
         this.importer = importer;
         this.tiers = tiers;
         this.scanner = scanner;
@@ -72,7 +68,15 @@ public sealed class RosterTab : ITab
         if (roster.Members.Count == 0)
         {
             Widgets.Coloured(Widgets.Muted,
-                             "No one in the roster yet. Add players by hand, or press \"Sync from party\" while the static is grouped up.");
+                             "Nobody in this static yet. Open \"Manage statics\" from the header to add " +
+                             "players, or to pull in everyone who is in your party.");
+            return;
+        }
+
+        if (roster.Visible.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             "Everybody in this static is a second character. Tick \"Show alts\" to see them.");
             return;
         }
 
@@ -97,7 +101,9 @@ public sealed class RosterTab : ITab
     /// </summary>
     private void DrawPlayerList()
     {
-        if (!ImGui.CollapsingHeader($"Players ({roster.Members.Count})###players"))
+        var visible = roster.Visible;
+
+        if (!ImGui.CollapsingHeader($"Players ({visible.Count})###players"))
             return;
 
         using var table = ImRaii.Table("##rosterList", 4,
@@ -111,9 +117,7 @@ public sealed class RosterTab : ITab
         ImGui.TableSetupColumn("##order", ImGuiTableColumnFlags.WidthFixed, 62f * ImGuiHelpers.GlobalScale);
         ImGui.TableHeadersRow();
 
-        RosterMember? removing = null;
-
-        foreach (var member in roster.Members.ToList())
+        foreach (var member in visible.ToList())
         {
             using var id = ImRaii.PushId(member.Key);
 
@@ -135,15 +139,7 @@ public sealed class RosterTab : ITab
             if (ImGui.SmallButton("v"))
                 roster.Move(member, 1);
 
-            ImGui.SameLine(0f, 2f);
-            if (ImGui.SmallButton("x") && ImGui.GetIO().KeyCtrl)
-                removing = member;
-
-            Widgets.Tooltip("Ctrl+click to remove this player from the roster.");
         }
-
-        if (removing != null)
-            roster.Remove(removing);
     }
 
     /// <summary>One tab per player, because eleven slots × two sides does not fit a shared grid.</summary>
@@ -153,7 +149,7 @@ public sealed class RosterTab : ITab
         if (!tabs.Success)
             return;
 
-        foreach (var member in roster.Members.ToList())
+        foreach (var member in roster.Visible.ToList())
         {
             // Labelled by name, identified by key: renaming a player must not reset their tab.
             using var tab = ImRaii.TabItem($"{member.Name}###sheet{member.Key}");
@@ -519,19 +515,6 @@ public sealed class RosterTab : ITab
 
     private void DrawToolbar()
     {
-        if (ImGui.Button("Sync from party"))
-        {
-            var added = roster.SyncFromParty(party.Read());
-            Services.Chat.Print(added > 0
-                                    ? $"LootMastr: added {added} player(s) to the roster."
-                                    : "LootMastr: roster already had everyone in the party.");
-        }
-
-        Widgets.HelpMarker("Adds anyone in your party who is not in the roster yet, and refreshes " +
-                           "the job of everyone who already is. Nothing is ever removed.");
-
-        ImGui.SameLine();
-
         if (scanner.IsRunning)
         {
             if (ImGui.Button("Stop reading"))
@@ -555,24 +538,23 @@ public sealed class RosterTab : ITab
                            "without fetching them again. Worth pressing after discovering the tier or " +
                            "correcting how augmented gear is spelled.");
 
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(140f * ImGuiHelpers.GlobalScale);
-        ImGui.InputTextWithHint("##newName", "Name", ref newName, 32);
+        ImGui.SameLine(0f, 20f);
 
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(110f * ImGuiHelpers.GlobalScale);
-        ImGui.InputTextWithHint("##newWorld", "World", ref newWorld, 32);
-
-        ImGui.SameLine();
-        using (ImRaii.Disabled(string.IsNullOrWhiteSpace(newName)))
+        // Who is in the group is a Manage statics question and moved there. What is left in this
+        // toolbar is what a raid leader presses during a night: read gear, re-file, and hide the
+        // rows that are not about gearing anybody.
+        var showAlts = config.Settings.ShowAlts;
+        if (ImGui.Checkbox("Show alts", ref showAlts))
         {
-            if (ImGui.Button("Add"))
-            {
-                roster.Add(newName, newWorld);
-                newName = string.Empty;
-                newWorld = string.Empty;
-            }
+            config.Settings.ShowAlts = showAlts;
+            config.Save();
         }
+
+        Widgets.HelpMarker("Second characters are hidden here by default — they are in the static to " +
+                           "clear a fight again, not to be geared, so their rows are noise on a " +
+                           "screen about gear.\n\n" +
+                           "This changes nothing about the distribution. Whether an alt can win " +
+                           "anything is a rule, and it lives in Settings.");
     }
 
     private void DrawImportStatus()
@@ -655,7 +637,7 @@ public sealed class RosterTab : ITab
 
         RosterMember? removing = null;
 
-        foreach (var member in roster.Members.ToList())
+        foreach (var member in roster.Visible.ToList())
         {
             using var id = ImRaii.PushId(member.Key);
 
@@ -695,46 +677,26 @@ public sealed class RosterTab : ITab
     }
 
     /// <summary>
-    /// Main or alt, as a button that says which it currently is.
+    /// Says a row is a second character, and does not offer to change it.
     ///
-    /// It reads <c>main</c> for everybody until somebody presses it, which is the only honest
-    /// default — a second character is a thing a person decides, never something a plugin infers
-    /// from a name or a job.
-    ///
-    /// A plain click, no modifier. The earlier version needed Ctrl on the grounds that this decides
-    /// whether a player is in the plan at all, and that was the wrong lesson to take from the remove
-    /// button: an invisible gesture is not a safe one, it is a gesture nobody finds. Marking an alt
-    /// is also trivially reversible, which removing a player is not.
+    /// Marking one is a Manage statics decision — it changes who is in the plan, which is the same
+    /// kind of thing as adding or removing somebody, and all three now live in one place. What is
+    /// left here is the label, so a row that behaves differently from the ones around it says so.
     /// </summary>
     private void DrawAltMark(RosterMember member)
     {
-        // Off and not one already: nothing to say, and no button on eight rows for a feature the
-        // group is not using.
-        if (!config.AltCharacters && !member.IsAlt)
+        if (!member.IsAlt)
             return;
 
         ImGui.SameLine();
 
-        var hidden = member.IsAlt && !config.AltCharacters;
-        var colour = !member.IsAlt ? Widgets.Muted : hidden ? Widgets.Muted : Widgets.Augment;
+        var hidden = !config.AltCharacters;
+        Widgets.Coloured(hidden ? Widgets.Muted : Widgets.Augment, "alt");
 
-        using (ImRaii.PushColor(ImGuiCol.Text, colour))
-        {
-            if (ImGui.SmallButton($"{(member.IsAlt ? "alt" : "main")}##alt"))
-            {
-                member.IsAlt = !member.IsAlt;
-                config.Save();
-            }
-        }
-
-        Widgets.Tooltip(!member.IsAlt
-                            ? "A main character — in the plan, and in the running for everything.\n\n" +
-                              "Press to make this a second character."
-                            : hidden
-                                ? "A second character, and alt characters are switched off — so this " +
-                                  "player is left out of the plan entirely.\n\nPress to make them a main."
-                                : "A second character. Takes nothing but the weapon stone and its " +
-                                  "material.\n\nPress to make them a main.");
+        Widgets.Tooltip(hidden
+                            ? "A second character, and alt characters are switched off in Settings — " +
+                              "so this player is left out of the plan entirely."
+                            : "A second character. Takes nothing but the weapon stone and its material.");
     }
 
     private void DrawPlayerCell(RosterMember member)
@@ -875,8 +837,8 @@ public sealed class RosterTab : ITab
 
     /// <summary>
     /// Changing someone's job by hand. Jobs are never pulled from the party on their own — a party
-    /// picks up strangers and people swap for a pull — so this and "Sync from party" are the only
-    /// two ways the roster's idea of a job moves.
+    /// picks up strangers and people swap for a pull — so this and the party sync in Manage statics
+    /// are the only two ways the roster's idea of a job moves.
     ///
     /// Everything downstream keys off the roster's fingerprint, which includes the job, so the plan
     /// and the schedule follow a change here without being told.

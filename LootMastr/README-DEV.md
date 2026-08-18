@@ -1073,6 +1073,39 @@ this plugin's history and the only change that cannot be undone by putting a set
   file said false". Without that, an install predating `AutoReadGearOnEnter` would have had it
   switched off by the upgrade.
 
+### Two windows, and one line above the tabs
+
+Managing statics is a **second window**, not a seventh tab. The tabs are what a raid leader has open
+during a pull; adding a player, marking a second character and handing out write access are none of
+them things that happen then, and all of them want room the tab bar does not have.
+
+Everything in that window edits the **current** static. Picking a different one in the list switches
+to it, which is one click and removes a whole second code path — no editor ever works on a roster
+that is not the one the rest of the plugin is showing.
+
+The header above the tab bar names the static and the tier, because it is true of every tab at once
+and because getting it wrong is expensive in a way nothing else in that window is: ticking a piece
+off in the wrong static edits another group's sheet, and nothing downstream can tell that happened.
+The sync control there is state and switch in one — grey and disabled while a static is local only,
+which is every static until somebody says otherwise and has to read as a setting rather than as a
+failure.
+
+#### What moved, and why that split
+
+| Was | Now | Because |
+|---|---|---|
+| Add player, world, name | Manage statics | Who is in the group is not a raid-night action. |
+| Sync from party | Manage statics | Same question, same answer. |
+| Main/alt button | Manage statics | It decides who is in the plan, like adding and removing. |
+| Remove player | Manage statics | Same. |
+| Read gear, re-file imports | Roster tab | These *are* raid-night actions. |
+| Show alts | Roster tab | A preference about the view, not a rule about loot. |
+
+That last row is the distinction worth keeping straight. `RosterStore.Active` answers "who is in the
+running for a drop" and is a rule; `RosterStore.Visible` answers "what do I want to look at" and is a
+preference. They are separate properties because they are separate questions, and a second character
+hidden from a list is still in whatever the rules say it is in.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight
