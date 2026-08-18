@@ -25,6 +25,16 @@ public static class Widgets
     /// <summary>Awarded but not on the character — done for the raid, still open for the player.</summary>
     public static readonly Vector4 NotWorn = new(0.82f, 0.55f, 0.95f, 1f);
 
+    /// <summary>
+    /// Hover rules for every tooltip in the plugin.
+    ///
+    /// <c>AllowWhenDisabled</c> is the whole point. A read-only viewer sees the same screens with
+    /// the controls greyed out, and a greyed-out control that also refuses to explain itself is
+    /// worse than one that is simply missing — the reader can see there is a setting and has no way
+    /// to find out what it does.
+    /// </summary>
+    private const ImGuiHoveredFlags HoverFlags = ImGuiHoveredFlags.AllowWhenDisabled;
+
     public static void Icon(uint iconId, float size = 20f)
     {
         var scaled = new Vector2(size * ImGuiHelpers.GlobalScale);
@@ -46,7 +56,7 @@ public static class Widgets
     {
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        if (!ImGui.IsItemHovered())
+        if (!ImGui.IsItemHovered(HoverFlags))
             return;
 
         ImGui.BeginTooltip();
@@ -58,7 +68,7 @@ public static class Widgets
 
     public static void Tooltip(string text)
     {
-        if (!ImGui.IsItemHovered())
+        if (!ImGui.IsItemHovered(HoverFlags))
             return;
 
         ImGui.BeginTooltip();
@@ -126,6 +136,19 @@ public static class Widgets
     /// Colour a need cell by its state. The glyph in the label carries the same distinction, so
     /// nothing here is the only way to read a cell.
     /// </summary>
+    /// <summary>
+    /// Says a screen is being looked at rather than worked on, and why.
+    ///
+    /// Drawn above the thing it applies to and never instead of it. Somebody with read access is
+    /// here to see the roster and the plan; hiding them would defeat the point of sharing at all.
+    /// </summary>
+    public static void ReadOnlyNotice(string what)
+    {
+        Coloured(Augment, $"Read only — {what}");
+        Tooltip("This character has read access to the static. An admin can grant write access in " +
+                "Manage statics.\n\nEverything is still visible; nothing here can be changed.");
+    }
+
     public static Vector4 ColourFor(GearSource source, SlotState state) => state switch
     {
         SlotState.NotPlanned => Muted,

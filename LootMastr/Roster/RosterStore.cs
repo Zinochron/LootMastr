@@ -124,6 +124,31 @@ public sealed class RosterStore
         // coming week, the basis comparison — then notices a switch for free, and nothing needs an
         // event to be wired up and eventually forgotten.
         hash.Add(config.CurrentStaticId);
+
+        // The rules the planner runs on, which are read here and set two tabs away. This used to be
+        // missing and the Recalculate button was the workaround; syncing turned that from a small
+        // annoyance into a wrong answer, because a pull changes the rules with nobody pressing
+        // anything.
+        var settings = config.Settings;
+        var rules = settings.Rules;
+
+        hash.Add(rules.UseRoleOrder);
+        hash.Add(rules.UsePlayerOrder);
+        hash.Add(rules.Spread);
+        hash.Add(rules.Basis);
+        hash.Add(rules.AltsMayTakeSpareGear);
+
+        foreach (var role in rules.RoleOrder)
+            hash.Add(role);
+
+        hash.Add(settings.LookaheadWeeks);
+        hash.Add(settings.AltCharacters);
+        hash.Add(settings.ShowAlts);
+
+        // Anything a pull brought with it, including a tier nobody here edited. One counter stands
+        // in for a whole document, which is the only cheap way to notice a tier changed.
+        hash.Add(config.Current.Sync.Revision);
+
         hash.Add(config.Roster.Count);
 
         foreach (var member in config.Roster)

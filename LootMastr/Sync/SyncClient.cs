@@ -233,6 +233,10 @@ public sealed class SyncClient : IDisposable
         if (!profile.Sync.Enabled || !profile.Sync.IsClaimed || IsBusy)
             return;
 
+        // A reader's local copy drifts as the obtain tracker and the gear scan write to it, and none
+        // of that can go anywhere. Pulling still matters; watching for changes to push does not.
+        var mayWrite = profile.Sync.Role != StaticRole.Read;
+
         var now = DateTime.UtcNow;
 
         // Somebody else's write is only visible by asking, so this is a poll and not a subscription.
@@ -245,7 +249,7 @@ public sealed class SyncClient : IDisposable
             return;
         }
 
-        if (now - lastCheck < CheckEvery)
+        if (!mayWrite || now - lastCheck < CheckEvery)
             return;
 
         lastCheck = now;

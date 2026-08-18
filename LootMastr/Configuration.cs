@@ -165,6 +165,9 @@ public class Configuration : IPluginConfiguration
 
     public int KillsFor(int encounter) => Current.KillsFor(encounter);
 
+    /// <summary>Whether this client may change the open static. True whenever nothing is syncing.</summary>
+    [JsonIgnore] public bool CanWrite => Current.Sync.CanWrite;
+
     // ---- Version 1, read once and never written again -------------------------------------------
     //
     // Under the json names the old file used, so Newtonsoft still fills them in; the forwarders

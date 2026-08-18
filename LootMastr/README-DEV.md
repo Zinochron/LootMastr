@@ -1157,6 +1157,40 @@ has to remember to extend it.
 A pull sets the same hash from what arrived, or every pull would trigger a push and the two would
 chase each other around the loop.
 
+### Read only is a state, not a refusal
+
+`SyncSetup.CanWrite` answers it in one line: a static nobody is syncing is always writable — it is a
+file on one machine and there is nobody to take turns with. Only once a server is involved and it has
+said `read` does the answer change, because only then is there somebody whose work would be lost.
+
+**Nothing is hidden.** A member with read access came here to see the roster and the plan; hiding
+them would defeat the point of sharing at all. So the screens are the same screens with their editing
+controls greyed, and a line at the top says why.
+
+Where the gate sits differs by tab, and the rule is *what does this control write*:
+
+| | Gated | Why |
+|---|---|---|
+| Settings, tier window | Everything | Both are entirely group policy. |
+| Roster | The editors, not the display | Reading gear writes to the roster, so it is an edit too. |
+| Plan | "Winner only" and the ranking radios | The forecast, including the basis comparison, is worth reading whoever you are. |
+| Loot | Books, kills, Record | All document writes. Assigning is already gated by `SafetyGuard`. |
+| Debug | Nothing | Local, always. |
+
+One supporting change made the whole thing usable: `Widgets.Tooltip` and `HelpMarker` now hover with
+`AllowWhenDisabled`. A greyed-out control that also refuses to explain itself is worse than one that
+is missing — the reader can see there is a setting and has no way to find out what it does.
+
+#### A gap syncing turned into a wrong answer
+
+`RosterStore.Signature()` was documented as "everything the planner reads" and did not include the
+rules the planner reads. Locally that was a small annoyance with a workaround: change the spread in
+Settings, press Recalculate in Plan. With syncing it becomes a wrong number on screen, because a pull
+changes the rules with nobody pressing anything.
+
+So the fingerprint now covers the distribution settings and `Sync.Revision` — one counter standing in
+for a whole pulled document, which is the only cheap way to notice that a tier changed underneath.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

@@ -58,6 +58,12 @@ public sealed class RosterTab : ITab
     {
         importer.Poll();
 
+        if (!config.CanWrite)
+        {
+            Widgets.ReadOnlyNotice("somebody else keeps this roster");
+            ImGuiHelpers.ScaledDummy(2f);
+        }
+
         DrawToolbar();
         DrawImportStatus();
 
@@ -515,6 +521,10 @@ public sealed class RosterTab : ITab
 
     private void DrawToolbar()
     {
+        // Reading gear writes to the roster, so it is an edit like any other — a viewer pressing it
+        // would fill in a sheet that the next pull throws away.
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         if (scanner.IsRunning)
         {
             if (ImGui.Button("Stop reading"))
@@ -738,6 +748,8 @@ public sealed class RosterTab : ITab
 
     private void DrawImportCell(RosterMember member)
     {
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         var linked = !string.IsNullOrWhiteSpace(member.GearPlannerUrl);
 
         using (ImRaii.PushColor(ImGuiCol.Text, linked ? Widgets.Done : Widgets.Muted))
@@ -803,6 +815,8 @@ public sealed class RosterTab : ITab
     /// </summary>
     private void DrawTokenCell(RosterMember member)
     {
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         var total = Enumerable.Range(1, 4).Sum(member.TokensFor);
 
         using (ImRaii.PushColor(ImGuiCol.Text, total > 0 ? Widgets.Done : Widgets.Muted))
@@ -845,6 +859,9 @@ public sealed class RosterTab : ITab
     /// </summary>
     private void DrawJobPicker(RosterMember member)
     {
+        if (!config.CanWrite)
+            return;
+
         using var popup = ImRaii.Popup("##job");
         if (!popup.Success)
             return;
@@ -915,6 +932,9 @@ public sealed class RosterTab : ITab
     /// </summary>
     private void DrawNeedPopup(RosterMember member, GearSlot slot, SlotNeed need)
     {
+        if (!config.CanWrite)
+            return;
+
         using var popup = ImRaii.Popup($"##need{slot}");
         if (!popup.Success)
             return;

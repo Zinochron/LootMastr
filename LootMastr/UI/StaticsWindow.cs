@@ -505,6 +505,14 @@ public sealed class StaticsWindow : Window, IDisposable
                            "are otherwise equal candidates for a drop.");
         ImGui.Separator();
 
+        if (!config.CanWrite)
+        {
+            Widgets.ReadOnlyNotice("who is in this static is the admin's to change");
+            ImGuiHelpers.ScaledDummy(4f);
+        }
+
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         DrawAddRow();
         ImGuiHelpers.ScaledDummy(4f);
 

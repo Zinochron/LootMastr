@@ -371,7 +371,7 @@ public sealed class LootTab : ITab
             DrawRunnersUp(decision);
 
             ImGui.TableNextColumn();
-            using (ImRaii.Disabled(decision.Winner == null))
+            using (ImRaii.Disabled(decision.Winner == null || !config.CanWrite))
             {
                 if (ImGui.SmallButton("Record"))
                     assigner.ConfirmByHand(decision);
@@ -496,8 +496,11 @@ public sealed class LootTab : ITab
 
         ImGui.SameLine();
 
-        if (ImGui.SmallButton("Record"))
-            assigner.RecordSpecial(decision.Item, selected.Member, kind);
+        using (ImRaii.Disabled(!config.CanWrite))
+        {
+            if (ImGui.SmallButton("Record"))
+                assigner.RecordSpecial(decision.Item, selected.Member, kind);
+        }
 
         Widgets.Tooltip("Tick this off as received. Nothing in chat can do it for these — they are " +
                         "not tier loot as far as the rest of the plugin is concerned.");

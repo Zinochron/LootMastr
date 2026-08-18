@@ -141,17 +141,22 @@ public sealed class PlanTab : ITab
 
         var rules = config.Rules;
 
-        foreach (var (basis, label, help) in Bases)
+        // The comparison below is worth reading whoever you are — it is the answer to "would sharing
+        // differently get us done sooner". Only choosing between them needs write access.
+        using (ImRaii.Disabled(!config.CanWrite))
         {
-            if (ImGui.RadioButton(label, rules.Basis == basis) && rules.Basis != basis)
+            foreach (var (basis, label, help) in Bases)
             {
-                rules.Basis = basis;
-                config.Save();
-                Invalidate();
-            }
+                if (ImGui.RadioButton(label, rules.Basis == basis) && rules.Basis != basis)
+                {
+                    rules.Basis = basis;
+                    config.Save();
+                    Invalidate();
+                }
 
-            Widgets.HelpMarker(help);
-            ImGui.SameLine(0f, 16f);
+                Widgets.HelpMarker(help);
+                ImGui.SameLine(0f, 16f);
+            }
         }
 
         ImGui.NewLine();
@@ -393,11 +398,16 @@ public sealed class PlanTab : ITab
                            "same player is not named twice for a piece they can only wear once.");
 
         ImGui.SameLine();
+
         var onlyNext = config.ShowOnlyNextRecipient;
-        if (ImGui.Checkbox("Winner only", ref onlyNext))
+
+        using (ImRaii.Disabled(!config.CanWrite))
         {
-            config.ShowOnlyNextRecipient = onlyNext;
-            config.Save();
+            if (ImGui.Checkbox("Winner only", ref onlyNext))
+            {
+                config.ShowOnlyNextRecipient = onlyNext;
+                config.Save();
+            }
         }
 
         Widgets.HelpMarker("Hides the runners-up, leaving just who each drop is for.");

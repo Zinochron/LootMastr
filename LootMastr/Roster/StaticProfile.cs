@@ -124,6 +124,17 @@ public sealed class SyncSetup
     public DateTime? LastSyncUtc { get; set; }
 
     public bool IsClaimed => Enabled && !string.IsNullOrEmpty(Token);
+
+    /// <summary>
+    /// Whether this client may change the static.
+    ///
+    /// A static nobody is syncing is always writable — it is a file on one machine and there is
+    /// nobody to take turns with. Only once a server is involved and it has said <c>read</c> does
+    /// this go false, because only then is there somebody whose work would be overwritten.
+    /// </summary>
+    public bool CanWrite => !IsClaimed || Role != StaticRole.Read;
+
+    public bool IsAdmin => IsClaimed && Role == StaticRole.Admin;
 }
 
 /// <summary>What one character may do with one static. Decided by the server, never by the client.</summary>

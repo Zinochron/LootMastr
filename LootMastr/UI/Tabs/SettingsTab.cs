@@ -31,6 +31,17 @@ public sealed class SettingsTab : ITab
 
     public void Draw()
     {
+        // Every setting on this tab belongs to the static, so the whole thing is either editable or
+        // it is not. Nothing is hidden: what the group has decided is exactly what a member with
+        // read access came here to find out.
+        if (!config.CanWrite)
+        {
+            Widgets.ReadOnlyNotice("these are the group's settings");
+            ImGuiHelpers.ScaledDummy(4f);
+        }
+
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         DrawExpertMode();
 
         ImGuiHelpers.ScaledDummy(10f);

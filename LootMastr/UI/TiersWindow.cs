@@ -52,6 +52,14 @@ public sealed class TiersWindow : Window, IDisposable
 
     public override void Draw()
     {
+        if (!config.CanWrite)
+        {
+            Widgets.ReadOnlyNotice("the tier belongs to the static");
+            ImGuiHelpers.ScaledDummy(4f);
+        }
+
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         DrawToolbar();
         DrawProblems();
 
