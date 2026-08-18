@@ -1181,6 +1181,26 @@ One supporting change made the whole thing usable: `Widgets.Tooltip` and `HelpMa
 `AllowWhenDisabled`. A greyed-out control that also refuses to explain itself is worse than one that
 is missing — the reader can see there is a setting and has no way to find out what it does.
 
+#### Looking at it as somebody else
+
+Read-only reaches into six screens, and the only honest way to check it is to *be* a reader — which
+otherwise means a second character, a second install and a server round trip per change. The debug
+tab's **Perspective** switch does that in one click: `Configuration.PretendRole` overrides
+`CanWrite` and `IsAdmin`, and every screen already asks those two rather than reading a role
+directly, so nothing else had to change.
+
+Two properties of it are deliberate:
+
+- **It is never saved.** A pretence that survives a restart is a support question nobody can answer:
+  the plugin sits there refusing every edit, with the reason two releases back in somebody's memory.
+- **It is always visible.** The header prints `(as read)` for as long as it is on. A simulation you
+  cannot see is indistinguishable from a bug.
+
+And it changes what the interface *offers*, not what the server *allows*. Pushing while pretending to
+be a reader still works, because the token is real and the server has never heard of this setting.
+That is the correct shape: it proves the UI honours a role, and proving the permissions hold is not
+the client's job to claim.
+
 #### A gap syncing turned into a wrong answer
 
 `RosterStore.Signature()` was documented as "everything the planner reads" and did not include the

@@ -18,6 +18,7 @@ public sealed class MainWindow : Window, IDisposable
     private readonly StaticStore statics;
     private readonly TierCatalog tiers;
     private readonly SyncClient sync;
+    private readonly Configuration config;
     private readonly Action openStatics;
     private readonly Action openTiers;
 
@@ -25,13 +26,14 @@ public sealed class MainWindow : Window, IDisposable
     private string? pendingTabId;
 
     public MainWindow(IEnumerable<ITab> tabs, StaticStore statics, TierCatalog tiers, SyncClient sync,
-                      Action openStatics, Action openTiers)
+                      Configuration config, Action openStatics, Action openTiers)
         : base($"LootMastr {Build.Version}###LootMastrMain")
     {
         this.tabs = new List<ITab>(tabs);
         this.statics = statics;
         this.tiers = tiers;
         this.sync = sync;
+        this.config = config;
         this.openStatics = openStatics;
         this.openTiers = openTiers;
 
@@ -189,32 +191,54 @@ public sealed class MainWindow : Window, IDisposable
     {
         var setup = profile.Sync;
         var status = sync.StatusOf(profile);
+        var claimed = setup.IsClaimed;
 
         var (colour, label, tip) = status switch
         {
             SyncStatus.Off => (Widgets.Muted, "local",
-                               "This static never leaves your machine. Switch syncing on in Manage statics."),
+                               "This static never leaves your machine.\n\nOpens Manage statics."),
 
             SyncStatus.NotJoined => (Widgets.Wanted, "not joined",
-                                     "Syncing is on, but this client has not claimed a token yet."),
+                                     "Syncing is on, but this client has not claimed a token yet.\n\n" +
+                                     "Opens Manage statics."),
 
             SyncStatus.Working => (Widgets.Wanted, "syncing…", sync.Message),
 
-            SyncStatus.Error => (Widgets.Bad, "problem", sync.Message),
+            SyncStatus.Error => (Widgets.Bad, "problem", $"{sync.Message}\n\nClick to try again."),
 
             _ => (Widgets.Done, setup.Role.ToString().ToLowerInvariant(),
                   $"Synced as {setup.CharacterName}" +
                   (setup.LastSyncUtc is { } when ? $", last at {when.ToLocalTime():HH:mm}. " : ". ") +
-                  sync.Message),
+                  sync.Message +
+                  "\n\nClick to pull now."),
         };
 
         using (ImRaii.PushColor(ImGuiCol.Text, colour))
         {
+            // Pulling is what somebody wants from this button nine times in ten: the label is the
+            // question "is what I am looking at current", and a click is the shortest way to make
+            // the answer yes. Only when there is nothing to pull from does it fall back to opening
+            // the window that can fix that.
             if (ImGui.SmallButton($"{label}##sync"))
-                openStatics();
+            {
+                if (claimed)
+                    sync.Pull(profile, manual: true);
+                else
+                    openStatics();
+            }
         }
 
         Widgets.Tooltip(string.IsNullOrWhiteSpace(tip) ? "Syncing." : tip);
+
+        // The pretence from the debug tab, wherever anybody is looking. Never letting it be invisible
+        // is the only thing that keeps it from becoming a bug report about read-only being stuck.
+        if (config.PretendRole is not { } pretending)
+            return;
+
+        ImGui.SameLine(0f, 6f);
+        Widgets.Coloured(Widgets.Wanted, $"(as {pretending.ToString().ToLowerInvariant()})");
+        Widgets.Tooltip("The debug tab is drawing every screen as though you had this role. It " +
+                        "changes what the interface offers and nothing the server allows.");
     }
 
     public void Dispose()

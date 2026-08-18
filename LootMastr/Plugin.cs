@@ -98,13 +98,14 @@ public sealed class Plugin : IDalamudPlugin
             new LootTab(Configuration, Assigner, announcer, Roster, Tiers, Planner, clears),
             new RosterTab(Configuration, Roster, Jobs, importer, Tiers, Scanner, Items, Gear, Planner),
             new PlanTab(Configuration, Roster, Planner, Tiers),
-            new DebugTab(Loot, Party, Tiers, tracker, watcher, Items, Jobs),
+            new DebugTab(Loot, Party, Tiers, tracker, watcher, Items, Jobs, Configuration),
             new SettingsTab(Configuration, Roster, Planner),
         };
 
         staticsWindow = new StaticsWindow(Configuration, Statics, Roster, Jobs, Party, Sync);
         tiersWindow = new TiersWindow(Configuration, Tiers, Items, Statics, Sync);
-        mainWindow = new MainWindow(tabs, Statics, Tiers, Sync, staticsWindow.Open, tiersWindow.Open);
+        mainWindow = new MainWindow(tabs, Statics, Tiers, Sync, Configuration,
+                                    staticsWindow.Open, tiersWindow.Open);
 
         windowSystem.AddWindow(mainWindow);
         windowSystem.AddWindow(staticsWindow);

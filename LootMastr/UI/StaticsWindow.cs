@@ -105,13 +105,34 @@ public sealed class StaticsWindow : Window, IDisposable
         var profile = statics.Current;
         var setup = profile.Sync;
 
-        ImGui.TextUnformatted($"Sharing {profile.Name}");
+        // Open until there is a token, shut once there is one. The form matters exactly once, on the
+        // evening somebody sets this up; after that it is four lines about a server that has not
+        // changed, sitting above the list people actually came to read.
+        if (!setup.IsClaimed)
+            ImGui.SetNextItemOpen(true, ImGuiCond.Once);
+
+        // Labelled by the static, identified by nothing — or renaming a static would fold the
+        // section and lose whatever it was showing.
+        var open = ImGui.CollapsingHeader($"Sharing {profile.Name}###sharing");
+
         Widgets.HelpMarker("Syncing puts this static on a server so the rest of the group can read " +
                            "it — who needs what, and what to buy this week.\n\n" +
                            "What is uploaded: the roster (names, worlds, jobs, gear sets, what each " +
                            "player has been given), the tier, the kill counts and the settings. What " +
                            "is not: anything about your machine, and never your password.");
-        ImGui.Separator();
+
+        if (!open)
+        {
+            // Folded away, a problem would be invisible. The one line that has to survive is the one
+            // saying something went wrong.
+            if (sync.StatusOf(profile) == SyncStatus.Error && !string.IsNullOrEmpty(sync.Message))
+            {
+                using var indent = ImRaii.PushIndent();
+                Widgets.Coloured(Widgets.Bad, sync.Message);
+            }
+
+            return;
+        }
 
         if (!string.IsNullOrEmpty(sync.Message))
         {
@@ -215,13 +236,13 @@ public sealed class StaticsWindow : Window, IDisposable
 
             // Only an admin may hand out rights, and the server checks it again. This is the button
             // being honest about what it would achieve, not the security.
-            using (ImRaii.Disabled(setup.Role != StaticRole.Admin || sync.IsBusy))
+            using (ImRaii.Disabled(!config.IsAdmin || sync.IsBusy))
             {
                 if (ImGui.SmallButton($"{member.Role.ToString().ToLowerInvariant()}##role"))
                     ImGui.OpenPopup("##rolePick");
             }
 
-            if (setup.Role != StaticRole.Admin)
+            if (!config.IsAdmin)
                 Widgets.Tooltip("Only an admin can change what somebody may do.");
 
             using (var popup = ImRaii.Popup("##rolePick"))

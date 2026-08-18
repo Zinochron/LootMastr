@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using LootMastr.Automation;
 using LootMastr.Data;
+using LootMastr.Roster;
 
 namespace LootMastr.UI.Tabs;
 
@@ -25,13 +26,15 @@ public sealed class DebugTab : ITab
     private readonly AddonWatcher watcher;
     private readonly ItemCatalog catalog;
     private readonly JobCatalog jobs;
+    private readonly Configuration config;
 
     private string lastCapture = string.Empty;
     private string lastProbe = string.Empty;
 
     public DebugTab(LootWindowReader loot, PartyReader party, TierCatalog tiers, ObtainTracker tracker,
-                    AddonWatcher watcher, ItemCatalog items, JobCatalog jobs)
+                    AddonWatcher watcher, ItemCatalog items, JobCatalog jobs, Configuration config)
     {
+        this.config = config;
         this.loot = loot;
         this.party = party;
         this.tiers = tiers;
@@ -44,8 +47,68 @@ public sealed class DebugTab : ITab
     public string Title => "Debug";
     public string Id => "debug";
 
+    private static readonly (StaticRole? Role, string Label, string Help)[] Perspectives =
+    [
+        (null, "As I am",
+            "However the server has this character down. On a static nobody is syncing, that is " +
+            "always full access."),
+        (StaticRole.Read, "As a reader",
+            "What somebody in the static who has not been given write access sees: everything, and " +
+            "no way to change any of it."),
+        (StaticRole.Write, "As a writer",
+            "Can edit the roster, the tier and the settings. Cannot hand out rights."),
+        (StaticRole.Admin, "As an admin",
+            "That, and the permissions table in Manage statics."),
+    ];
+
+    /// <summary>
+    /// Look at the plugin the way somebody else sees it.
+    ///
+    /// Read-only reaches into six screens, and the only honest way to check it is to be a reader —
+    /// which otherwise means a second character, a second install and a server round trip for every
+    /// change. This is the same switch without the twenty minutes.
+    ///
+    /// It changes what the interface allows and <b>nothing about what the server allows</b>. Pushing
+    /// while pretending to be a reader still works, because the token is real and the server has
+    /// never heard of this setting. That is the correct shape: this proves the UI honours a role, not
+    /// that the permissions hold, and the second thing is not the client's to claim anyway.
+    /// </summary>
+    private void DrawPerspective()
+    {
+        ImGui.TextUnformatted("Perspective");
+        Widgets.HelpMarker("Draws every screen as though this character had a different role. Not " +
+                           "saved, and gone the next time the plugin loads.");
+        ImGui.Separator();
+
+        foreach (var (role, label, help) in Perspectives)
+        {
+            if (ImGui.RadioButton(label, config.PretendRole == role))
+                config.PretendRole = role;
+
+            Widgets.HelpMarker(help);
+            ImGui.SameLine(0f, 16f);
+        }
+
+        ImGui.NewLine();
+
+        if (config.PretendRole is { } pretending)
+        {
+            Widgets.Coloured(Widgets.Wanted,
+                             $"Pretending to be {pretending.ToString().ToLowerInvariant()}. The header says so too, " +
+                             "and the server is unaffected.");
+        }
+        else
+        {
+            ImGui.TextDisabled($"Really: {config.Current.Sync.Role.ToString().ToLowerInvariant()}" +
+                               (config.Current.Sync.IsClaimed ? string.Empty : ", and nothing is syncing"));
+        }
+    }
+
     public void Draw()
     {
+        DrawPerspective();
+
+        ImGuiHelpers.ScaledDummy(8f);
         DrawLiveState();
 
         ImGuiHelpers.ScaledDummy(8f);

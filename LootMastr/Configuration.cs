@@ -174,8 +174,26 @@ public class Configuration : IPluginConfiguration
 
     public int KillsFor(int encounter) => Current.KillsFor(encounter);
 
+    /// <summary>
+    /// A role to pretend to have, from the debug tab. Null means "whatever the server said".
+    ///
+    /// Deliberately <b>not</b> saved. A simulation that survives a restart is a support question
+    /// nobody can answer: the plugin would sit there refusing every edit, with the reason two
+    /// releases back in somebody's memory. It also shows in the header the whole time it is on,
+    /// because a pretence you cannot see is indistinguishable from a bug.
+    /// </summary>
+    [JsonIgnore] public StaticRole? PretendRole { get; set; }
+
+    /// <summary>What every screen behaves as. The real role unless the debug tab is pretending.</summary>
+    [JsonIgnore] public StaticRole EffectiveRole => PretendRole ?? Current.Sync.Role;
+
     /// <summary>Whether this client may change the open static. True whenever nothing is syncing.</summary>
-    [JsonIgnore] public bool CanWrite => Current.Sync.CanWrite;
+    [JsonIgnore]
+    public bool CanWrite => PretendRole is { } pretend ? pretend != StaticRole.Read : Current.Sync.CanWrite;
+
+    /// <summary>Whether this client may hand out rights.</summary>
+    [JsonIgnore]
+    public bool IsAdmin => PretendRole is { } pretend ? pretend == StaticRole.Admin : Current.Sync.IsAdmin;
 
     // ---- Version 1, read once and never written again -------------------------------------------
     //
