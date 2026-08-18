@@ -104,6 +104,28 @@ public sealed class ItemCatalog
     /// here knows what is melded into a particular copy — that is the caller's business, because it
     /// differs between two people wearing the same piece.
     /// </summary>
+    /// <summary>
+    /// An item id with the high quality marker taken off.
+    ///
+    /// The game says "high quality" in two different ways depending on who is asking.
+    /// <c>InventoryItem</c> carries the plain id and a flag, which is what reading your own equipped
+    /// gear goes through. <c>AgentInspect</c> — and the market board, and glamour data — instead add
+    /// <b>one million</b> to the id itself.
+    ///
+    /// That difference is invisible until somebody wears crafted gear, because crafted gear is the
+    /// only kind anyone wears high quality: raid and tomestone pieces have no HQ version at all. So
+    /// scanning yourself worked, scanning anybody else silently dropped exactly their crafted
+    /// pieces, and the roster showed empty slots for gear the character was visibly wearing.
+    ///
+    /// Collectables use 500,000 the same way. They are never equipment, so they cannot reach this.
+    /// </summary>
+    public const uint HighQualityOffset = 1_000_000;
+
+    public static uint BaseItemId(uint itemId) =>
+        itemId >= HighQualityOffset ? itemId - HighQualityOffset : itemId;
+
+    public static bool IsHighQualityId(uint itemId) => itemId >= HighQualityOffset;
+
     public bool TryGetStats(uint itemId, out ItemStats stats) =>
         model.Value.Stats.TryGetValue(itemId, out stats!);
 

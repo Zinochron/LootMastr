@@ -58,8 +58,11 @@ public sealed class EquipmentReader
             if (entry == null || entry->ItemId == 0)
                 continue;
 
-            if (!items.TryGetItem(entry->ItemId, out var info) || info.Slot is not { } slot)
+            if (!items.TryGetItem(ItemCatalog.BaseItemId(entry->ItemId), out var info) ||
+                info.Slot is not { } slot)
+            {
                 continue;
+            }
 
             var melds = new List<uint>();
 
@@ -107,7 +110,7 @@ public sealed class EquipmentReader
         {
             var slot = container->GetInventorySlot(i);
             if (slot != null && slot->ItemId != 0)
-                found.Add(slot->ItemId);
+                found.Add(ItemCatalog.BaseItemId(slot->ItemId));
         }
 
         return ToSlots(found);
@@ -125,9 +128,10 @@ public sealed class EquipmentReader
 
         for (var i = 0; i < span.Length; i++)
         {
-            // ItemId, deliberately, not GlamourItemId.
+            // ItemId, deliberately, not GlamourItemId — and stripped of the high quality marker,
+            // which this agent adds to the id itself rather than carrying as a flag.
             if (span[i].ItemId != 0)
-                found.Add(span[i].ItemId);
+                found.Add(ItemCatalog.BaseItemId(span[i].ItemId));
         }
 
         return ToSlots(found);
@@ -184,15 +188,25 @@ public sealed class EquipmentReader
     /// Rings are the exception, since item data never says which finger. They are handed out in
     /// the order they were read, which is the order the game lists them in.
     /// </summary>
+    /// <summary>Ids the last read saw and could not place. Empty is the normal answer.</summary>
+    public IReadOnlyList<uint> LastUnplaced { get; private set; } = [];
+
     private Dictionary<GearSlot, uint> ToSlots(IEnumerable<uint> equipped)
     {
         var result = new Dictionary<GearSlot, uint>();
         var rings = new List<uint>();
+        var unplaced = new List<uint>();
 
         foreach (var itemId in equipped)
         {
             if (!items.TryGetItem(itemId, out var info) || info.Slot == null)
+            {
+                // Kept rather than dropped. An item the game says somebody is wearing and this
+                // client cannot file is a hole in the sheet with nothing pointing at it, which is
+                // how the high quality offset went unnoticed: the slots just looked empty.
+                unplaced.Add(itemId);
                 continue;
+            }
 
             // A shield is not tracked separately — it arrives with the weapon and would otherwise
             // sit in the dictionary as a slot nothing ever reads.
@@ -213,6 +227,8 @@ public sealed class EquipmentReader
 
         if (rings.Count > 1)
             result[GearSlot.Ring2] = rings[1];
+
+        LastUnplaced = unplaced;
 
         return result;
     }

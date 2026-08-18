@@ -645,6 +645,21 @@ than was expected: melds *are* readable for other players after all, through the
 rather than through `AgentInspect`. `EquipmentReader.MeldsFrom` is built on it, and it is what lets
 both sides of a comparison carry their own materia instead of assuming it carries over.
 
+#### High quality is spelled two ways
+
+The game says "high quality" differently depending on who is asking. `InventoryItem` carries the
+plain item id and a flag; `AgentInspect` — and the market board, and glamour data — **adds one
+million to the id itself**.
+
+That difference is invisible until somebody wears crafted gear, because crafted gear is the only kind
+anyone wears high quality: raid and tomestone pieces have no HQ version. So reading your own
+equipment worked, reading anybody else's silently dropped exactly their crafted pieces, and the sheet
+showed empty slots for gear the character was visibly wearing.
+
+`ItemCatalog.BaseItemId` strips it, and every read of an id that came from the game goes through it.
+`ToSlots` also keeps what it could not place instead of dropping it, and the scan says so — the
+offset hid for as long as it did because nothing anywhere noticed an item going missing.
+
 **Still open: whether `InventoryItem.Materia[i]` is a `Materia` sheet row or an item id.** The
 character it was run on has no melds anywhere, so the probe had nothing to read. Rather than wait for
 a melded character, `ItemCatalog.TryResolveMeld` **accepts either**: it tries the materia item-id map

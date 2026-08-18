@@ -61,6 +61,16 @@ public sealed class GearScanner : IDisposable
     /// </summary>
     private readonly List<string> withoutStats = [];
 
+    /// <summary>
+    /// Items the game reported and this client could not file, by character.
+    ///
+    /// The high quality offset hid here for weeks: an inspected crafted piece came through with a
+    /// million added to its id, failed to resolve, and was dropped without a word — so the sheet
+    /// showed an empty slot for gear the character was visibly wearing. A silent drop in a reader is
+    /// worse than a loud failure, because there is nothing to notice.
+    /// </summary>
+    private readonly List<string> unreadable = [];
+
     private Phase phase = Phase.Idle;
     private PartyPlayer current;
     private DateTime stepStarted;
@@ -170,6 +180,7 @@ public sealed class GearScanner : IDisposable
         queue.Clear();
         skipped.Clear();
         withoutStats.Clear();
+        unreadable.Clear();
         scanned = 0;
         readLocal = local;
 
@@ -413,6 +424,9 @@ public sealed class GearScanner : IDisposable
 
         if (withoutStats.Count > 0)
             Status += $" No stats for {string.Join(", ", withoutStats)} — read them again to get a damage estimate.";
+
+        if (unreadable.Count > 0)
+            Status += $" Could not identify some worn items on {string.Join("; ", unreadable)}.";
     }
 
     private static unsafe void CloseExamine()
@@ -490,6 +504,15 @@ public sealed class GearScanner : IDisposable
         }
 
         member.LastScannedUtc = DateTime.UtcNow;
+
+        if (equipment.LastUnplaced.Count > 0)
+        {
+            unreadable.Add($"{member.Name} ({string.Join(", ", equipment.LastUnplaced)})");
+
+            Services.Log.Warning(
+                $"GearScanner: {member.Name} is wearing {equipment.LastUnplaced.Count} item(s) this " +
+                $"client cannot place: {string.Join(", ", equipment.LastUnplaced)}");
+        }
 
         if (itemLevel > 0)
             member.AverageItemLevel = itemLevel;
