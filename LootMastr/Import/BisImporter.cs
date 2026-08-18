@@ -147,8 +147,17 @@ public sealed class BisImporter : IDisposable
             need.Source = classifier.Classify(itemId);
             need.BisMateria = set.Materia.TryGetValue(slot, out var melds) ? [..melds] : [];
 
-            if (!items.TryGetItem(itemId, out _))
-                unknown.Add($"{Slots.CofferLabel(slot)} (id {itemId})");
+            // The same two conditions Classify uses, and that matters: the first version of this
+            // check only asked whether the id resolved, so an item the catalogue knows but cannot
+            // place in a slot passed it silently — which is precisely the case that was losing
+            // pieces. A check that does not mirror the thing it is checking finds nothing.
+            if (need.Source == GearSource.None)
+            {
+                unknown.Add(items.TryGetItem(itemId, out var info) && info.Slot == null
+                                ? $"{Slots.CofferLabel(slot)}: \"{info.Name}\" (id {itemId}, i{info.ItemLevel}, " +
+                                  "the game does not file it under a gear slot)"
+                                : $"{Slots.CofferLabel(slot)}: id {itemId} is not in this client's item list");
+            }
 
             if (need.Source.NeedsRaidResource())
                 fromRaid++;

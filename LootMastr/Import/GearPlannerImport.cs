@@ -275,6 +275,8 @@ public sealed class GearPlannerImport : IDisposable
 
         var items = new Dictionary<GearSlot, uint>();
 
+        var skipped = new List<string>();
+
         foreach (var (key, slot) in EtroSlots)
         {
             var token2 = root[key];
@@ -283,8 +285,11 @@ public sealed class GearPlannerImport : IDisposable
 
             // Etro has returned both a bare id and an object with an id over the years.
             var id = token2.Type == JTokenType.Object ? token2["id"]?.Value<long>() ?? 0 : token2.Value<long>();
+
             if (id > 0)
                 items[slot] = (uint)id;
+            else
+                skipped.Add($"{key} (no item id)");
         }
 
         if (items.Count == 0)
@@ -295,7 +300,8 @@ public sealed class GearPlannerImport : IDisposable
             root.Value<string>("jobAbbrev") ?? string.Empty,
             items,
             EtroMateria(root, items),
-            FoodOf(root));
+            FoodOf(root),
+            skipped);
 
         return new ImportResult(true, "Read 1 set from Etro.", [set]);
     }
