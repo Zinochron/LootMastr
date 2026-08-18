@@ -1748,6 +1748,84 @@ var rules = new PriorityRules();
           bought.Count == 2 && bought[1].Slot == GearSlot.Body);
 }
 
+// --- the drops nothing can rank ------------------------------------------------------------------
+
+{
+    var special = Tier();
+
+    Check("nothing is special until it is named", special.SpecialFor(999) == null);
+
+    special.WeaponToken = new TierSpecialDrop { ItemId = 999, ItemName = "Stone", Encounter = 2 };
+    special.Mount = new TierSpecialDrop { ItemId = 888, ItemName = "Mount", Encounter = 4 };
+
+    Check("the stone is recognised", special.SpecialFor(999) == SpecialDrop.WeaponToken);
+    Check("and the mount", special.SpecialFor(888) == SpecialDrop.Mount);
+
+    // The weapon material is an ordinary need until a stone exists, and only then does it become a
+    // thing that has to be decided by hand.
+    Check("the weapon material follows the stone",
+          special.SpecialFor(3) == SpecialDrop.WeaponAugment);
+
+    var noStone = Tier();
+    Check("and stays an ordinary need without one", noStone.SpecialFor(3) == null);
+
+    // An armour material is never special, stone or no stone.
+    Check("the armour material is never special", special.SpecialFor(2) == null);
+
+    Check("and an id nobody named is nothing", special.SpecialFor(4242) == null);
+}
+
+// --- second characters ---------------------------------------------------------------------------
+
+{
+    var mainMember = Member("Main", (GearSlot.Body, GearSource.Raid));
+    var altMember = Member("Alt", (GearSlot.Body, GearSource.Raid));
+    altMember.IsAlt = true;
+
+    var main = Plan(mainMember, RaidRole.Dps, tier, 0);
+    var alt = Plan(altMember, RaidRole.Dps, tier, 1);
+
+    Check("the plan carries the mark", alt.IsAlt && !main.IsAlt);
+
+    var strict = new PriorityRules();
+    var generous = new PriorityRules { AltsMayTakeSpareGear = true };
+
+    Check("an alt is not in the field while a main wants it",
+          WeekSimulator.Field(strict, [main, alt]).Single().Key == mainMember.Key);
+
+    // Not a weight — a main that has won ten pieces still comes before an alt that has won none.
+    main.ItemsReceived = 10;
+    Check("and not even when the main has had everything",
+          WeekSimulator.Field(strict, [main, alt]).Single().Key == mainMember.Key);
+
+    Check("a coffer nobody else wants is greed by default",
+          !WeekSimulator.Field(strict, [alt]).Any());
+
+    Check("and goes on the alt when the rules allow it",
+          WeekSimulator.Field(generous, [alt]).Single().Key == altMember.Key);
+
+    // The order the two filters run in matters. Alts leave the field first, so a material an alt
+    // could use is never a reason to take it off a main who cannot use it yet.
+    var stuck = Plan(Member("Stuck", (GearSlot.Body, GearSource.TomeAugmented)), RaidRole.Dps, tier, 0);
+    stuck.Tomes = 0;
+
+    var readyAlt = Plan(AltWith(), RaidRole.Dps, tier, 1);
+    readyAlt.Tomes = 5000;
+
+    var field = WeekSimulator.Usable(WeekSimulator.Field(strict, [stuck, readyAlt]), GearSide.Left).ToList();
+
+    Check("a material stays with the main even when only an alt could use it",
+          field.Count == 1 && field[0].Key == stuck.Key,
+          string.Join(", ", field.Select(p => p.Name)));
+
+    static RosterMember AltWith()
+    {
+        var member = Member("ReadyAlt", (GearSlot.Body, GearSource.TomeAugmented));
+        member.IsAlt = true;
+        return member;
+    }
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

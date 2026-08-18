@@ -694,17 +694,62 @@ public sealed class RosterTab : ITab
             roster.Remove(removing);
     }
 
+    /// <summary>
+    /// Whether this is a second character, and the only place it can be said.
+    ///
+    /// A word rather than a checkbox column: it is true of one or two rows in a roster of eight, and
+    /// a column of empty boxes would cost every row width to say nothing. Ctrl+click to change,
+    /// which is the same weight the plugin already puts on removing somebody — this decides whether
+    /// they are in the plan at all.
+    /// </summary>
+    private void DrawAltMark(RosterMember member)
+    {
+        if (!config.AltCharacters && !member.IsAlt)
+            return;
+
+        ImGui.SameLine();
+
+        var hidden = member.IsAlt && !config.AltCharacters;
+
+        Widgets.Coloured(hidden ? Widgets.Muted : Widgets.Augment, "alt");
+
+        if (ImGui.IsItemClicked() && ImGui.GetIO().KeyCtrl)
+        {
+            member.IsAlt = !member.IsAlt;
+            config.Save();
+        }
+
+        Widgets.Tooltip(hidden
+                            ? "A second character, and alt characters are switched off — so this " +
+                              "player is left out of the plan entirely.\n\nCtrl+click to unmark."
+                            : "A second character. Takes nothing but the weapon stone and its " +
+                              "material.\n\nCtrl+click to unmark.");
+    }
+
     private void DrawPlayerCell(RosterMember member)
     {
         var job = jobs.Get(member.JobId);
 
         Widgets.Icon(job.IconId, 18f);
 
-        if (ImGui.IsItemClicked())
+        var marking = config.AltCharacters && !member.IsAlt && ImGui.GetIO().KeyCtrl;
+
+        // Ctrl is the modifier for the alt mark, so a held Ctrl must not also open the job picker —
+        // one click, one thing.
+        if (ImGui.IsItemClicked() && !marking)
             ImGui.OpenPopup("##job");
 
         var role = roster.RoleOf(member);
-        Widgets.Tooltip($"{job.Name} ({role})\n\nClick to change job.");
+        Widgets.Tooltip($"{job.Name} ({role})\n\nClick to change job." +
+                        (config.AltCharacters && !member.IsAlt
+                             ? "\nCtrl+click to mark as a second character."
+                             : string.Empty));
+
+        if (marking && ImGui.IsItemClicked())
+        {
+            member.IsAlt = true;
+            config.Save();
+        }
 
         DrawJobPicker(member);
 
@@ -720,6 +765,8 @@ public sealed class RosterTab : ITab
             Widgets.Coloured(Widgets.Wanted, "*");
             Widgets.Tooltip("Damage dealer — gets priority on equal footing.");
         }
+
+        DrawAltMark(member);
 
         if (string.IsNullOrEmpty(member.ImportWarning))
             return;

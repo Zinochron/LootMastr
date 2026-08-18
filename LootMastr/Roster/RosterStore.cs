@@ -152,10 +152,22 @@ public sealed class RosterStore
             // timeline — a change the plan reads and therefore has to notice.
             hash.Add(member.WeaponTokenObtained);
             hash.Add(member.WeaponAugmentObtained);
+            hash.Add(member.IsAlt);
         }
 
         return hash.ToHashCode();
     }
+
+    /// <summary>
+    /// Everyone the plan is about.
+    ///
+    /// The same list as <see cref="Members"/> with second characters removed when the feature is
+    /// switched off. Everything that decides or forecasts reads this; only the roster editor reads
+    /// the raw list, because that is the one screen where a hidden player has to still be visible or
+    /// they could never be brought back.
+    /// </summary>
+    public IReadOnlyList<RosterMember> Active =>
+        config.AltCharacters ? config.Roster : config.Roster.Where(m => !m.IsAlt).ToList();
 
     /// <summary>Roster order, but damage dealers first — the order suggestions are shown in.</summary>
     public IEnumerable<RosterMember> ByPriority() =>

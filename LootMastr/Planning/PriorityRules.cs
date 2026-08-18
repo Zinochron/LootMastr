@@ -78,6 +78,15 @@ public sealed class PriorityRules
     /// </summary>
     public NeedBasis Basis { get; set; } = NeedBasis.MissingGear;
 
+    /// <summary>
+    /// Whether an alt may take a piece no main character wants.
+    ///
+    /// Off is the honest default: the point of a second character is to clear a fight again, and a
+    /// coffer that goes on one is a coffer that left the raid. On, the alt is a last resort rather
+    /// than a competitor — never ahead of a main, only after every one of them has passed.
+    /// </summary>
+    public bool AltsMayTakeSpareGear { get; set; }
+
     /// <summary>Where a role sits in the order. Lower goes first; anything unknown goes last.</summary>
     public int RankOf(RaidRole role)
     {

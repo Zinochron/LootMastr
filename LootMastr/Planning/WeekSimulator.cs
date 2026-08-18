@@ -215,7 +215,8 @@ public sealed class WeekSimulator
 
     private void AwardUpgrade(IReadOnlyList<PlayerPlan> players, GearSide side)
     {
-        var winner = Best(Usable(players.Where(p => p.WantsUpgrade(side)), side), p => p.GainForUpgrade(side));
+        var winner = Best(Usable(Field(rules, players.Where(p => p.WantsUpgrade(side))), side),
+                          p => p.GainForUpgrade(side));
         if (winner == null || !winner.TakeUpgrade(side, out var slot))
             return;
 
@@ -230,7 +231,7 @@ public sealed class WeekSimulator
     /// </summary>
     private PlayerPlan? Best(IEnumerable<PlayerPlan> candidates, Func<PlayerPlan, double> gain)
     {
-        var list = candidates.ToList();
+        var list = Field(rules, candidates).ToList();
         if (list.Count == 0)
             return null;
 
@@ -240,6 +241,27 @@ public sealed class WeekSimulator
 
         var ranked = DropOrder.Rank(rules, contenders);
         return ranked.Count == 0 ? null : list.First(p => p.Key == ranked[0].Who.Key);
+    }
+
+    /// <summary>
+    /// Drops alt characters out of a field, unless there is nobody else and the rules allow it.
+    ///
+    /// A second character exists to make a fight clearable twice, so gear landing on one is gear
+    /// that left the raid. That makes this a gate and not a weight: an alt is never ranked against a
+    /// main and loses, it is simply not in the field while any main wants the thing.
+    ///
+    /// Applied in the chest and in the projection from here, for the same reason every other rule
+    /// is — two copies would eventually name two different people for one coffer.
+    /// </summary>
+    public static IEnumerable<PlayerPlan> Field(PriorityRules rules, IEnumerable<PlayerPlan> candidates)
+    {
+        var list = candidates.ToList();
+        var mains = list.Where(p => !p.IsAlt).ToList();
+
+        if (mains.Count > 0)
+            return mains;
+
+        return rules.AltsMayTakeSpareGear ? list : [];
     }
 
     /// <summary>

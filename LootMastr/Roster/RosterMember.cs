@@ -231,6 +231,15 @@ public sealed class RosterMember
     /// <summary>They have the tier's mount, and are out of the running for the next one.</summary>
     public bool MountObtained { get; set; }
 
+    /// <summary>
+    /// A second character somebody brings to clear a fight again.
+    ///
+    /// They are in the roster because they are in the party and the chest lists them, not because
+    /// they want anything: their whole job is to make a fight clearable twice so the gear lands on
+    /// the mains. So they take nothing by default, and what they may take is a setting.
+    /// </summary>
+    public bool IsAlt { get; set; }
+
     public bool HasBeenScanned => LastScannedUtc != null;
 
     public bool HasMeasuredStats => Attributes.Count > 0 && MeasuredLevel > 0;

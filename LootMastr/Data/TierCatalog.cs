@@ -269,6 +269,14 @@ public sealed class TierCatalog
             if (reward.ItemId != 0)
                 reward.ItemName = items.GetItemName(reward.ItemId);
         }
+
+        // Picked by id from the item search, so the name is only ever a label — refreshed here so a
+        // tier written on another language client still reads correctly.
+        foreach (var special in new[] { tier.WeaponToken, tier.Mount })
+        {
+            if (special is { ItemId: not 0 })
+                special.ItemName = items.GetItemName(special.ItemId);
+        }
     }
 
     /// <summary>Addons a token exchange can be sitting in, most likely first.</summary>

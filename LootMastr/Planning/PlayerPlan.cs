@@ -41,6 +41,9 @@ public sealed class PlayerPlan
     /// <summary>Position in the roster, which is the player order the rules can be told to follow.</summary>
     public int Order { get; init; }
 
+    /// <summary>A second character, in the party to clear a fight again rather than to be geared.</summary>
+    public bool IsAlt { get; init; }
+
     public int ItemsReceived { get; set; }
 
     public List<OpenNeed> Open { get; init; } = new();
@@ -95,6 +98,7 @@ public sealed class PlayerPlan
         Name = Name,
         Role = Role,
         Order = Order,
+        IsAlt = IsAlt,
         ItemsReceived = ItemsReceived,
         Open = [..Open],
         Tokens = (int[])Tokens.Clone(),
@@ -128,6 +132,7 @@ public sealed class PlayerPlan
             Name = member.Name,
             Role = role,
             Order = order,
+            IsAlt = member.IsAlt,
             ItemsReceived = member.ItemsReceived,
         };
 

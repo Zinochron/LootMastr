@@ -55,6 +55,14 @@ public sealed class SettingsTab : ITab
 
         DrawModeChoice();
 
+        ImGuiHelpers.ScaledDummy(6f);
+        DrawMountChoice();
+
+        ImGuiHelpers.ScaledDummy(10f);
+        ImGui.TextUnformatted("Alt characters");
+        ImGui.Separator();
+        DrawAltCharacters();
+
         var announce = config.AnnounceInPartyChat;
         if (ImGui.Checkbox("Announce assignments in party chat", ref announce))
         {
@@ -382,6 +390,92 @@ public sealed class SettingsTab : ITab
             Widgets.HelpMarker(help);
         }
     }
+
+    /// <summary>
+    /// Second characters, which a funnel group has in the party and does not want to gear.
+    ///
+    /// Three settings and they narrow in order: whether alts exist at all, what they may be given,
+    /// and the one thing they are genuinely a good home for. The two that follow are drawn only when
+    /// the first is on, because off means the whole idea is gone.
+    /// </summary>
+    private void DrawAltCharacters()
+    {
+        var enabled = config.AltCharacters;
+        if (ImGui.Checkbox("The roster has alt characters in it", ref enabled))
+        {
+            config.AltCharacters = enabled;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("On: players marked as alts appear in the plan and the loot window, and " +
+                           "take nothing except the weapon stone and its material.\n\n" +
+                           "Off: they are left out of the plan, the forecast, the ranking and every " +
+                           "selector, as if they were not in the roster. They stay in the roster " +
+                           "list so they can be brought back.");
+
+        if (!enabled)
+        {
+            Widgets.Coloured(Widgets.Muted, "Mark a player as an alt on the Roster tab.");
+            return;
+        }
+
+        var spare = config.Rules.AltsMayTakeSpareGear;
+        if (ImGui.Checkbox("Alts may take gear no main still needs", ref spare))
+        {
+            config.Rules.AltsMayTakeSpareGear = spare;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("A last resort, never a competitor: an alt is only ever offered a coffer " +
+                           "after every main character has passed on it.\n\n" +
+                           "Off, a coffer nobody needs is greed. On, it goes on the second character " +
+                           "instead of nowhere.");
+
+        var weapons = config.AltsPreferredForWeaponTokens;
+        if (ImGui.Checkbox("Offer the weapon stone to alts first", ref weapons))
+        {
+            config.AltsPreferredForWeaponTokens = weapons;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("The one thing an alt is genuinely a good home for. A tomestone weapon on " +
+                           "a second character costs the raid nothing and makes the next clear go " +
+                           "faster, which is the entire reason the character exists.");
+    }
+
+    /// <summary>
+    /// The mount, which is the one thing in the chest that is worth nothing to the raid.
+    ///
+    /// A pair of policies rather than a switch with an off position: handing it out in reverse of
+    /// the gear order and rolling for it are both things groups actually do, and neither is the
+    /// absence of the other.
+    /// </summary>
+    private void DrawMountChoice()
+    {
+        foreach (var (mode, label, help) in MountModes)
+        {
+            if (ImGui.RadioButton(label, config.Mount == mode))
+            {
+                config.Mount = mode;
+                config.Save();
+            }
+
+            Widgets.HelpMarker(help);
+        }
+    }
+
+    private static readonly (MountHandling Mode, string Label, string Help)[] MountModes =
+    [
+        (MountHandling.Assign, "Give the mount to somebody",
+            "The Loot tab offers the roster in reverse of the gear order — healers first where the " +
+            "gear rules put them last — then whoever has won fewest items, and never anyone who " +
+            "already has one.\n\n" +
+            "You still pick and press."),
+        (MountHandling.GreedOnly, "Put the mount up for greed",
+            "One button that sets the mount to greed only and lets the dice decide.\n\n" +
+            "It asks first, because the game does not: greed only settles an item for good with no " +
+            "confirmation of its own."),
+    ];
 
     private static readonly (AssignmentMode Mode, string Label, string Help)[] Modes =
     [

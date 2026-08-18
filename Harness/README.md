@@ -28,6 +28,10 @@ a recast of five seconds was caught before anybody saw it on screen.
 - Swapping a piece counts both sides complete: a materia adds to a stat the item already has rather
   than becoming a second entry for it, and trading a crafted piece holding five melds for a raid piece
   holding two is never a pure gain however much better the item is.
+- Tomestones are a second currency with a weekly cap: the week somebody finishes paying comes out
+  the same whether it is computed in closed form or reached by spending week by week, a material
+  prefers whoever can wear the piece under it but still goes out when nobody can, and an alt is not
+  in a field a main is standing in however many pieces that main has already won.
 - Need lists only contain slots that actually cost the raid something — plain tome and crafted
   pieces never compete for a drop.
 - Gear is classified from item level plus name alone, with no shop data: raid and augmented tome

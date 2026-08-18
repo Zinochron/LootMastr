@@ -297,6 +297,86 @@ public sealed class LootAssigner
         return runner.IsRunning;
     }
 
+    /// <summary>
+    /// Hands over an item the ranking never produced a winner for.
+    ///
+    /// The other overload refuses when <c>Winner</c> is null, and that is right for a coffer — a
+    /// recipient nobody chose is a bug. For a stone or a mount there is no winner by construction:
+    /// somebody picked a name in the Loot tab, and that is the whole decision.
+    /// </summary>
+    public bool PerformAssignment(LiveLootItem item, string playerName, out string reason)
+    {
+        if (string.IsNullOrWhiteSpace(playerName))
+        {
+            reason = "Nobody selected.";
+            return false;
+        }
+
+        reason = runner.Start(item, playerName);
+        return runner.IsRunning;
+    }
+
+    /// <summary>
+    /// Ticks off one of the three drops that have no slot, and takes it out of the chest's running.
+    ///
+    /// Recorded on the member rather than on a need, because none of these is a need. The weapon
+    /// stone in particular has to be remembered for two separate reasons: it puts 500 tomestones on
+    /// that player's bill, and the material that augments what it buys is only useful to somebody
+    /// who took one.
+    /// </summary>
+    public void RecordSpecial(LiveLootItem item, RosterMember member, SpecialDrop kind)
+    {
+        switch (kind)
+        {
+            case SpecialDrop.WeaponToken:
+                member.WeaponTokenObtained = true;
+                break;
+
+            case SpecialDrop.WeaponAugment:
+                member.WeaponAugmentObtained = true;
+                break;
+
+            case SpecialDrop.Mount:
+                member.MountObtained = true;
+                break;
+        }
+
+        // Index -1 is the chat path: no row to take out of the running, and MarkHandedOver has
+        // already done that from the item id.
+        if (item.Index >= 0)
+        {
+            var key = KeyOf(item);
+            assigned.Add(key);
+
+            if (offeredKey == key)
+                offeredKey = null;
+        }
+
+        lastSignature = string.Empty;
+        config.Save();
+
+        Status = $"{(string.IsNullOrEmpty(item.Name) ? kind.ToString() : item.Name)} recorded for {member.Name}.";
+    }
+
+    /// <summary>
+    /// Puts an item up for greed and takes it out of the plugin's running.
+    ///
+    /// Out of the running rather than handed over: greeding settles who the plugin should suggest,
+    /// and settles nothing at all about who ends up with the thing. That is what a roll is for.
+    /// </summary>
+    public bool SetGreedOnly(LiveLootItem item, out string reason)
+    {
+        reason = runner.Greed(item);
+
+        if (!reason.EndsWith("put up for greed.", StringComparison.Ordinal))
+            return false;
+
+        assigned.Add(KeyOf(item));
+        lastSignature = string.Empty;
+
+        return true;
+    }
+
     public bool IsAssigning => runner.IsRunning;
 
     public string RunnerStatus => runner.Status;

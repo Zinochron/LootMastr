@@ -48,6 +48,9 @@ public sealed class TierTab : ITab
         DrawUpgrades();
 
         ImGuiHelpers.ScaledDummy(10f);
+        DrawSpecials();
+
+        ImGuiHelpers.ScaledDummy(10f);
         DrawExchange();
     }
 
@@ -590,6 +593,89 @@ public sealed class TierTab : ITab
         ImGui.Separator();
 
         return chosen;
+    }
+
+    /// <summary>
+    /// The two things a chest hands out that no need list can describe.
+    ///
+    /// Neither fills a gear slot, so neither can go through the ranking — they are decided by hand in
+    /// the Loot tab, with the plugin supplying an order rather than an answer. All this section does
+    /// is say which items they are, because the plugin has no way to work that out: a stone and a
+    /// mount look like any other unrecognised drop.
+    /// </summary>
+    private void DrawSpecials()
+    {
+        var tier = tiers.Tier;
+
+        ImGui.TextUnformatted("Special drops");
+        Widgets.HelpMarker("Named here, handed out in the Loot tab. Both are matched by item, never " +
+                           "by name — a mount whose name happens to contain \"ring\" would otherwise " +
+                           "be filed as an accessory coffer.");
+        ImGui.Separator();
+
+        Special("Weapon stone", tier.WeaponToken, v => tier.WeaponToken = v, 2,
+                "The stone the tomestone weapon needs on top of its tomestone price. Usually the " +
+                "second fight.");
+
+        Special("Mount", tier.Mount, v => tier.Mount = v, tier.Encounters.Count,
+                "The guaranteed drop from the last fight.");
+    }
+
+    private void Special(string label, TierSpecialDrop? current, Action<TierSpecialDrop?> set,
+                         int defaultEncounter, string help)
+    {
+        using var id = ImRaii.PushId(label);
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted($"{label}:");
+        Widgets.HelpMarker(help);
+        ImGui.SameLine();
+
+        var name = current?.ItemName;
+        var text = string.IsNullOrWhiteSpace(name) ? "not set" : name;
+
+        using (ImRaii.PushColor(ImGuiCol.Text, current == null ? Widgets.Muted : Widgets.Done))
+        {
+            if (ImGui.SmallButton($"{text}##pick"))
+            {
+                query = string.Empty;
+                ImGui.OpenPopup("##specialPopup");
+            }
+        }
+
+        // Clearing has to be possible and has to be deliberate: an item set by mistake would
+        // otherwise put a widget in the Loot tab that never goes away.
+        if (current != null)
+        {
+            ImGui.SameLine();
+            var fight = tiers.Tier.Encounter(current.Encounter)?.Name ?? $"#{current.Encounter}";
+            ImGui.TextDisabled($"from {fight}");
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("x") && ImGui.GetIO().KeyCtrl)
+            {
+                set(null);
+                config.Save();
+            }
+
+            Widgets.Tooltip("Ctrl+click to forget this item.");
+        }
+
+        using var popup = ImRaii.Popup("##specialPopup");
+        if (!popup.Success)
+            return;
+
+        if (!Widgets.ItemSearch(items, ref query, out var picked))
+            return;
+
+        set(new TierSpecialDrop
+        {
+            ItemId = picked,
+            ItemName = items.GetItemName(picked),
+            Encounter = current?.Encounter ?? Math.Max(1, defaultEncounter),
+        });
+
+        config.Save();
     }
 
     private void DrawExchange()

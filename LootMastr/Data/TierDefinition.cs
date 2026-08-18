@@ -24,6 +24,15 @@ public sealed class TierDefinition
     public List<TierUpgrade> Upgrades { get; set; } = new();
 
     /// <summary>
+    /// The stone the tomestone weapon needs, on top of its tomestone price. Null when the tier has
+    /// none, which is how every tier reads until somebody points this at an item.
+    /// </summary>
+    public TierSpecialDrop? WeaponToken { get; set; }
+
+    /// <summary>The mount the last fight always drops. Null until somebody names it.</summary>
+    public TierSpecialDrop? Mount { get; set; }
+
+    /// <summary>
     /// How an augmented tomestone piece is spelled. Augmented gear sits at exactly the raid item
     /// level, so without this a gear set imported before <see cref="Augments"/> has been discovered
     /// would read every augmented piece as a raid drop. Editable because the wording is localised.
@@ -281,6 +290,36 @@ public sealed class TierDefinition
         return new BookCost(group.Key.Encounter, group.Key.Cost);
     }
 
+    /// <summary>
+    /// Which hand-decided drop an item is, or null for anything the ranking handles.
+    ///
+    /// By item id, never by name. <see cref="TierCatalog.TryMatch"/> ends by reading a slot out of
+    /// an item's name, so a mount with "ring" in its name would come through as an accessory coffer,
+    /// and a stone recognised by name would break the day the tier is played on another language
+    /// client.
+    /// </summary>
+    public SpecialDrop? SpecialFor(uint itemId)
+    {
+        if (itemId == 0)
+            return null;
+
+        if (WeaponToken is { ItemId: not 0 } token && itemId == token.ItemId)
+            return SpecialDrop.WeaponToken;
+
+        if (Mount is { ItemId: not 0 } mount && itemId == mount.ItemId)
+            return SpecialDrop.Mount;
+
+        // Only once the stone exists. Without one there is no tomestone weapon in play, and the
+        // weapon material is an ordinary need the ranking answers perfectly well.
+        if (WeaponToken is { ItemId: not 0 } &&
+            UpgradeFor(GearSide.Weapon) is { ItemId: not 0 } material && itemId == material.ItemId)
+        {
+            return SpecialDrop.WeaponAugment;
+        }
+
+        return null;
+    }
+
     /// <summary>Encounters whose books this encounter's books can be traded for.</summary>
     public IReadOnlyList<int> ConvertsInto(int encounter) =>
         Conversions.FirstOrDefault(c => c.FromEncounter == encounter)?.ToEncounters ?? [];
@@ -390,6 +429,42 @@ public sealed class TierCostRule
 
     /// <summary>Set instead of <see cref="Slots"/> when the rule prices an upgrade material.</summary>
     public GearSide? Upgrade { get; set; }
+}
+
+/// <summary>
+/// A drop the need lists cannot describe, decided by hand.
+///
+/// Three of them, with nothing in common except that: a stone, the material that augments what the
+/// stone buys, and a mount. None fills a gear slot, so none can be ranked — the plugin supplies an
+/// order and a person presses the button.
+/// </summary>
+public enum SpecialDrop
+{
+    WeaponToken,
+    WeaponAugment,
+    Mount,
+}
+
+/// <summary>
+/// Something a fight hands out that no need list can describe.
+///
+/// The stone the tomestone weapon wants and the mount from the last fight are both like this: they
+/// come out of a chest, they matter to the group, and neither fills a gear slot. So neither can go
+/// through the ranking, and both get decided by hand — with the plugin supplying an order rather
+/// than an answer.
+///
+/// Matched strictly by <see cref="ItemId"/>. <c>TierCatalog.TryMatch</c> falls back to reading a
+/// slot out of an item's name, and a mount or a stone whose name happens to contain "ring" would
+/// otherwise be filed as a coffer.
+/// </summary>
+[Serializable]
+public sealed class TierSpecialDrop
+{
+    public uint ItemId { get; set; }
+    public string ItemName { get; set; } = string.Empty;
+
+    /// <summary>Which fight drops it. Display only — the item id is what recognises it.</summary>
+    public int Encounter { get; set; }
 }
 
 /// <summary>

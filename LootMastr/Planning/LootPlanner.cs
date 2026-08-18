@@ -9,6 +9,9 @@ namespace LootMastr.Planning;
 /// <summary>An item earlier in the same chest that is already spoken for.</summary>
 public readonly record struct PendingAward(string PlayerKey, GearSlot? Slot, GearSide? Upgrade);
 
+/// <summary>Where one player stands with the tomestone vendor.</summary>
+public readonly record struct TomeStanding(RosterMember Member, int Owed, int Week);
+
 /// <summary>One player weighed up for one drop, with the numbers that put them where they are.</summary>
 public sealed record Candidate(
     RosterMember Member,
@@ -154,6 +157,38 @@ public sealed class LootPlanner
     private static PlayerPlan? WinnerOf(List<PlayerPlan> plans, IReadOnlyList<Candidate> ranking) =>
         ranking.Count == 0 ? null : plans.FirstOrDefault(p => p.Key == ranking[0].Member.Key);
 
+    /// <summary>
+    /// The roster, soonest finished with the tomestone vendor first.
+    ///
+    /// This is the order the group actually argues in when deciding who takes the weapon stone: it
+    /// costs 500 on top of everything that player already owes, so it lands most cheaply on whoever
+    /// has the least left to buy. Closed form, no simulation — income is flat, so the week somebody
+    /// finishes paying is arithmetic rather than a projection.
+    /// </summary>
+    public IReadOnlyList<TomeStanding> ByTomeProgress()
+    {
+        var tier = tiers.Tier;
+        var standings = new List<(TomeStanding Standing, int Order)>();
+
+        var members = roster.Active;
+
+        for (var i = 0; i < members.Count; i++)
+        {
+            var member = members[i];
+            var plan = PlayerPlan.From(member, roster.RoleOf(member), tier, i);
+
+            standings.Add((new TomeStanding(member, TomeLedger.Outstanding(plan),
+                                            TomeLedger.WeekAffordedBy(tier, plan)), i));
+        }
+
+        return standings
+               .OrderBy(x => x.Standing.Week)
+               .ThenBy(x => x.Standing.Owed)
+               .ThenBy(x => x.Order)
+               .Select(x => x.Standing)
+               .ToList();
+    }
+
     public IReadOnlyList<Candidate> RankForSlot(GearSlot slot, IEnumerable<PendingAward>? applied = null) =>
         Rank(plan => plan.Wants(slot), plan => plan.GainFor(slot), applied);
 
@@ -172,7 +207,10 @@ public sealed class LootPlanner
                                           IEnumerable<PendingAward>? applied, GearSide? material = null)
     {
         var basePlans = BuildPlans(applied);
-        var wanting = basePlans.Where(wants).ToList();
+
+        // Second characters first, because that decides who is in the running at all — a material
+        // an alt could use is not a reason to keep them in a field a main is standing in.
+        var wanting = WeekSimulator.Field(config.Rules, basePlans.Where(wants)).ToList();
 
         // For a material, whoever can actually put it on comes first, and the same rule the
         // projection uses decides that — one place, so the chest and the plan cannot disagree about
@@ -287,7 +325,7 @@ public sealed class LootPlanner
         var tier = tiers.Tier;
 
         // The index is the player order, so the rules can be told to follow it.
-        var plans = roster.Members
+        var plans = roster.Active
                           .Select((m, i) => PlayerPlan.From(m, roster.RoleOf(m), tier, i))
                           .ToList();
 

@@ -115,6 +115,26 @@ public sealed class ObtainTracker : IDisposable
 
     private string Apply(RosterMember? member, uint itemId)
     {
+        // The three hand-decided drops fill no slot, so TryMatch cannot see them — but somebody
+        // obtaining one still settles it, and the weapon stone in particular has to be remembered
+        // or the plan misses 500 tomestones and the fight-three material points at the wrong people.
+        if (tiers.Tier.SpecialFor(itemId) is { } special)
+        {
+            assigner.MarkHandedOver(itemId);
+
+            if (member == null)
+                return "no roster player in the line";
+
+            if (!Enabled)
+                return "tracking off";
+
+            assigner.RecordSpecial(
+                new LiveLootItem(-1, itemId, string.Empty, 0, 1, default, default, default, false, 0, null, null),
+                member, special);
+
+            return $"{special} ticked off for {member.Name}";
+        }
+
         if (!tiers.TryMatch(itemId, out var slot, out var upgrade))
             return "not tier loot";
 

@@ -130,7 +130,7 @@ public sealed class PlanTab : ITab
 
         // Anyone unrated scores a zero gain, which under a damage ranking is indistinguishable from
         // a player nothing is worth anything to. Silent, and it decides who gets a coffer.
-        var unrated = roster.Members.Where(m => !m.HasMeasuredStats).Select(m => m.Name).ToList();
+        var unrated = roster.Active.Where(m => !m.HasMeasuredStats).Select(m => m.Name).ToList();
 
         if (unrated.Count > 0)
         {
@@ -258,7 +258,9 @@ public sealed class PlanTab : ITab
 
         var plans = planner.BuildPlans().ToDictionary(p => p.Key);
 
-        foreach (var member in roster.Members)
+        // The active list, not the roster: a second character the group has switched off is not a
+        // row with nothing in it, it is not in the plan at all.
+        foreach (var member in roster.Active)
         {
             ImGui.TableNextRow();
             ImGui.TableNextColumn();

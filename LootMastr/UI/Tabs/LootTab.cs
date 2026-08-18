@@ -27,6 +27,9 @@ public sealed class LootTab : ITab
     private SimulationResult? forecast;
     private int forecastSignature;
 
+    /// <summary>Who is selected for each special drop, by member key. Empty means nobody yet.</summary>
+    private readonly Dictionary<SpecialDrop, string> chosen = new();
+
     public LootTab(Configuration config, LootAssigner assigner, ChatAnnouncer announcer,
                    RosterStore roster, TierCatalog tiers, LootPlanner planner, ClearTracker clears)
     {
@@ -58,6 +61,8 @@ public sealed class LootTab : ITab
         {
             ImGuiHelpers.ScaledDummy(4f);
             DrawDecisions();
+
+            DrawSpecialDrops();
 
             ImGuiHelpers.ScaledDummy(6f);
             DrawActions();
@@ -297,6 +302,11 @@ public sealed class LootTab : ITab
 
         foreach (var decision in assigner.Decisions)
         {
+            // Owned by the section below. Listing it in both places would offer the same stone
+            // twice, from two different orders.
+            if (tiers.Tier.SpecialFor(decision.Item.ItemId) != null)
+                continue;
+
             using var id = ImRaii.PushId(decision.Item.Index);
 
             ImGui.TableNextRow();
@@ -386,6 +396,231 @@ public sealed class LootTab : ITab
 
         Widgets.Tooltip(string.Join("\n", decision.Ranking.Select((c, i) => $"{i + 1}. {c.Member.Name} — {c.Reason}")));
     }
+
+    /// <summary>
+    /// The drops that no need list describes: the weapon stone, the material that augments what it
+    /// buys, and the mount.
+    ///
+    /// Drawn only when one is actually in the chest. A section that is always there would be three
+    /// empty rows in front of the leader every pull, for something that happens once a week.
+    ///
+    /// The plugin supplies an order and never an answer. Who takes the stone is a conversation —
+    /// about who is closest to done with the vendor, and about who wants it — and a plugin that
+    /// picked for you would be wrong in a way nobody could see.
+    /// </summary>
+    private void DrawSpecialDrops()
+    {
+        var specials = assigner.Decisions
+                               .Select(d => (Decision: d, Kind: tiers.Tier.SpecialFor(d.Item.ItemId)))
+                               .Where(x => x.Kind != null)
+                               .ToList();
+
+        if (specials.Count == 0)
+            return;
+
+        ImGuiHelpers.ScaledDummy(8f);
+        ImGui.TextUnformatted("Decided by hand");
+        Widgets.HelpMarker("Drops that fill no gear slot, so no ranking can answer them. The order " +
+                           "in the list is a suggestion — the pick is yours.");
+        ImGui.Separator();
+
+        foreach (var (decision, kind) in specials)
+            DrawSpecialAssignment(decision, kind!.Value);
+    }
+
+    private void DrawSpecialAssignment(LootDecision decision, SpecialDrop kind)
+    {
+        using var id = ImRaii.PushId($"special{(int)kind}");
+
+        var order = OrderFor(kind);
+        var verdict = assigner.Verdict;
+
+        Widgets.Icon(decision.Item.IconId, 20f);
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted(decision.Item.Name);
+
+        ImGui.SameLine();
+        ImGui.TextDisabled($"— {NoteFor(kind)}");
+
+        if (decision.AlreadyAssigned)
+        {
+            ImGui.SameLine();
+            Widgets.Coloured(Widgets.Done, "done");
+            return;
+        }
+
+        if (kind == SpecialDrop.Mount && config.Mount == MountHandling.GreedOnly)
+        {
+            DrawGreedOnly(decision, verdict);
+            return;
+        }
+
+        if (order.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             kind == SpecialDrop.Mount
+                                 ? "Everybody in the roster already has one."
+                                 : "Nobody left in the roster for this one.");
+            return;
+        }
+
+        // Preselected to the top of the order, so the common case is one click — but it is a
+        // selection like any other and reads as one, rather than as the plugin having decided.
+        if (!chosen.TryGetValue(kind, out var key) || order.All(e => e.Member.Key != key))
+        {
+            key = order[0].Member.Key;
+            chosen[kind] = key;
+        }
+
+        var selected = order.First(e => e.Member.Key == key);
+
+        if (ImGui.SmallButton($"{selected.Member.Name}##pick"))
+            ImGui.OpenPopup("##specialPick");
+
+        Widgets.Tooltip(selected.Note);
+
+        ImGui.SameLine();
+
+        using (ImRaii.Disabled(!verdict.Ok || assigner.IsAssigning))
+        {
+            if (ImGui.SmallButton("Assign"))
+            {
+                if (!assigner.PerformAssignment(decision.Item, selected.Member.Name, out var reason))
+                    Services.Chat.PrintError($"LootMastr: {reason}");
+            }
+        }
+
+        if (!verdict.Ok)
+            Widgets.Tooltip(verdict.Reason);
+
+        ImGui.SameLine();
+
+        if (ImGui.SmallButton("Record"))
+            assigner.RecordSpecial(decision.Item, selected.Member, kind);
+
+        Widgets.Tooltip("Tick this off as received. Nothing in chat can do it for these — they are " +
+                        "not tier loot as far as the rest of the plugin is concerned.");
+
+        using var popup = ImRaii.Popup("##specialPick");
+        if (!popup.Success)
+            return;
+
+        foreach (var entry in order)
+        {
+            using var colour = ImRaii.PushColor(ImGuiCol.Text, Widgets.Wanted, entry.Highlight);
+
+            if (ImGui.Selectable($"{entry.Member.Name}##{entry.Member.Key}"))
+                chosen[kind] = entry.Member.Key;
+
+            ImGui.SameLine();
+            ImGui.TextDisabled(entry.Note);
+        }
+    }
+
+    /// <summary>
+    /// The one press in this plugin that nothing can take back.
+    ///
+    /// Greed only settles an item for good and the game shows no confirmation of its own, so this
+    /// one does. Not a Ctrl+click either: that is the right weight for removing a player from a
+    /// list, and the wrong weight for something that happens in front of seven other people and
+    /// cannot be undone.
+    /// </summary>
+    private void DrawGreedOnly(LootDecision decision, GuardVerdict verdict)
+    {
+        using (ImRaii.Disabled(!verdict.Ok || assigner.IsAssigning))
+        {
+            if (ImGui.SmallButton("Set to greed only"))
+                ImGui.OpenPopup("##greedConfirm");
+        }
+
+        if (!verdict.Ok)
+            Widgets.Tooltip(verdict.Reason);
+
+        using var popup = ImRaii.Popup("##greedConfirm");
+        if (!popup.Success)
+            return;
+
+        ImGui.TextUnformatted($"Put {decision.Item.Name} up for greed?");
+        Widgets.Coloured(Widgets.Wanted, "This cannot be undone, and the game will not ask again.");
+
+        ImGuiHelpers.ScaledDummy(4f);
+
+        if (ImGui.Button("Greed only"))
+        {
+            if (!assigner.SetGreedOnly(decision.Item, out var reason))
+                Services.Chat.PrintError($"LootMastr: {reason}");
+
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.SameLine();
+
+        if (ImGui.Button("Cancel"))
+            ImGui.CloseCurrentPopup();
+    }
+
+    /// <summary>One line of a special drop's list: who, why they are there, and whether to shout.</summary>
+    private readonly record struct SpecialCandidate(RosterMember Member, string Note, bool Highlight);
+
+    private IReadOnlyList<SpecialCandidate> OrderFor(SpecialDrop kind)
+    {
+        var standings = planner.ByTomeProgress();
+
+        if (kind == SpecialDrop.Mount)
+        {
+            // Backwards, on purpose. The mount is the one thing in the chest that is worth nothing
+            // to the raid, so it goes to whoever the gear rules have been putting last.
+            var order = config.Rules.RoleOrder.ToList();
+
+            var active = roster.Active.ToList();
+
+            return active
+                   .Where(m => !m.MountObtained)
+                   .OrderBy(m => m.IsAlt)
+                   .ThenByDescending(m => order.IndexOf(roster.RoleOf(m)))
+                   .ThenBy(m => m.ItemsReceived)
+                   .ThenBy(active.IndexOf)
+                   .Select(m => new SpecialCandidate(
+                               m, $"{roster.RoleOf(m)}, {m.ItemsReceived} item(s) so far", false))
+                   .ToList();
+        }
+
+        return standings
+               .Select(s => new SpecialCandidate(s.Member, NoteFor(s, kind), Highlighted(s.Member, kind)))
+               .OrderByDescending(c => c.Highlight)
+               .ThenByDescending(c => config.AltsPreferredForWeaponTokens && c.Member.IsAlt)
+               .ToList();
+    }
+
+    /// <summary>
+    /// The fight-three material is only worth anything to somebody holding a stone from fight two.
+    /// Everyone else is listed, because plans change, but they are not what the list is pointing at.
+    /// </summary>
+    private static bool Highlighted(RosterMember member, SpecialDrop kind) =>
+        kind == SpecialDrop.WeaponAugment && member.WeaponTokenObtained && !member.WeaponAugmentObtained;
+
+    private static string NoteFor(TomeStanding standing, SpecialDrop kind)
+    {
+        var progress = standing.Owed == 0
+                           ? "vendor done"
+                           : $"{standing.Owed:N0} tomes left, W{standing.Week}";
+
+        if (kind != SpecialDrop.WeaponAugment)
+            return standing.Member.WeaponTokenObtained ? $"{progress}, has a stone" : progress;
+
+        if (standing.Member.WeaponAugmentObtained)
+            return $"{progress}, already augmented";
+
+        return standing.Member.WeaponTokenObtained ? $"{progress}, has a stone" : $"{progress}, no stone";
+    }
+
+    private static string NoteFor(SpecialDrop kind) => kind switch
+    {
+        SpecialDrop.WeaponToken => "buys the tomestone weapon, with 500 tomestones",
+        SpecialDrop.WeaponAugment => "augments the tomestone weapon",
+        _ => "one each, and only once",
+    };
 
     private void DrawActions()
     {

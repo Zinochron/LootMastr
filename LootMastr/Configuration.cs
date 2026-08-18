@@ -20,6 +20,19 @@ public enum AssignmentMode
     Automatic,
 }
 
+/// <summary>
+/// What a group does with the mount. Both are real policies rather than one being the absence of
+/// the other, which is why this is a pair of choices and not a checkbox.
+/// </summary>
+public enum MountHandling
+{
+    /// <summary>Hand it to somebody, in reverse of the gear order.</summary>
+    Assign,
+
+    /// <summary>Put it up for greed and let the dice decide.</summary>
+    GreedOnly,
+}
+
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
@@ -75,6 +88,27 @@ public class Configuration : IPluginConfiguration
 
     /// <summary>Announce each assignment in party chat. Off by default — it talks for you.</summary>
     public bool AnnounceInPartyChat { get; set; } = false;
+
+    /// <summary>What to do with the mount the last fight always drops.</summary>
+    public MountHandling Mount { get; set; } = MountHandling.Assign;
+
+    /// <summary>
+    /// Whether the roster has second characters in it at all.
+    ///
+    /// Off hides them completely — out of the plan, the forecast, the ranking and every selector, as
+    /// if they were not in the roster. They stay in the roster list itself, because a switch that
+    /// deleted people would be a bad switch to have flicked by accident.
+    /// </summary>
+    public bool AltCharacters { get; set; }
+
+    /// <summary>
+    /// Whether an alt is the first place to look for the weapon stone and its material.
+    ///
+    /// The one thing an alt is genuinely a good home for. A tomestone weapon on a second character
+    /// costs the raid nothing and makes the next clear go faster, which is the entire point of
+    /// having one.
+    /// </summary>
+    public bool AltsPreferredForWeaponTokens { get; set; } = true;
 
     /// <summary>
     /// Spacing between two actions in the loot window. Firing every frame while a window

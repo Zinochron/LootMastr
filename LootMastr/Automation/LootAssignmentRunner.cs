@@ -66,6 +66,16 @@ public sealed class LootAssignmentRunner : IDisposable
     /// same across three different rows and three different recipients. The row lives in the list's
     /// own state, which is why it is set there instead of being encoded in a parameter.
     /// </summary>
+    /// <summary>
+    /// The chest's first action, which is <b>Greed only</b>.
+    ///
+    /// Not a guess. Two earlier versions of the assignment flow tried callback shapes on this window
+    /// on the reasoning that a wrong one does nothing, and <c>[0, index]</c> turned out to press this
+    /// — settling an item for good with no dialog in between. That accident is the evidence, and it
+    /// is why the number is written down here instead of being tried again.
+    /// </summary>
+    private const int GreedOnlyAction = 0;
+
     private const int LootRecipientButton = 5;
 
     private const int ConfirmButton = 0;
@@ -97,6 +107,53 @@ public sealed class LootAssignmentRunner : IDisposable
         this.guard = guard;
 
         Services.Framework.Update += OnUpdate;
+    }
+
+    /// <summary>
+    /// Puts one row up for greed, in a single press that nothing can take back.
+    ///
+    /// Every other thing this class does has a verification gate between the attempt and the
+    /// consequence, which is what makes retrying safe. This one has none: the game shows no
+    /// confirmation, and a wrong row settles somebody's coffer. So it is one press on a selection
+    /// that has been read back first, and a failure is reported rather than worked around.
+    ///
+    /// Not part of the state machine either. There is nothing to wait for.
+    /// </summary>
+    public unsafe string Greed(LiveLootItem target)
+    {
+        if (IsRunning)
+            return "Busy assigning something else.";
+
+        var verdict = guard.CheckAssign();
+        if (!verdict.Ok)
+            return verdict.Reason;
+
+        if (!SelectChestRow(target.Index))
+            return "Could not reach that row in the chest.";
+
+        // Read back before anything is pressed. The action works on whatever the chest has
+        // selected, so an unverified selection is an unverified target.
+        if (!SelectionIsOn(target.Index))
+            return "The chest did not take the selection — nothing was pressed.";
+
+        var addon = AddonReader.Find(ChestAddon);
+        if (addon.IsNull)
+            return "The chest window went away.";
+
+        var unitBase = (AtkUnitBase*)addon.Address;
+        if (unitBase == null)
+            return "The chest window went away.";
+
+        var values = stackalloc AtkValue[2];
+        values[0].SetInt(GreedOnlyAction);
+        values[1].SetInt(target.Index);
+
+        unitBase->FireCallback(2, values, false);
+
+        lastAction = DateTime.UtcNow;
+        Status = $"{target.Name} put up for greed.";
+
+        return Status;
     }
 
     public bool IsRunning => phase is not (Phase.Idle or Phase.Done);

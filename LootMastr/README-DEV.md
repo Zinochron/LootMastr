@@ -959,6 +959,68 @@ read as "nobody owns a single tomestone piece" and hand out materials nobody can
 sets it from what is worn: tomestone gear in a slot proves the piece is bought, whether or not it is
 the augmented version and whether or not it is the exact target.
 
+### Three drops nothing can rank
+
+The weapon stone, the material that augments what it buys, and the mount. None of them fills a gear
+slot, so none can go through `DropOrder` — there is no need list to compare. They are decided by
+hand, with the plugin supplying **an order and never an answer**.
+
+They are recognised by **item id only**, through `TierDefinition.SpecialFor`. `TierCatalog.TryMatch`
+ends by reading a slot out of an item's name, so a mount whose name contains "ring" would come
+through as an accessory coffer, and a stone recognised by name would break the day somebody plays on
+another language client. The Tier tab is where the two ids get named, because nothing in the game
+data says which item a group cares about.
+
+The main loot table skips whatever the special section owns, or the same stone would be offered
+twice from two different orders.
+
+| Drop | Order the selector suggests |
+|---|---|
+| Weapon stone | Soonest finished with the tomestone vendor. It costs 500 on top of what that player already owes, so it lands most cheaply on whoever owes least. |
+| Weapon material | Anyone holding a stone and not yet an augment, highlighted; everyone else behind them, same tome order. |
+| Mount | Backwards through the role order, then fewest items won, minus anyone who already has one. |
+
+`LootAssigner.PerformAssignment` needed a second overload. The original refuses when `Winner` is
+null, which is right for a coffer — a recipient nobody chose is a bug — and wrong for these, where
+there is no winner by construction.
+
+#### The one press that cannot be taken back
+
+Greed only settles an item for good and the game shows **no confirmation of its own**. Every other
+thing `LootAssignmentRunner` does has a verification gate between the attempt and the consequence,
+which is what makes retrying safe there. This has none, so:
+
+- the row is selected and **read back** before anything is pressed;
+- exactly one press, no retry, failure reported rather than worked around;
+- a confirmation popup in the UI, because the game will not ask.
+
+The callback shape is `[0, index]` and it is **not a guess**: two earlier versions of the assignment
+flow tried shapes on this window on the reasoning that a wrong one does nothing, and this one turned
+out to press Greed only. That accident is the evidence, and `GreedOnlyAction` exists so nobody has
+to produce it again.
+
+### Second characters
+
+A funnel group brings alts to clear a fight twice. They are in the roster because the chest lists
+them, not because they want anything — so gear landing on one is gear that left the raid.
+
+`WeekSimulator.Field` is the whole rule, and it is a **gate rather than a weight**: an alt is not
+ranked against a main and beaten, it is simply not in the field while any main wants the thing. A
+main who has won ten pieces still comes first. Only when no main wants it does
+`PriorityRules.AltsMayTakeSpareGear` decide between the alt and greed.
+
+The two filters compose in one order and it matters: **alts leave the field first, then the material
+gate narrows what is left.** A material an alt could use is never a reason to take it off a main who
+cannot use it yet.
+
+`Configuration.AltCharacters` off means *gone* — `RosterStore.Active` drops them, and everything that
+decides or forecasts reads that list. Only the roster editor reads `Members`, because that is the one
+screen where a hidden player has to stay visible or they could never be brought back.
+
+The exception is the weapon stone, which is the one thing an alt is genuinely a good home for: a
+tomestone weapon on a second character costs the raid nothing and makes the next clear go faster,
+which is the entire reason the character exists.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight
