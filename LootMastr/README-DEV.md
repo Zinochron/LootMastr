@@ -1207,6 +1207,23 @@ pressing it cannot have is worse than no button.
 | Loot | Books, kills, Record | All document writes. Assigning is already gated by `SafetyGuard`. |
 | Debug | Nothing | Local, always. |
 
+The loot tab is the one that disappears instead. Everything in it either writes to the static or acts
+on the loot window as party leader, and a reader is neither — what would be left is a table of
+buttons nobody can press, above a chest somebody else is handing out. `ITab.UsefulToReaders` is false
+for exactly that one tab, and true by default because most of this plugin is worth reading whoever
+you are.
+
+#### An import that loses a slot looks finished
+
+Two places dropped things silently: a slot key the parser does not recognise, and an item id the
+catalogue cannot name. The second is the one that bites, because `GearClassifier` answers `None` for
+an unknown id — and on the sheet that reads exactly like a slot nobody planned. The set looks
+complete, the plan hands out fewer pieces than it should, and nothing says a piece went missing.
+
+Both now end up in `ImportWarning` with the id or the key in them. That is deliberately more than a
+count: the id is the only thing that can say *why* a client could not name an item, and a number
+somebody can paste is worth more than a sentence about it.
+
 The list above is what the gate *should* cover, and for a while it was not what it did. Two of the
 loot tab's gates were written and then thrown away by a batch edit that failed on a later step, and
 nobody noticed until a reader added books. Three more were never written at all: the header's tier

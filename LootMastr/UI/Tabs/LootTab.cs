@@ -45,6 +45,15 @@ public sealed class LootTab : ITab
     public string Title => "Loot";
     public string Id => "loot";
 
+    /// <summary>
+    /// Hidden from readers entirely.
+    ///
+    /// Everything here either writes to the static or acts on the loot window as party leader, and a
+    /// reader is neither. What would be left is a table of buttons nobody can press, above a chest
+    /// somebody else is handing out — the one tab where read-only leaves nothing behind.
+    /// </summary>
+    public bool UsefulToReaders => false;
+
     public void Draw()
     {
         assigner.Refresh();
@@ -71,7 +80,58 @@ public sealed class LootTab : ITab
         ImGuiHelpers.ScaledDummy(10f);
         ImGui.Separator();
         ImGuiHelpers.ScaledDummy(6f);
+        DrawThisWeek();
+
+        ImGuiHelpers.ScaledDummy(8f);
         DrawBooks();
+    }
+
+    /// <summary>
+    /// Every coffer this reset can put up, and who it is for.
+    ///
+    /// The same answer the Plan tab gives, in the tab somebody actually has open with a chest in
+    /// front of them. It is not a duplicate of the loot list above: that one is what dropped, this
+    /// is what is still coming — which is the question when the chest holds two things and somebody
+    /// asks whether to pass.
+    ///
+    /// Ranked with the earlier fights already handed out, so nobody is named twice for a piece they
+    /// can only wear once.
+    /// </summary>
+    private void DrawThisWeek()
+    {
+        if (!ImGui.CollapsingHeader("This week###thisWeek"))
+            return;
+
+        Widgets.HelpMarker("Every coffer the coming reset can drop, whether or not it has yet. The " +
+                           "Plan tab shows the same thing with the runners-up and the reasoning.");
+
+        var week = Forecast().Awards.Where(a => a is { Week: 1, Bought: false }).ToList();
+
+        if (week.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "Nothing expected — everyone is done, or no tier is set up.");
+            return;
+        }
+
+        using var indent = ImRaii.PushIndent();
+
+        foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
+        {
+            var mine = week.Where(a => a.Encounter == encounter.Index).ToList();
+
+            ImGui.TextDisabled(encounter.Name);
+            ImGui.SameLine(90f * ImGuiHelpers.GlobalScale);
+
+            if (mine.Count == 0)
+            {
+                Widgets.Coloured(Widgets.Muted, "nothing");
+                continue;
+            }
+
+            // One line per fight rather than a table: four fights of two or three coffers is a
+            // paragraph, and a table of it would be mostly borders.
+            ImGui.TextUnformatted(string.Join(",  ", mine.Select(a => $"{a.What} → {a.PlayerName}")));
+        }
     }
 
     /// <summary>
@@ -79,17 +139,26 @@ public sealed class LootTab : ITab
     /// rests on and the ones the game gives no way to read, so they have to be both visible and
     /// editable — a book counted wrong is invisible everywhere else.
     /// </summary>
+    /// <summary>
+    /// Kills, books and what they buy.
+    ///
+    /// Folded away, and it earns its place folded. Two of the three things in it live nowhere else —
+    /// the group's kill counts, and the button that hands everyone a book for a clear the plugin did
+    /// not see — while the per-player counts are also on the roster row. What is worth having open
+    /// during a pull is above this; this is for the ten minutes after one.
+    /// </summary>
     private void DrawBooks()
     {
+        if (!ImGui.CollapsingHeader("Books and kills###books"))
+            return;
+
         // Book and kill counts are the group's numbers. A reader may read them -- knowing what they
         // are holding is half the point of being shown any of this -- and may not change them.
         using var gate = ImRaii.Disabled(!config.CanWrite);
 
-        ImGui.TextUnformatted("Books");
         Widgets.HelpMarker("Every player who clears a fight gets one of its books that week. Kills are " +
                            "the group's count; the rows below are what each player is holding right now, " +
                            "after anything they have already spent.");
-        ImGui.Separator();
 
         var encounters = tiers.Tier.Encounters.OrderBy(e => e.Index).ToList();
         if (encounters.Count == 0)

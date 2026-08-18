@@ -122,6 +122,12 @@ public sealed class BisImporter : IDisposable
         member.ImportWarning = string.Empty;
         var fromRaid = 0;
 
+        // Items the planner listed and this client cannot name. An id the catalogue does not know
+        // classifies as None, which reads on the sheet exactly like a slot nobody planned — so the
+        // set looks complete and is not. Collected rather than assumed away, because the id itself
+        // is the only thing that can say why.
+        var unknown = new List<string>();
+
         foreach (var slot in Slots.All)
         {
             var need = member.NeedFor(slot);
@@ -140,6 +146,9 @@ public sealed class BisImporter : IDisposable
             need.BisItemId = itemId;
             need.Source = classifier.Classify(itemId);
             need.BisMateria = set.Materia.TryGetValue(slot, out var melds) ? [..melds] : [];
+
+            if (!items.TryGetItem(itemId, out _))
+                unknown.Add($"{Slots.CofferLabel(slot)} (id {itemId})");
 
             if (need.Source.NeedsRaidResource())
                 fromRaid++;
@@ -166,6 +175,25 @@ public sealed class BisImporter : IDisposable
             extras.Add($"food: {items.GetItemName(set.FoodItemId)}");
 
         Status = $"{member.Name}: {set.Name} — {string.Join(", ", extras)}.";
+
+        // Anything the import could not make sense of, said out loud and kept on the row. A silent
+        // drop here is the worst kind of wrong: the set reads as finished, the plan hands out fewer
+        // pieces than it should, and nothing anywhere says a slot went missing.
+        var lost = new List<string>();
+
+        if (unknown.Count > 0)
+            lost.Add($"{unknown.Count} item(s) this client cannot identify: {string.Join(", ", unknown)}");
+
+        if (set.SkippedEntries.Count > 0)
+            lost.Add($"{set.SkippedEntries.Count} entr(y/ies) the reader did not understand: " +
+                     string.Join(", ", set.SkippedEntries));
+
+        if (lost.Count > 0)
+        {
+            member.ImportWarning = string.Join("; ", lost) + ".";
+            Status += $" {member.ImportWarning}";
+        }
+
         config.Save();
     }
 

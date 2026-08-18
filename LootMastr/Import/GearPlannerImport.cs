@@ -14,8 +14,19 @@ public sealed record ImportedSet(
     string Job,
     IReadOnlyDictionary<GearSlot, uint> Items,
     IReadOnlyDictionary<GearSlot, IReadOnlyList<uint>> Materia,
-    uint FoodItemId)
+    uint FoodItemId,
+    IReadOnlyList<string>? Skipped = null)
 {
+    /// <summary>
+    /// Entries the parser saw and could not use, in the planner's own words.
+    ///
+    /// The reason this exists: a slot key this plugin does not recognise was quietly dropped, and a
+    /// dropped slot is indistinguishable from a slot the set never filled. A set that imports as
+    /// "eleven pieces" when it had twelve is wrong in the one way nobody checks — by looking
+    /// complete.
+    /// </summary>
+    public IReadOnlyList<string> SkippedEntries => Skipped ?? [];
+
     public int MateriaCount
     {
         get
@@ -175,16 +186,24 @@ public sealed class GearPlannerImport : IDisposable
         var items = new Dictionary<GearSlot, uint>();
         var materia = new Dictionary<GearSlot, IReadOnlyList<uint>>();
 
+        var skipped = new List<string>();
+
         if (set["items"] is JObject slots)
         {
             foreach (var (key, value) in slots)
             {
                 if (!XivGearSlots.TryGetValue(key, out var slot))
+                {
+                    skipped.Add($"slot \"{key}\"");
                     continue;
+                }
 
                 var id = value?["id"]?.Value<long>() ?? 0;
                 if (id <= 0)
+                {
+                    skipped.Add($"{key} (no item id)");
                     continue;
+                }
 
                 items[slot] = (uint)id;
 
@@ -198,7 +217,7 @@ public sealed class GearPlannerImport : IDisposable
         if (string.IsNullOrWhiteSpace(name))
             name = sheetName ?? "Imported set";
 
-        return new ImportedSet(name, job, items, materia, FoodOf(set));
+        return new ImportedSet(name, job, items, materia, FoodOf(set), skipped);
     }
 
     /// <summary>
