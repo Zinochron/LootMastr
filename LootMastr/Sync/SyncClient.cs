@@ -611,6 +611,14 @@ public sealed class SyncClient : IDisposable
         SyncException sync => sync.Message,
         TaskCanceledException => "The server did not answer in time.",
         HttpRequestException http => $"Could not reach the server: {http.Message}",
+
+        // A document that will not parse is not a network problem and not the user's fault, and the
+        // raw parser message — four lines about JSON arrays and dictionaries — tells them nothing
+        // they can act on. What they can act on is pushing over it, so that is what it says.
+        JsonException => "The server's copy could not be read. It may have been written by a " +
+                         "different version of this plugin. Nothing local was changed — press " +
+                         "\"Push now\" to replace it with your copy.",
+
         _ => ex.Message,
     };
 
