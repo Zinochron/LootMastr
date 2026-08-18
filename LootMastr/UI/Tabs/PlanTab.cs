@@ -58,12 +58,19 @@ public sealed class PlanTab : ITab
             return;
         }
 
-        if (ImGui.Button("Recalculate"))
-            Invalidate();
+        using (ImRaii.Disabled(!config.CanWrite))
+        {
+            if (ImGui.Button("Recalculate"))
+                Invalidate();
+        }
 
-        Widgets.HelpMarker("Recalculates on its own whenever the roster, a tick or a book count " +
-                           "changes; this is only here for after a tier edit. Weeks are counted from " +
-                           "now, so week 1 is the next reset.");
+        Widgets.HelpMarker(config.CanWrite
+                               ? "Recalculates on its own whenever the roster, a tick or a book count " +
+                                 "changes; this is only here for after a tier edit. Weeks are counted " +
+                                 "from now, so week 1 is the next reset."
+                               : "Only needed after editing the tier, which needs write access. " +
+                                 "Everything below already follows the roster and the last pull on " +
+                                 "its own.");
 
         ImGui.SameLine();
         ImGui.TextDisabled($"looking {config.LookaheadWeeks} weeks ahead");
@@ -399,15 +406,15 @@ public sealed class PlanTab : ITab
 
         ImGui.SameLine();
 
+        // How much of a list somebody wants to look at is theirs, whatever the server says they may
+        // change. It is stored on this client for the same reason — shared, a reader's choice would
+        // be undone by the next pull.
         var onlyNext = config.ShowOnlyNextRecipient;
 
-        using (ImRaii.Disabled(!config.CanWrite))
+        if (ImGui.Checkbox("Winner only", ref onlyNext))
         {
-            if (ImGui.Checkbox("Winner only", ref onlyNext))
-            {
-                config.ShowOnlyNextRecipient = onlyNext;
-                config.Save();
-            }
+            config.ShowOnlyNextRecipient = onlyNext;
+            config.Save();
         }
 
         Widgets.HelpMarker("Hides the runners-up, leaving just who each drop is for.");

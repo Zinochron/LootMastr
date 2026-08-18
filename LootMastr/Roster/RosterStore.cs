@@ -143,7 +143,6 @@ public sealed class RosterStore
 
         hash.Add(settings.LookaheadWeeks);
         hash.Add(settings.AltCharacters);
-        hash.Add(settings.ShowAlts);
 
         // Anything a pull brought with it, including a tier nobody here edited. One counter stands
         // in for a whole document, which is the only cheap way to notice a tier changed.
@@ -208,7 +207,7 @@ public sealed class RosterStore
     /// alts switched on may perfectly well not want six extra rows while reading gear.
     /// </summary>
     public IReadOnlyList<RosterMember> Visible =>
-        config.Settings.ShowAlts ? config.Roster : config.Roster.Where(m => !m.IsAlt).ToList();
+        config.ShowAlts ? config.Roster : config.Roster.Where(m => !m.IsAlt).ToList();
 
     /// <summary>Roster order, but damage dealers first — the order suggestions are shown in.</summary>
     public IEnumerable<RosterMember> ByPriority() =>

@@ -522,9 +522,19 @@ public sealed class RosterTab : ITab
     private void DrawToolbar()
     {
         // Reading gear writes to the roster, so it is an edit like any other — a viewer pressing it
-        // would fill in a sheet that the next pull throws away.
-        using var gate = ImRaii.Disabled(!config.CanWrite);
+        // would fill in a sheet that the next pull throws away. Scoped, because the switch at the
+        // end of this row is nobody's business but the person looking at the screen.
+        using (ImRaii.Disabled(!config.CanWrite))
+        {
+            DrawRosterActions();
+        }
 
+        ImGui.SameLine(0f, 20f);
+        DrawViewOptions();
+    }
+
+    private void DrawRosterActions()
+    {
         if (scanner.IsRunning)
         {
             if (ImGui.Button("Stop reading"))
@@ -547,16 +557,15 @@ public sealed class RosterTab : ITab
         Widgets.HelpMarker("Runs the raid / tome / augmented decision over the sets already imported, " +
                            "without fetching them again. Worth pressing after discovering the tier or " +
                            "correcting how augmented gear is spelled.");
+    }
 
-        ImGui.SameLine(0f, 20f);
-
-        // Who is in the group is a Manage statics question and moved there. What is left in this
-        // toolbar is what a raid leader presses during a night: read gear, re-file, and hide the
-        // rows that are not about gearing anybody.
-        var showAlts = config.Settings.ShowAlts;
+    /// <summary>What this screen shows. Never gated: a reader is here to look, and this is looking.</summary>
+    private void DrawViewOptions()
+    {
+        var showAlts = config.ShowAlts;
         if (ImGui.Checkbox("Show alts", ref showAlts))
         {
-            config.Settings.ShowAlts = showAlts;
+            config.ShowAlts = showAlts;
             config.Save();
         }
 

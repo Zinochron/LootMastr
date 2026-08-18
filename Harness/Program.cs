@@ -1879,7 +1879,6 @@ var rules = new PriorityRules();
     // reason it is spelled out rather than looped: a loop would pass while missing the field it
     // was never told about.
     Check("lookahead", settings.LookaheadWeeks == 14);
-    Check("winner only", settings.ShowOnlyNextRecipient);
     Check("assignment mode", settings.Mode == AssignmentMode.Automatic);
     Check("party chat", settings.AnnounceInPartyChat);
     Check("mount handling", settings.Mount == MountHandling.GreedOnly);

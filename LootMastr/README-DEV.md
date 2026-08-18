@@ -1167,7 +1167,21 @@ said `read` does the answer change, because only then is there somebody whose wo
 them would defeat the point of sharing at all. So the screens are the same screens with their editing
 controls greyed, and a line at the top says why.
 
-Where the gate sits differs by tab, and the rule is *what does this control write*:
+Where the gate sits differs by tab, and the rule is *what does this control write* — with one
+correction that the rule itself made obvious once it was applied.
+
+**Two toggles are not settings.** `ShowOnlyNextRecipient` and `ShowAlts` were in `StaticSettings`
+because "everything except debug is shared" was applied wholesale, and gating them produced a small
+absurdity: somebody with read access could not choose how much of a list to look at. Removing the
+gate alone would have been worse — shared, their choice would be undone by the next pull sixty
+seconds later. So both moved to `Configuration`, where they belong: the same distinction
+`RosterStore` already draws between `Active` (a rule about loot) and `Visible` (a preference about a
+screen).
+
+`Recalculate` went the other way. It is gated now, because its own help text says it is only needed
+after a tier edit — and a reader cannot edit the tier. A button that promises something the person
+pressing it cannot have is worse than no button.
+
 
 | | Gated | Why |
 |---|---|---|

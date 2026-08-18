@@ -35,6 +35,23 @@ public class Configuration : IPluginConfiguration
     public string CurrentStaticId { get; set; } = string.Empty;
 
     /// <summary>
+    /// Show only who each expected drop goes to, without the runners-up.
+    ///
+    /// This and <see cref="ShowAlts"/> are the two settings that belong to the person looking rather
+    /// than to the group. They were in the shared settings because "everything except debug is
+    /// shared" was applied wholesale, and it produced a small absurdity: somebody with read access
+    /// could not choose how much of a list to look at, and if the gate were simply removed their
+    /// choice would be undone by the next pull sixty seconds later.
+    ///
+    /// The distinction is the same one <c>RosterStore</c> already draws between <c>Active</c> and
+    /// <c>Visible</c> — a rule about loot, versus a preference about a screen.
+    /// </summary>
+    public bool ShowOnlyNextRecipient { get; set; }
+
+    /// <summary>Show second characters in the roster list. Purely a view; changes no distribution.</summary>
+    public bool ShowAlts { get; set; }
+
+    /// <summary>
     /// Where the public tier library lives.
     ///
     /// Per install rather than per static, because a tier definition belongs to no group: it is item
@@ -100,13 +117,6 @@ public class Configuration : IPluginConfiguration
     {
         get => Current.Settings.LookaheadWeeks;
         set => Current.Settings.LookaheadWeeks = value;
-    }
-
-    [JsonIgnore]
-    public bool ShowOnlyNextRecipient
-    {
-        get => Current.Settings.ShowOnlyNextRecipient;
-        set => Current.Settings.ShowOnlyNextRecipient = value;
     }
 
     [JsonIgnore]
@@ -254,6 +264,12 @@ public class Configuration : IPluginConfiguration
                                                    LegacyAltCharacters, LegacyAltsPreferred,
                                                    LegacyActionDelayMs, LegacyVerboseChat,
                                                    LegacyExpertMode, LegacyAutoReadGear));
+
+        // A view preference, and it moved out of the static after version 2 was already shipping.
+        // Carried across rather than reset, because somebody who turned the runners-up off did so
+        // on purpose and an upgrade is not a reason to argue with them.
+        if (LegacyShowOnlyNextRecipient is { } onlyNext)
+            ShowOnlyNextRecipient = onlyNext;
 
         Statics.Add(profile);
         PrimaryStaticId = profile.Id;

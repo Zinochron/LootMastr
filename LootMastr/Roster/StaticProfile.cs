@@ -54,9 +54,6 @@ public sealed class StaticSettings
     /// <summary>How many weeks the planner looks ahead when judging an assignment.</summary>
     public int LookaheadWeeks { get; set; } = 8;
 
-    /// <summary>Show only who each expected drop goes to, without the runners-up.</summary>
-    public bool ShowOnlyNextRecipient { get; set; }
-
     // ---- Automation ------------------------------------------------------
 
     public AssignmentMode Mode { get; set; } = AssignmentMode.Confirm;
@@ -85,9 +82,6 @@ public sealed class StaticSettings
     public bool ExpertMode { get; set; }
 
     public bool AutoReadGearOnEnter { get; set; } = true;
-
-    /// <summary>Show second characters in the roster list. Purely a view; changes no distribution.</summary>
-    public bool ShowAlts { get; set; }
 }
 
 /// <summary>
@@ -213,7 +207,6 @@ public sealed class StaticProfile
 
         if (old.Rules != null) settings.Rules = old.Rules;
         if (old.LookaheadWeeks is { } weeks) settings.LookaheadWeeks = weeks;
-        if (old.ShowOnlyNextRecipient is { } onlyNext) settings.ShowOnlyNextRecipient = onlyNext;
         if (old.Mode is { } mode) settings.Mode = mode;
         if (old.AnnounceInPartyChat is { } announce) settings.AnnounceInPartyChat = announce;
         if (old.Mount is { } mount) settings.Mount = mount;
