@@ -1207,6 +1207,16 @@ pressing it cannot have is worse than no button.
 | Loot | Books, kills, Record | All document writes. Assigning is already gated by `SafetyGuard`. |
 | Debug | Nothing | Local, always. |
 
+The list above is what the gate *should* cover, and for a while it was not what it did. Two of the
+loot tab's gates were written and then thrown away by a batch edit that failed on a later step, and
+nobody noticed until a reader added books. Three more were never written at all: the header's tier
+dropdown, the roster's reorder arrows and the per-player gear scan.
+
+They were found by listing every mutating call in `UI/` and asking, for each, whether a gate stands
+between it and the user — rather than by reading the diff again. The check is worth repeating after
+any change here: `config.Save()`, `roster.Move`, `tiers.Load`, `scanner.Start` and the assigner's
+record methods are the whole vocabulary, and the answer for each has to be a gate or a reason.
+
 One supporting change made the whole thing usable: `Widgets.Tooltip` and `HelpMarker` now hover with
 `AllowWhenDisabled`. A greyed-out control that also refuses to explain itself is worse than one that
 is missing — the reader can see there is a setting and has no way to find out what it does.

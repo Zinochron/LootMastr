@@ -81,6 +81,10 @@ public sealed class LootTab : ITab
     /// </summary>
     private void DrawBooks()
     {
+        // Book and kill counts are the group's numbers. A reader may read them -- knowing what they
+        // are holding is half the point of being shown any of this -- and may not change them.
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
         ImGui.TextUnformatted("Books");
         Widgets.HelpMarker("Every player who clears a fight gets one of its books that week. Kills are " +
                            "the group's count; the rows below are what each player is holding right now, " +
@@ -244,6 +248,17 @@ public sealed class LootTab : ITab
             if (!string.IsNullOrEmpty(clears.Status))
                 Widgets.Coloured(Widgets.Muted, clears.Status);
 
+            return;
+        }
+
+        // A reader is told the clear was noticed and is not offered the buttons: handing out books is
+        // the leader's, and a prompt whose only answer is "no" is a prompt that should not appear.
+        if (!config.CanWrite)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             $"{clears.Pending.Name} cleared. Whoever keeps this static adds the books.");
+
+            ImGuiHelpers.ScaledDummy(6f);
             return;
         }
 

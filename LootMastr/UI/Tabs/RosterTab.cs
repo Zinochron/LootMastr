@@ -138,12 +138,18 @@ public sealed class RosterTab : ITab
             DrawTokenCell(member);
 
             ImGui.TableNextColumn();
-            if (ImGui.SmallButton("^"))
-                roster.Move(member, -1);
 
-            ImGui.SameLine(0f, 2f);
-            if (ImGui.SmallButton("v"))
-                roster.Move(member, 1);
+            // The order is the last tiebreak between two equal candidates, so moving somebody is a
+            // change to how loot is handed out and not a change to how a list looks.
+            using (ImRaii.Disabled(!config.CanWrite))
+            {
+                if (ImGui.SmallButton("^"))
+                    roster.Move(member, -1);
+
+                ImGui.SameLine(0f, 2f);
+                if (ImGui.SmallButton("v"))
+                    roster.Move(member, 1);
+            }
 
         }
     }
@@ -198,7 +204,7 @@ public sealed class RosterTab : ITab
         }
 
         ImGui.SameLine();
-        using (ImRaii.Disabled(scanner.IsRunning))
+        using (ImRaii.Disabled(scanner.IsRunning || !config.CanWrite))
         {
             if (ImGui.SmallButton("Read this player"))
                 Services.Chat.Print($"LootMastr: {scanner.StartFor(member)}");
@@ -671,12 +677,18 @@ public sealed class RosterTab : ITab
             DrawTokenCell(member);
 
             ImGui.TableNextColumn();
-            if (ImGui.SmallButton("^"))
-                roster.Move(member, -1);
 
-            ImGui.SameLine(0f, 2f);
-            if (ImGui.SmallButton("v"))
-                roster.Move(member, 1);
+            // The order is the last tiebreak between two equal candidates, so moving somebody is a
+            // change to how loot is handed out and not a change to how a list looks.
+            using (ImRaii.Disabled(!config.CanWrite))
+            {
+                if (ImGui.SmallButton("^"))
+                    roster.Move(member, -1);
+
+                ImGui.SameLine(0f, 2f);
+                if (ImGui.SmallButton("v"))
+                    roster.Move(member, 1);
+            }
 
             ImGui.SameLine(0f, 2f);
             if (ImGui.SmallButton("x") && ImGui.GetIO().KeyCtrl)

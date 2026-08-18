@@ -154,10 +154,16 @@ public sealed class MainWindow : Window, IDisposable
         {
             if (popup.Success)
             {
-                foreach (var (id, name) in TierCatalog.AvailableTiers())
+                // Which tier a static runs is the group's decision, and switching it here replaces
+                // the definition wholesale — the loudest edit in the plugin, from its smallest
+                // control.
+                using (ImRaii.Disabled(!config.CanWrite))
                 {
-                    if (ImGui.Selectable($"{name}##{id}", id == profile.ActiveTierId))
-                        tiers.Load(id);
+                    foreach (var (id, name) in TierCatalog.AvailableTiers())
+                    {
+                        if (ImGui.Selectable($"{name}##{id}", id == profile.ActiveTierId))
+                            tiers.Load(id);
+                    }
                 }
 
                 ImGui.Separator();
