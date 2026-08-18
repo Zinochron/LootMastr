@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LootMastr.Data;
 using LootMastr.Roster;
+using LootMastr.Sync;
 
 namespace LootMastr.UI;
 
@@ -29,6 +30,7 @@ public sealed class StaticsWindow : Window, IDisposable
     private readonly RosterStore roster;
     private readonly JobCatalog jobs;
     private readonly PartyReader party;
+    private readonly SyncClient sync;
 
     private string newStaticName = string.Empty;
     private string newName = string.Empty;
@@ -36,8 +38,16 @@ public sealed class StaticsWindow : Window, IDisposable
     private string renameBuffer = string.Empty;
     private string renaming = string.Empty;
 
+    // Sync form. The password is a field on this window and nowhere else: it goes to the server
+    // once, is cleared the moment it has been sent, and is never written to the config.
+    private string syncUrl = string.Empty;
+    private string syncName = string.Empty;
+    private string syncPassword = string.Empty;
+    private string syncCharacter = string.Empty;
+    private string formFor = string.Empty;
+
     public StaticsWindow(Configuration config, StaticStore statics, RosterStore roster,
-                         JobCatalog jobs, PartyReader party)
+                         JobCatalog jobs, PartyReader party, SyncClient sync)
         : base("LootMastr — statics###LootMastrStatics")
     {
         this.config = config;
@@ -45,6 +55,7 @@ public sealed class StaticsWindow : Window, IDisposable
         this.roster = roster;
         this.jobs = jobs;
         this.party = party;
+        this.sync = sync;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -64,13 +75,256 @@ public sealed class StaticsWindow : Window, IDisposable
 
     public override void Draw()
     {
+        sync.Poll();
+
         DrawStaticList();
 
         ImGuiHelpers.ScaledDummy(10f);
         ImGui.Separator();
         ImGuiHelpers.ScaledDummy(6f);
 
+        DrawSharing();
+
+        ImGuiHelpers.ScaledDummy(10f);
+        ImGui.Separator();
+        ImGuiHelpers.ScaledDummy(6f);
+
         DrawMembers();
+    }
+
+    /// <summary>
+    /// Whether this static lives on a server, and who may change it there.
+    ///
+    /// The section says what leaves the machine before it offers to send it. That is not politeness:
+    /// character names are the whole payload, and a plugin that uploads them because a checkbox was
+    /// convenient to tick is a plugin that decided something for somebody.
+    /// </summary>
+    private void DrawSharing()
+    {
+        var profile = statics.Current;
+        var setup = profile.Sync;
+
+        ImGui.TextUnformatted($"Sharing {profile.Name}");
+        Widgets.HelpMarker("Syncing puts this static on a server so the rest of the group can read " +
+                           "it — who needs what, and what to buy this week.\n\n" +
+                           "What is uploaded: the roster (names, worlds, jobs, gear sets, what each " +
+                           "player has been given), the tier, the kill counts and the settings. What " +
+                           "is not: anything about your machine, and never your password.");
+        ImGui.Separator();
+
+        if (!string.IsNullOrEmpty(sync.Message))
+        {
+            var colour = sync.StatusOf(profile) switch
+            {
+                SyncStatus.Error => Widgets.Bad,
+                SyncStatus.Working => Widgets.Wanted,
+                _ => Widgets.Muted,
+            };
+
+            Widgets.Coloured(colour, sync.Message);
+            ImGuiHelpers.ScaledDummy(4f);
+        }
+
+        if (setup.IsClaimed)
+        {
+            DrawConnected(profile, setup);
+            return;
+        }
+
+        DrawJoinForm(profile);
+    }
+
+    private void DrawConnected(StaticProfile profile, SyncSetup setup)
+    {
+        ImGui.TextDisabled($"{setup.RemoteName} at {setup.Url}");
+        ImGui.TextDisabled($"as {setup.CharacterName} — {setup.Role.ToString().ToLowerInvariant()}" +
+                           (setup.Revision > 0 ? $", revision {setup.Revision}" : string.Empty));
+
+        using (ImRaii.Disabled(sync.IsBusy))
+        {
+            if (ImGui.Button("Pull now"))
+                sync.Pull(profile, manual: true);
+
+            Widgets.HelpMarker("Takes the server's copy. Anything you have changed here and not " +
+                               "pushed is replaced.");
+
+            ImGui.SameLine();
+
+            using (ImRaii.Disabled(setup.Role == StaticRole.Read))
+            {
+                if (ImGui.Button("Push now"))
+                    sync.Push(profile, manual: true);
+            }
+
+            Widgets.HelpMarker(setup.Role == StaticRole.Read
+                                   ? "This character may only read. An admin can change that."
+                                   : "Sends your copy. Pushing happens on its own a couple of seconds " +
+                                     "after a change; this is for when you would rather not wait.");
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("Members"))
+                sync.LoadMembers(profile);
+
+            Widgets.HelpMarker("Who has joined this static, and what each of them may do.");
+        }
+
+        ImGui.SameLine(0f, 20f);
+
+        if (ImGui.Button("Stop syncing") && ImGui.GetIO().KeyCtrl)
+        {
+            profile.Sync = new SyncSetup();
+            config.Save();
+            sync.Refresh();
+        }
+
+        Widgets.Tooltip("Ctrl+click. Forgets this client's token and leaves the static on the server " +
+                        "untouched — everyone else keeps working, and this copy goes back to local only.");
+
+        DrawPermissions(profile, setup);
+    }
+
+    private void DrawPermissions(StaticProfile profile, SyncSetup setup)
+    {
+        if (sync.Members.Count == 0)
+            return;
+
+        ImGuiHelpers.ScaledDummy(6f);
+
+        using var table = ImRaii.Table("##perms", 3,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("Character");
+        ImGui.TableSetupColumn("May", ImGuiTableColumnFlags.WidthFixed, 90f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("Joined", ImGuiTableColumnFlags.WidthFixed, 120f * ImGuiHelpers.GlobalScale);
+        ImGui.TableHeadersRow();
+
+        foreach (var member in sync.Members)
+        {
+            using var id = ImRaii.PushId(member.Character);
+
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(member.Character);
+
+            ImGui.TableNextColumn();
+
+            // Only an admin may hand out rights, and the server checks it again. This is the button
+            // being honest about what it would achieve, not the security.
+            using (ImRaii.Disabled(setup.Role != StaticRole.Admin || sync.IsBusy))
+            {
+                if (ImGui.SmallButton($"{member.Role.ToString().ToLowerInvariant()}##role"))
+                    ImGui.OpenPopup("##rolePick");
+            }
+
+            if (setup.Role != StaticRole.Admin)
+                Widgets.Tooltip("Only an admin can change what somebody may do.");
+
+            using (var popup = ImRaii.Popup("##rolePick"))
+            {
+                if (popup.Success)
+                {
+                    foreach (var role in new[] { StaticRole.Read, StaticRole.Write, StaticRole.Admin })
+                    {
+                        if (ImGui.Selectable(RoleLabel(role), member.Role == role))
+                            sync.SetRole(profile, member.Character, role);
+                    }
+                }
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextDisabled(member.ClaimedAt is { } when ? when.ToLocalTime().ToString("d MMM") : "—");
+        }
+    }
+
+    private static string RoleLabel(StaticRole role) => role switch
+    {
+        StaticRole.Read => "read — see the roster and the plan",
+        StaticRole.Write => "write — edit the roster, tier and settings",
+        _ => "admin — that, and hand out rights",
+    };
+
+    private void DrawJoinForm(StaticProfile profile)
+    {
+        // Prefilled once per static, not every frame, or typing would be impossible.
+        if (formFor != profile.Id)
+        {
+            formFor = profile.Id;
+            syncUrl = profile.Sync.Url;
+            syncName = string.IsNullOrWhiteSpace(profile.Sync.RemoteName) ? profile.Name : profile.Sync.RemoteName;
+            syncPassword = string.Empty;
+            syncCharacter = LocalCharacter();
+        }
+
+        ImGui.SetNextItemWidth(320f * ImGuiHelpers.GlobalScale);
+        ImGui.InputTextWithHint("##url", "https://example.com/lootmastr", ref syncUrl, 200);
+        ImGui.SameLine();
+        ImGui.TextDisabled("Server");
+
+        ImGui.SetNextItemWidth(200f * ImGuiHelpers.GlobalScale);
+        ImGui.InputTextWithHint("##remoteName", "Name on the server", ref syncName, 48);
+        ImGui.SameLine();
+        ImGui.TextDisabled("Static");
+
+        ImGui.SetNextItemWidth(200f * ImGuiHelpers.GlobalScale);
+        ImGui.InputTextWithHint("##password", "Password", ref syncPassword, 128, ImGuiInputTextFlags.Password);
+        ImGui.SameLine();
+        ImGui.TextDisabled("Password");
+        Widgets.HelpMarker("Sent once, to prove you belong here, and then forgotten. What is stored " +
+                           "is a token bound to the character below — so this file never contains " +
+                           "the password, and a token is worth less than one.");
+
+        ImGui.SetNextItemWidth(200f * ImGuiHelpers.GlobalScale);
+        ImGui.InputTextWithHint("##character", "Character name", ref syncCharacter, 48);
+        ImGui.SameLine();
+        ImGui.TextDisabled("As");
+        Widgets.HelpMarker("Rights are per character. This is the one the server will know you by.");
+
+        ImGuiHelpers.ScaledDummy(4f);
+
+        var ready = !string.IsNullOrWhiteSpace(syncUrl) && !string.IsNullOrWhiteSpace(syncName) &&
+                    !string.IsNullOrWhiteSpace(syncPassword) && !string.IsNullOrWhiteSpace(syncCharacter);
+
+        using (ImRaii.Disabled(!ready || sync.IsBusy))
+        {
+            if (ImGui.Button("Join"))
+            {
+                sync.Join(profile, syncUrl.Trim(), syncName.Trim(), syncPassword, syncCharacter.Trim());
+                syncPassword = string.Empty;
+            }
+
+            Widgets.HelpMarker("For a static somebody has already put on the server. You start with " +
+                               "read access unless an admin has said otherwise.");
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("Create on the server"))
+            {
+                sync.Create(profile, syncUrl.Trim(), syncName.Trim(), syncPassword, syncCharacter.Trim());
+                syncPassword = string.Empty;
+            }
+
+            Widgets.HelpMarker("Puts this static on the server for the first time. You become its " +
+                               "admin, and the password is what you hand to the rest of the group.");
+        }
+
+        if (!ready)
+            Widgets.Coloured(Widgets.Muted, "Fill all four in.");
+    }
+
+    private static string LocalCharacter()
+    {
+        foreach (var player in new PartyReader().Read())
+        {
+            if (player.IsLocalPlayer)
+                return player.Name;
+        }
+
+        return string.Empty;
     }
 
     private void DrawStaticList()
@@ -169,8 +423,8 @@ public sealed class StaticsWindow : Window, IDisposable
 
         using (ImRaii.Disabled(current))
         {
-            if (ImGui.SmallButton("Open"))
-                statics.Switch(profile.Id);
+            if (ImGui.SmallButton("Open") && statics.Switch(profile.Id))
+                sync.Refresh();
         }
 
         ImGui.SameLine(0f, 4f);
@@ -205,24 +459,34 @@ public sealed class StaticsWindow : Window, IDisposable
     /// What syncing is doing for this static. Until the client exists this can only report the
     /// setting, and it says so rather than showing a green light nothing is behind.
     /// </summary>
-    private static void DrawSyncCell(StaticProfile profile)
+    private void DrawSyncCell(StaticProfile profile)
     {
-        if (!profile.Sync.Enabled)
+        switch (sync.StatusOf(profile))
         {
-            Widgets.Coloured(Widgets.Muted, "local only");
-            Widgets.Tooltip("Nothing about this static leaves your machine.");
-            return;
-        }
+            case SyncStatus.Off:
+                Widgets.Coloured(Widgets.Muted, "local only");
+                Widgets.Tooltip("Nothing about this static leaves your machine.");
+                return;
 
-        if (!profile.Sync.IsClaimed)
-        {
-            Widgets.Coloured(Widgets.Wanted, "not joined");
-            Widgets.Tooltip("Switched on, but this client has not claimed a token yet.");
-            return;
-        }
+            case SyncStatus.NotJoined:
+                Widgets.Coloured(Widgets.Wanted, "not joined");
+                Widgets.Tooltip("Switched on, but this client has not claimed a token yet.");
+                return;
 
-        Widgets.Coloured(Widgets.Done, profile.Sync.Role.ToString().ToLowerInvariant());
-        Widgets.Tooltip($"{profile.Sync.CharacterName} at {profile.Sync.Url}");
+            case SyncStatus.Working:
+                Widgets.Coloured(Widgets.Wanted, "syncing…");
+                return;
+
+            case SyncStatus.Error:
+                Widgets.Coloured(Widgets.Bad, "problem");
+                Widgets.Tooltip(sync.Message);
+                return;
+
+            default:
+                Widgets.Coloured(Widgets.Done, profile.Sync.Role.ToString().ToLowerInvariant());
+                Widgets.Tooltip($"{profile.Sync.CharacterName} at {profile.Sync.Url}");
+                return;
+        }
     }
 
     /// <summary>

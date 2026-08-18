@@ -8,6 +8,7 @@ using LootMastr.Data;
 using LootMastr.Import;
 using LootMastr.Planning;
 using LootMastr.Roster;
+using LootMastr.Sync;
 using LootMastr.UI;
 using LootMastr.UI.Tabs;
 
@@ -46,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     public JobProfileCatalog Profiles { get; }
     public StatBlockBuilder Stats { get; }
     public GearComparer Gear { get; }
+    public SyncClient Sync { get; }
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -84,6 +86,8 @@ public sealed class Plugin : IDalamudPlugin
         tracker = new ObtainTracker(Configuration, Roster, Tiers, Assigner);
         clears = new ClearTracker(Configuration, Tiers, Roster, Party);
 
+        Sync = new SyncClient(Configuration, Statics, Tiers);
+
         Equipment = new EquipmentReader(Items);
         Attributes = new AttributeReader();
         Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Attributes, Classifier);
@@ -98,9 +102,9 @@ public sealed class Plugin : IDalamudPlugin
             new SettingsTab(Configuration, Roster, Planner),
         };
 
-        staticsWindow = new StaticsWindow(Configuration, Statics, Roster, Jobs, Party);
+        staticsWindow = new StaticsWindow(Configuration, Statics, Roster, Jobs, Party, Sync);
         tiersWindow = new TiersWindow(Configuration, Tiers, Items);
-        mainWindow = new MainWindow(tabs, Statics, Tiers, staticsWindow.Open, tiersWindow.Open);
+        mainWindow = new MainWindow(tabs, Statics, Tiers, Sync, staticsWindow.Open, tiersWindow.Open);
 
         windowSystem.AddWindow(mainWindow);
         windowSystem.AddWindow(staticsWindow);
@@ -180,6 +184,7 @@ public sealed class Plugin : IDalamudPlugin
         mainWindow.Dispose();
         staticsWindow.Dispose();
         tiersWindow.Dispose();
+        Sync.Dispose();
         importer.Dispose();
         tracker.Dispose();
         clears.Dispose();

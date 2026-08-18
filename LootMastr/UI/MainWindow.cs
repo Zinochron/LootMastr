@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LootMastr.Data;
 using LootMastr.Roster;
+using LootMastr.Sync;
 
 namespace LootMastr.UI;
 
@@ -16,19 +17,21 @@ public sealed class MainWindow : Window, IDisposable
     private readonly List<ITab> tabs;
     private readonly StaticStore statics;
     private readonly TierCatalog tiers;
+    private readonly SyncClient sync;
     private readonly Action openStatics;
     private readonly Action openTiers;
 
     /// <summary>Set to have the next draw jump to a specific tab, e.g. when opened via the config button.</summary>
     private string? pendingTabId;
 
-    public MainWindow(IEnumerable<ITab> tabs, StaticStore statics, TierCatalog tiers,
+    public MainWindow(IEnumerable<ITab> tabs, StaticStore statics, TierCatalog tiers, SyncClient sync,
                       Action openStatics, Action openTiers)
         : base($"LootMastr {Build.Version}###LootMastrMain")
     {
         this.tabs = new List<ITab>(tabs);
         this.statics = statics;
         this.tiers = tiers;
+        this.sync = sync;
         this.openStatics = openStatics;
         this.openTiers = openTiers;
 
@@ -50,6 +53,11 @@ public sealed class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
+        // The one place syncing is driven from. It runs while a window is open and stops when it is
+        // closed, which is the right shape: nobody needs their roster kept fresh in the background
+        // while they are not looking at it.
+        sync.Poll();
+
         DrawHeader();
 
         using var bar = ImRaii.TabBar("##LootMastrTabs");
@@ -103,7 +111,10 @@ public sealed class MainWindow : Window, IDisposable
                 foreach (var option in statics.All.ToList())
                 {
                     if (ImGui.Selectable($"{option.Name}##{option.Id}", statics.IsCurrent(option)))
-                        statics.Switch(option.Id);
+                    {
+                        if (statics.Switch(option.Id))
+                            sync.Refresh();
+                    }
 
                     ImGui.SameLine();
                     ImGui.TextDisabled($"{option.Roster.Count} player(s)");
@@ -176,15 +187,26 @@ public sealed class MainWindow : Window, IDisposable
     /// </summary>
     private void DrawSyncButton(StaticProfile profile)
     {
-        var sync = profile.Sync;
+        var setup = profile.Sync;
+        var status = sync.StatusOf(profile);
 
-        var (colour, label, tip) = !sync.Enabled
-            ? (Widgets.Muted, "local", "This static never leaves your machine. Switch syncing on in Manage statics.")
-            : !sync.IsClaimed
-                ? (Widgets.Wanted, "not joined", "Syncing is on, but this client has not claimed a token yet.")
-                : (Widgets.Done, sync.Role.ToString().ToLowerInvariant(),
-                   $"Synced as {sync.CharacterName}" +
-                   (sync.LastSyncUtc is { } when ? $", last at {when.ToLocalTime():HH:mm}" : "."));
+        var (colour, label, tip) = status switch
+        {
+            SyncStatus.Off => (Widgets.Muted, "local",
+                               "This static never leaves your machine. Switch syncing on in Manage statics."),
+
+            SyncStatus.NotJoined => (Widgets.Wanted, "not joined",
+                                     "Syncing is on, but this client has not claimed a token yet."),
+
+            SyncStatus.Working => (Widgets.Wanted, "syncing…", sync.Message),
+
+            SyncStatus.Error => (Widgets.Bad, "problem", sync.Message),
+
+            _ => (Widgets.Done, setup.Role.ToString().ToLowerInvariant(),
+                  $"Synced as {setup.CharacterName}" +
+                  (setup.LastSyncUtc is { } when ? $", last at {when.ToLocalTime():HH:mm}. " : ". ") +
+                  sync.Message),
+        };
 
         using (ImRaii.PushColor(ImGuiCol.Text, colour))
         {
@@ -192,7 +214,7 @@ public sealed class MainWindow : Window, IDisposable
                 openStatics();
         }
 
-        Widgets.Tooltip(tip);
+        Widgets.Tooltip(string.IsNullOrWhiteSpace(tip) ? "Syncing." : tip);
     }
 
     public void Dispose()

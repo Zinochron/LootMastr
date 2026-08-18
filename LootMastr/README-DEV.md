@@ -1114,6 +1114,49 @@ running for a drop" and is a rule; `RosterStore.Visible` answers "what do I want
 preference. They are separate properties because they are separate questions, and a second character
 hidden from a list is still in whatever the rules say it is in.
 
+### Syncing
+
+`Sync/`, and the contract it speaks is written out in **`README-API.md`** — endpoints, JSON, schema,
+and the rules the server has to enforce rather than trust the client about.
+
+The server is **a safe deposit box, not a database.** It stores one blob per static, hands it back to
+whoever proves they may have it, and remembers who may do what. It never looks inside. Every rule
+about loot stays in the plugin, where the harness can run it without a game attached — a server that
+understood any of it would be a second implementation of rules that are hard to get right once.
+
+**Two secrets, and they are not interchangeable.** The password proves you belong to the group and is
+shared, so it is typed each time and never stored; it buys a token, which proves you are *this
+character* and is stored. Rights hang off the token and the server decides them — a role in a request
+body is data, never authority, or the whole permission system is decoration.
+
+The client is `BisImporter`'s shape for `BisImporter`'s reason: a `Task` waits, `Poll()` applies on
+the framework thread. Nothing writes a roster off that thread, because every field it touches is read
+by ImGui sixty times a second and a half-applied pull is a crash nobody can reproduce.
+
+#### One departure from the plan
+
+The plan called for DTOs separate from `RosterMember` and friends. They are not separate, and the
+reason is worth keeping: `GearPlannerImport` has its own records because XIVGear can change under us.
+Here both ends are this plugin and the server never reads the document, so a mapping layer between
+two shapes that are identical by construction would be forty fields of ceremony that can only drift.
+What actually protects against version skew is a `schema` number plus tolerant reading — Newtonsoft
+drops fields a client does not know and defaults ones it lacks.
+
+The envelope is the exception. Everything the server *does* read travels as strings: roles are
+`"read"`, `"write"`, `"admin"` and not 0, 1, 2. A wire format nobody can parse by eye is not a wire
+format.
+
+#### How a change is noticed
+
+Not by `RosterStore.Signature()` — that covers what the planner reads, and a write-holder also edits
+the tier and the settings. So the document is serialised and compared twice a second while a synced
+static is open, then pushed two seconds after it stops changing. Debounced because a slider being
+dragged is one change and not sixty; hashed as text because that covers fields added later and nobody
+has to remember to extend it.
+
+A pull sets the same hash from what arrived, or every pull would trigger a push and the two would
+chase each other around the loop.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight
