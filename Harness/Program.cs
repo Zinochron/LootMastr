@@ -1826,6 +1826,93 @@ var rules = new PriorityRules();
     }
 }
 
+// --- the version 1 migration ---------------------------------------------------------------------
+
+{
+    // A full old config: a roster, a tier, and every setting set to something other than its
+    // default, so a field that is silently dropped shows up as a default rather than hiding behind
+    // one.
+    var oldRoster = new List<RosterMember>
+    {
+        Member("Astra", (GearSlot.Body, GearSource.Raid)),
+        Member("Bex", (GearSlot.Legs, GearSource.TomeAugmented)),
+    };
+
+    oldRoster[0].Tokens[3] = 5;
+    oldRoster[1].IsAlt = true;
+
+    var oldTier = Tier();
+    oldTier.Name = "Some other tier";
+
+    var oldRules = new PriorityRules { Spread = 0.8, UseRoleOrder = false, Basis = NeedBasis.DpsGain };
+
+    var folded = StaticProfile.FromLegacy(new LegacyConfigV1(
+        Roster: oldRoster,
+        ActiveTierId: "some-other-tier",
+        Tier: oldTier,
+        Kills: new Dictionary<int, int> { [1] = 7, [4] = 2 },
+        Rules: oldRules,
+        LookaheadWeeks: 14,
+        ShowOnlyNextRecipient: true,
+        Mode: AssignmentMode.Automatic,
+        AnnounceInPartyChat: true,
+        Mount: MountHandling.GreedOnly,
+        AltCharacters: true,
+        AltsPreferredForWeaponTokens: false,
+        ActionDelayMs: 900,
+        VerboseChat: true,
+        ExpertMode: true,
+        AutoReadGearOnEnter: false));
+
+    Check("the roster moves across whole", folded.Roster.Count == 2 && folded.Roster[0].Name == "Astra");
+    Check("with everything on the rows", folded.Roster[0].Tokens[3] == 5 && folded.Roster[1].IsAlt);
+    Check("the tier comes with it", folded.Tier?.Name == "Some other tier");
+    Check("and which tier it was", folded.ActiveTierId == "some-other-tier");
+    Check("the kill counts survive", folded.KillsFor(1) == 7 && folded.KillsFor(4) == 2);
+
+    var settings = folded.Settings;
+
+    Check("the rules object is the same one, not a copy of the defaults",
+          ReferenceEquals(settings.Rules, oldRules));
+
+    // Every setting, one by one. This is the list that a new field has to be added to, and the
+    // reason it is spelled out rather than looped: a loop would pass while missing the field it
+    // was never told about.
+    Check("lookahead", settings.LookaheadWeeks == 14);
+    Check("winner only", settings.ShowOnlyNextRecipient);
+    Check("assignment mode", settings.Mode == AssignmentMode.Automatic);
+    Check("party chat", settings.AnnounceInPartyChat);
+    Check("mount handling", settings.Mount == MountHandling.GreedOnly);
+    Check("alt characters", settings.AltCharacters);
+    Check("alts for weapon stones", !settings.AltsPreferredForWeaponTokens);
+    Check("action delay", settings.ActionDelayMs == 900);
+    Check("verbose chat", settings.VerboseChat);
+    Check("expert mode", settings.ExpertMode);
+    Check("auto gear scan", !settings.AutoReadGearOnEnter);
+}
+
+{
+    // An install from before a setting existed says nothing about it, and nothing is not false.
+    // Getting this wrong turns "the old config did not mention auto gear scan" into "switch it off".
+    var sparse = StaticProfile.FromLegacy(new LegacyConfigV1(
+        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+
+    var fresh = new StaticProfile();
+
+    Check("a missing setting keeps its default, not its zero",
+          sparse.Settings.AutoReadGearOnEnter == fresh.Settings.AutoReadGearOnEnter &&
+          sparse.Settings.LookaheadWeeks == fresh.Settings.LookaheadWeeks &&
+          sparse.Settings.ActionDelayMs == fresh.Settings.ActionDelayMs &&
+          sparse.Settings.Mode == fresh.Settings.Mode &&
+          sparse.Settings.AltsPreferredForWeaponTokens == fresh.Settings.AltsPreferredForWeaponTokens);
+
+    Check("and an empty config comes out as an empty static, not a broken one",
+          sparse.Roster.Count == 0 && sparse.Kills.Count == 0 &&
+          sparse.ActiveTierId == fresh.ActiveTierId);
+
+    Check("two statics never share an id", new StaticProfile().Id != new StaticProfile().Id);
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

@@ -5,6 +5,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using AtkEventType = FFXIVClientStructs.FFXIV.Component.GUI.AtkEventType;
 using LootMastr.Data;
+using LootMastr.Roster;
 
 namespace LootMastr.Automation;
 

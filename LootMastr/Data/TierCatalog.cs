@@ -17,7 +17,14 @@ public sealed class TierCatalog
     private readonly Configuration config;
     private readonly ItemCatalog items;
 
-    private bool resolved;
+    /// <summary>
+    /// Which static's tier was last resolved against game data. Empty means none yet.
+    ///
+    /// A flag would have been enough while there was one tier. With several statics the question is
+    /// not "has anything been resolved" but "was it this one", and comparing ids answers a switch
+    /// without needing an event to fire on one.
+    /// </summary>
+    private string resolvedFor = string.Empty;
 
     public TierCatalog(Configuration config, ItemCatalog items)
     {
@@ -33,15 +40,17 @@ public sealed class TierCatalog
     {
         get
         {
-            if (config.Tier == null)
-                Load(config.ActiveTierId);
+            var profile = config.Current;
 
-            config.Tier ??= new TierDefinition { Id = config.ActiveTierId };
+            if (profile.Tier == null)
+                Load(profile.ActiveTierId);
 
-            if (!resolved)
+            profile.Tier ??= new TierDefinition { Id = profile.ActiveTierId };
+
+            if (resolvedFor != profile.Id)
                 Resolve();
 
-            return config.Tier;
+            return profile.Tier;
         }
     }
 
@@ -157,7 +166,7 @@ public sealed class TierCatalog
 
             config.ActiveTierId = id;
             config.Tier = definition;
-            resolved = false;
+            resolvedFor = string.Empty;
             config.Save();
             return true;
         }
@@ -232,7 +241,7 @@ public sealed class TierCatalog
 
         config.ActiveTierId = tier.Id;
         config.Tier = tier;
-        resolved = false;
+        resolvedFor = string.Empty;
         config.Save();
     }
 
@@ -250,7 +259,7 @@ public sealed class TierCatalog
         if (tier == null)
             return;
 
-        resolved = true;
+        resolvedFor = config.Current.Id;
 
         // The tomestone vendor is not a shop this plugin reads, so its prices are seeded rather than
         // discovered — and seeded here so a tier written before they existed picks them up instead

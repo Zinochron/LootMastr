@@ -28,6 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly LootAssignmentRunner runner;
 
     public Configuration Configuration { get; }
+    public StaticStore Statics { get; }
     public ItemCatalog Items { get; }
     public JobCatalog Jobs { get; }
     public TierCatalog Tiers { get; }
@@ -50,6 +51,14 @@ public sealed class Plugin : IDalamudPlugin
         ECommonsMain.Init(pluginInterface, this);
 
         Configuration = Services.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
+        // Before anything reads a roster or a tier. A version 1 config keeps its data at the top
+        // level, and every facade below this line looks for it inside a static.
+        if (Configuration.Migrate())
+            Configuration.Save();
+
+        Statics = new StaticStore(Configuration);
+        Statics.OpenPrimary();
 
         Items = new ItemCatalog();
         Jobs = new JobCatalog();

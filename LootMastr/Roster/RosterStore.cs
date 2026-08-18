@@ -119,6 +119,11 @@ public sealed class RosterStore
     public int Signature()
     {
         var hash = new HashCode();
+
+        // Which static this is, first. Everything cached off this fingerprint — the forecast, the
+        // coming week, the basis comparison — then notices a switch for free, and nothing needs an
+        // event to be wired up and eventually forgotten.
+        hash.Add(config.CurrentStaticId);
         hash.Add(config.Roster.Count);
 
         foreach (var member in config.Roster)

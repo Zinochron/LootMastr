@@ -1028,6 +1028,51 @@ The exception is the weapon stone, which is the one thing an alt is genuinely a 
 tomestone weapon on a second character costs the raid nothing and makes the next clear go faster,
 which is the entire reason the character exists.
 
+### A static is an object, and almost nothing noticed
+
+The plugin holds several statics now, each with its own roster, tier, kill counts and settings. The
+change looks enormous and the diff is not, because of one thing a grep turned up before any code was
+written:
+
+| Field | Reads outside its own facade |
+|---|---|
+| `config.Roster` | one, in `BisImporter` |
+| `config.Tier` / `ActiveTierId` | none — only `TierCatalog` |
+| `config.Rules` | four |
+
+**`RosterStore` and `TierCatalog` were already the indirection.** So `Configuration` keeps the
+property names and turns them into **forwarders** — `config.Rules` still reads and writes, it just
+lands in `Current`. The roster store, the planner, the automation and six tabs never learned that
+statics exist.
+
+Every forwarder is `[JsonIgnore]`. One that serialised would put a second copy of the data at the top
+level, and the next load would have two answers to the same question.
+
+Switching statics invalidates nothing by hand: `RosterStore.Signature()` counts
+`config.CurrentStaticId`, so every cached forecast notices a switch through the machinery that
+already notices a ticked box. `TierCatalog` remembers *which static* it resolved for rather than
+whether it resolved at all — same trick, no event to wire up and eventually forget.
+
+#### The migration
+
+Version 1 stored one implicit static flat. The fold into version 2 is the first real migration in
+this plugin's history and the only change that cannot be undone by putting a setting back, so:
+
+- **The old file is copied to `LootMastr.json.v1.bak` first.** One line, best effort — a failure
+  there must not stop the plugin loading, it only means the net is missing.
+- **The old properties are kept, not deleted**, as `Legacy…` members carrying the original json names
+  through `[JsonProperty]`. Two CLR members share one json name and only one of them serialises;
+  Newtonsoft accepts that in both plain and `TypeNameHandling.All` mode, which was probed rather
+  than assumed. Deleting them is what would make the migration unrepeatable for a config restored
+  from a backup.
+- **The mapping is pure and tested.** `StaticProfile.FromLegacy` takes a `LegacyConfigV1` record and
+  returns a static; `Configuration.Migrate` is the file handling around it. The harness sets every
+  old field to something other than its default and checks each one lands — spelled out one per
+  line, because a loop would pass while missing the field nobody told it about.
+- **Every legacy field is nullable**, and null means "the old file did not say" rather than "the old
+  file said false". Without that, an install predating `AutoReadGearOnEnter` would have had it
+  switched off by the upgrade.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

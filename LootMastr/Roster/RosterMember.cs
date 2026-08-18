@@ -240,6 +240,18 @@ public sealed class RosterMember
     /// </summary>
     public bool IsAlt { get; set; }
 
+    /// <summary>
+    /// When this row last changed. Nothing reads it yet.
+    ///
+    /// It is here because it cannot be added retroactively: the day two people editing one roster
+    /// stops being survivable, merging per row is the answer (see <c>README-SHARING.md</c>), and
+    /// that needs a stamp on rows written before anybody thought about merging.
+    /// </summary>
+    public DateTime? LastEditedUtc { get; set; }
+
+    /// <summary>Marks this row as changed just now.</summary>
+    public void Touch() => LastEditedUtc = DateTime.UtcNow;
+
     public bool HasBeenScanned => LastScannedUtc != null;
 
     public bool HasMeasuredStats => Attributes.Count > 0 && MeasuredLevel > 0;
