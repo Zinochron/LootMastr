@@ -6,6 +6,8 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LootMastr.Data;
+using LootMastr.Roster;
+using LootMastr.Sync;
 
 namespace LootMastr.UI;
 
@@ -23,13 +25,21 @@ public sealed class TiersWindow : Window, IDisposable
     private readonly Configuration config;
     private readonly TierCatalog tiers;
     private readonly ItemCatalog items;
+    private readonly StaticStore statics;
+    private readonly SyncClient sync;
 
-    public TiersWindow(Configuration config, TierCatalog tiers, ItemCatalog items)
+    private string libraryUrl = string.Empty;
+    private bool libraryOpen;
+
+    public TiersWindow(Configuration config, TierCatalog tiers, ItemCatalog items,
+                       StaticStore statics, SyncClient sync)
         : base("LootMastr — tier###LootMastrTier")
     {
         this.config = config;
         this.tiers = tiers;
         this.items = items;
+        this.statics = statics;
+        this.sync = sync;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -52,11 +62,18 @@ public sealed class TiersWindow : Window, IDisposable
 
     public override void Draw()
     {
+        sync.Poll();
+
         if (!config.CanWrite)
         {
             Widgets.ReadOnlyNotice("the tier belongs to the static");
             ImGuiHelpers.ScaledDummy(4f);
         }
+
+        // Outside the gate: publishing changes nothing about this static, so somebody with read
+        // access may still hand the group's tier to the library. Loading one is a document edit and
+        // is gated inside.
+        DrawLibrary();
 
         using var gate = ImRaii.Disabled(!config.CanWrite);
 
@@ -244,6 +261,126 @@ public sealed class TiersWindow : Window, IDisposable
                            "\"Augmented\" in the name is what tells them apart.\n\n" +
                            "\"Discover exchange\" fills these in on its own; they are editable for " +
                            "the rare tier it gets wrong.");
+    }
+
+    /// <summary>
+    /// Tier definitions other people have published, and a way to add to them.
+    ///
+    /// This is the one thing in the plugin that is shared without a password, and it can be because
+    /// a tier carries no names — item ids, item levels and prices, identical for everybody running
+    /// that raid. What it saves is the half hour of standing at an NPC and correcting what the
+    /// discovery got wrong, once per group rather than once per person.
+    ///
+    /// Folded away by default. Most weeks nobody needs it.
+    /// </summary>
+    private void DrawLibrary()
+    {
+        if (!ImGui.CollapsingHeader("Tier library###library"))
+            return;
+
+        if (libraryUrl.Length == 0 && config.TierLibraryUrl.Length > 0)
+            libraryUrl = config.TierLibraryUrl;
+
+        // A synced static already knows a server, and it is almost always the same one.
+        if (libraryUrl.Length == 0 && statics.AnyClaimed is { } claimed)
+            libraryUrl = claimed.Sync.Url;
+
+        ImGui.SetNextItemWidth(320f * ImGuiHelpers.GlobalScale);
+
+        if (ImGui.InputTextWithHint("##libraryUrl", "https://example.com/lootmastr", ref libraryUrl, 200))
+        {
+            config.TierLibraryUrl = libraryUrl.Trim();
+            config.Save();
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("Library");
+        Widgets.HelpMarker("Tier definitions are item ids and prices and name nobody, so this needs " +
+                           "no password to read.\n\nPublishing needs a token, which means being in " +
+                           "a static on a server — enough to keep a stranger from overwriting what " +
+                           "your group spent an evening correcting.");
+
+        var ready = !string.IsNullOrWhiteSpace(libraryUrl);
+
+        using (ImRaii.Disabled(!ready || sync.IsBusy))
+        {
+            if (ImGui.Button("Refresh"))
+            {
+                libraryOpen = true;
+                sync.ListTiers(libraryUrl.Trim());
+            }
+
+            ImGui.SameLine();
+
+            var token = statics.AnyClaimed?.Sync.Token ?? string.Empty;
+
+            using (ImRaii.Disabled(string.IsNullOrEmpty(token)))
+            {
+                if (ImGui.Button("Publish this tier"))
+                {
+                    var tier = tiers.Tier;
+                    sync.PublishTier(libraryUrl.Trim(), TierCatalog.SlugFor(tier.Name), tier, token);
+                }
+            }
+
+            Widgets.HelpMarker(string.IsNullOrEmpty(token)
+                                   ? "Needs a token. Join a static on a server first."
+                                   : "Uploads this tier under the id its name makes. Somebody else's " +
+                                     "id is refused rather than overwritten — rename the tier and " +
+                                     "publish again to fork it.");
+        }
+
+        if (!ready)
+        {
+            Widgets.Coloured(Widgets.Muted, "Give the library a URL first.");
+            return;
+        }
+
+        if (!libraryOpen)
+            return;
+
+        if (sync.Library.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "Nothing listed. Press Refresh.");
+            return;
+        }
+
+        using var table = ImRaii.Table("##library", 3,
+                                       ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("Tier");
+        ImGui.TableSetupColumn("Updated", ImGuiTableColumnFlags.WidthFixed, 110f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("##load", ImGuiTableColumnFlags.WidthFixed, 60f * ImGuiHelpers.GlobalScale);
+        ImGui.TableHeadersRow();
+
+        foreach (var listing in sync.Library)
+        {
+            using var id = ImRaii.PushId(listing.Id);
+
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(listing.Name);
+            Widgets.Tooltip(listing.Id);
+
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextDisabled(listing.UpdatedAt is { } when ? when.ToLocalTime().ToString("d MMM") : "—");
+
+            ImGui.TableNextColumn();
+
+            // Loading replaces this static's tier, so it is a document edit like any other.
+            using (ImRaii.Disabled(!config.CanWrite || sync.IsBusy))
+            {
+                if (ImGui.SmallButton("Load"))
+                    sync.FetchTier(libraryUrl.Trim(), listing.Id);
+            }
+
+            if (!config.CanWrite)
+                Widgets.Tooltip("Changing which tier this static runs needs write access.");
+        }
     }
 
     /// <summary>

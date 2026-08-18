@@ -217,6 +217,79 @@ public sealed class SyncClient : IDisposable
         });
     }
 
+    // ---- The tier library -----------------------------------------------------------------------
+    //
+    // No token to read: a tier definition is item ids and prices, identical for everybody running
+    // that raid, and it names nobody. Publishing takes one, from any static, so that a stranger
+    // cannot overwrite what a group spent an evening correcting.
+
+    /// <summary>What the library last said it had. Empty until somebody asks.</summary>
+    public IReadOnlyList<TierListing> Library { get; private set; } = [];
+
+    public void ListTiers(string url)
+    {
+        if (!Reachable(url, out var problem))
+        {
+            Fail(problem);
+            return;
+        }
+
+        if (IsBusy)
+            return;
+
+        Start(statics.Current, "Reading the library…", async () =>
+        {
+            var listings = await GetAsync<List<TierListing>>(url, "tiers", token: null);
+            return SyncOutcome.GotLibrary(listings);
+        });
+    }
+
+    public void FetchTier(string url, string id)
+    {
+        if (!Reachable(url, out var problem))
+        {
+            Fail(problem);
+            return;
+        }
+
+        if (IsBusy)
+            return;
+
+        Start(statics.Current, $"Fetching {id}…", async () =>
+        {
+            var definition = await GetAsync<TierDefinition>(url, $"tiers/{Uri.EscapeDataString(id)}",
+                                                            token: null);
+
+            return SyncOutcome.GotTier(definition, id);
+        });
+    }
+
+    public void PublishTier(string url, string id, TierDefinition tier, string token)
+    {
+        if (!Reachable(url, out var problem))
+        {
+            Fail(problem);
+            return;
+        }
+
+        if (IsBusy)
+            return;
+
+        if (string.IsNullOrEmpty(token))
+        {
+            Fail("Publishing needs a token. Join a static on a server first.");
+            return;
+        }
+
+        Start(statics.Current, $"Publishing {tier.Name}…", async () =>
+        {
+            var listings = await PutAsync<List<TierListing>>(url, $"tiers/{Uri.EscapeDataString(id)}",
+                                                             token, tier);
+
+            return SyncOutcome.GotLibrary(listings);
+        });
+    }
+
     // ---- The loop -------------------------------------------------------------------------------
 
     /// <summary>
@@ -348,6 +421,19 @@ public sealed class SyncClient : IDisposable
                 Members = outcome.Members ?? [];
                 Message = $"{Members.Count} character(s) know this static.";
                 break;
+
+            case SyncOutcomeKind.Library:
+                Library = outcome.Listings ?? [];
+                Message = Library.Count == 0
+                              ? "The library has nothing in it yet."
+                              : $"{Library.Count} tier(s) in the library.";
+                break;
+
+            case SyncOutcomeKind.Tier:
+                tiers.Install(outcome.RemoteName, outcome.Tier!);
+                tiers.Resolve();
+                Message = $"Loaded \"{outcome.Tier!.Name}\" from the library.";
+                break;
         }
     }
 
@@ -385,6 +471,24 @@ public sealed class SyncClient : IDisposable
     /// there is no wire. Everything else has to be https — this is the one request in the plugin
     /// that carries a secret somebody chose, and people reuse passwords.
     /// </summary>
+    /// <summary>
+    /// The library carries no secret, so plain http is merely unwise rather than dangerous — but a
+    /// typo still has to be caught before it becomes a twenty second timeout.
+    /// </summary>
+    private static bool Reachable(string url, out string problem)
+    {
+        problem = string.Empty;
+
+        if (Uri.TryCreate(url, UriKind.Absolute, out var parsed) &&
+            (parsed.Scheme == Uri.UriSchemeHttps || parsed.Scheme == Uri.UriSchemeHttp))
+        {
+            return true;
+        }
+
+        problem = "That is not a URL.";
+        return false;
+    }
+
     private bool Begin(StaticProfile profile, string url, out string problem)
     {
         problem = string.Empty;
@@ -431,7 +535,7 @@ public sealed class SyncClient : IDisposable
     private static string Url(string baseUrl, string path) =>
         $"{baseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
-    private async Task<T> GetAsync<T>(string baseUrl, string path, string token)
+    private async Task<T> GetAsync<T>(string baseUrl, string path, string? token)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, Url(baseUrl, path));
         return await SendAsync<T>(request, token);
@@ -540,6 +644,8 @@ internal enum SyncOutcomeKind
     Pulled,
     Pushed,
     Members,
+    Library,
+    Tier,
 }
 
 /// <summary>What a finished request produced, waiting to be applied on the framework thread.</summary>
@@ -548,10 +654,18 @@ internal sealed record SyncOutcome(
     SyncClaim? Claim = null,
     SyncEnvelope? Envelope = null,
     List<SyncMember>? Members = null,
+    List<TierListing>? Listings = null,
+    TierDefinition? Tier = null,
     string Url = "",
     string RemoteName = "",
     string Hash = "")
 {
+    public static SyncOutcome GotLibrary(List<TierListing> listings) =>
+        new(SyncOutcomeKind.Library, Listings: listings);
+
+    public static SyncOutcome GotTier(TierDefinition tier, string id) =>
+        new(SyncOutcomeKind.Tier, Tier: tier, RemoteName: id);
+
     public static SyncOutcome Claimed(SyncClaim claim, string remoteName, string url) =>
         new(SyncOutcomeKind.Claimed, Claim: claim, Url: url, RemoteName: remoteName);
 

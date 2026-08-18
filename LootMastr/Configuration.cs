@@ -35,6 +35,15 @@ public class Configuration : IPluginConfiguration
     public string CurrentStaticId { get; set; } = string.Empty;
 
     /// <summary>
+    /// Where the public tier library lives.
+    ///
+    /// Per install rather than per static, because a tier definition belongs to no group: it is item
+    /// ids and prices, the same for everybody running that raid, and it carries no names. That is
+    /// also why reading it needs no password.
+    /// </summary>
+    public string TierLibraryUrl { get; set; } = string.Empty;
+
+    /// <summary>
     /// The static everything else means when it says "the roster" or "the tier".
     ///
     /// Creates one when there is none, because every other member of this class assumes it exists —

@@ -1191,6 +1191,32 @@ changes the rules with nobody pressing anything.
 So the fingerprint now covers the distribution settings and `Sync.Revision` — one counter standing in
 for a whole pulled document, which is the only cheap way to notice that a tier changed underneath.
 
+### The tier library
+
+The one thing this plugin shares without a password, and it can be because **a tier carries no
+names** — item ids, item levels and prices, identical for everybody running that raid. What it saves
+is the half hour of standing at an exchange NPC correcting what the discovery got wrong: once per
+group instead of once per person.
+
+Reading takes no token. Publishing takes one from *any* static, which is a deliberately low bar — the
+point is to stop a passing stranger overwriting the library, not to decide who deserves to
+contribute. The publisher is recorded as the owner by a hash of their token, and somebody else's id
+is **refused rather than overwritten**: the server answers `409` and names a free id, so the second
+group to publish a tier forks it instead of fighting over it. Without an owner the library is
+vandalised in a week; with a lock and no fork, a typo in somebody else's tier is unfixable.
+
+The library URL lives on `Configuration`, not on a static — a tier belongs to no group. It prefills
+from any synced static's URL, because it is almost always the same server.
+
+Two things sit on opposite sides of the read-only gate, and the split is the same question as
+everywhere else: *what does this write*. **Publishing** changes nothing about this static, so a
+viewer may hand the group's tier to the library. **Loading** replaces the static's tier, which is a
+document edit, so it is gated.
+
+`TierCatalog.Install` is what both a file and a download go through. It drops every edit rather than
+merging, which is what `Load` always did — half-merging two tier definitions produces one that
+matches neither raid.
+
 ### Reading gear without being asked
 
 Expert mode lives or dies on the equipped side being current, and nobody presses a button eight

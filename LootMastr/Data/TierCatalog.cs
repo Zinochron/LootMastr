@@ -149,8 +149,24 @@ public sealed class TierCatalog
     }
 
     /// <summary>
-    /// Replaces the active tier with one from disk, shipped or built in game. Also the "I broke it,
-    /// start over" button, which is why it drops every edit rather than merging.
+    /// Makes a tier definition the active one, wherever it came from — disk, or the library.
+    ///
+    /// Drops every edit rather than merging, which is the same thing <see cref="Load"/> has always
+    /// done: this is the "I broke it, start over" path, and half-merging two tier definitions would
+    /// produce one that matches neither raid.
+    /// </summary>
+    public void Install(string id, TierDefinition definition)
+    {
+        definition.Id = id;
+
+        config.ActiveTierId = id;
+        config.Tier = definition;
+        resolvedFor = string.Empty;
+        config.Save();
+    }
+
+    /// <summary>
+    /// Replaces the active tier with one from disk, shipped or built in game.
     /// </summary>
     public bool Load(string id)
     {
@@ -164,10 +180,7 @@ public sealed class TierCatalog
             if (definition == null)
                 return false;
 
-            config.ActiveTierId = id;
-            config.Tier = definition;
-            resolvedFor = string.Empty;
-            config.Save();
+            Install(id, definition);
             return true;
         }
         catch (Exception ex)

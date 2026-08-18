@@ -31,6 +31,16 @@ public sealed class StaticStore
     public StaticProfile? Find(string id) => config.Statics.FirstOrDefault(s => s.Id == id);
 
     /// <summary>
+    /// Any static this client has a token for, for the one job that needs proof of being somebody
+    /// without caring which somebody: publishing a tier.
+    ///
+    /// The library is readable by anyone and writable only by people who are in *a* group. That is a
+    /// low bar on purpose — the point is to keep a passing stranger from overwriting it, not to
+    /// decide who deserves to contribute.
+    /// </summary>
+    public StaticProfile? AnyClaimed => config.Statics.FirstOrDefault(s => s.Sync.IsClaimed);
+
+    /// <summary>
     /// Opens a different static.
     ///
     /// Nothing has to be invalidated by hand. Every cached forecast hangs off

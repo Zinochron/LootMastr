@@ -103,7 +103,7 @@ public sealed class Plugin : IDalamudPlugin
         };
 
         staticsWindow = new StaticsWindow(Configuration, Statics, Roster, Jobs, Party, Sync);
-        tiersWindow = new TiersWindow(Configuration, Tiers, Items);
+        tiersWindow = new TiersWindow(Configuration, Tiers, Items, Statics, Sync);
         mainWindow = new MainWindow(tabs, Statics, Tiers, Sync, staticsWindow.Open, tiersWindow.Open);
 
         windowSystem.AddWindow(mainWindow);
