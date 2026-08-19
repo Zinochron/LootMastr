@@ -645,6 +645,22 @@ than was expected: melds *are* readable for other players after all, through the
 rather than through `AgentInspect`. `EquipmentReader.MeldsFrom` is built on it, and it is what lets
 both sides of a comparison carry their own materia instead of assuming it carries over.
 
+#### Gear the tier does not recognise
+
+The fallback used to be `Crafted`, which was true about the only thing the planner asks — it costs
+the raid nothing — and false about everything else. A relic weapon reading "Craft" on somebody's
+sheet is a small lie, and small lies make a reader doubt the rest of the row.
+
+`GearSource.Other` is that case named. The two are told apart by what the tooltip already says:
+**crafted gear is tradeable and not unique**, while relics, older raid gear and dungeon drops are
+Unique and Untradeable. `NeedsRaidResource()` is false for both, so nothing about the distribution
+moves — this is about the sheet being honest, not about the plan.
+
+A **soul crystal** is the other half of the same problem and gets the opposite treatment. It is
+equipment, it is worn by every character alive, and nobody plans it — so `ItemInfo.IsSoulCrystal`
+marks it and the reader skips it in silence. Without that, every scan of every character reports an
+item it could not identify, and a warning that always fires is a warning nobody reads.
+
 #### High quality is spelled two ways
 
 The game says "high quality" differently depending on who is asking. `InventoryItem` carries the

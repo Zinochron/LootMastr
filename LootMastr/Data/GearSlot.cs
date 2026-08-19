@@ -52,6 +52,19 @@ public enum GearSource
 
     /// <summary>Crafted. Costs no raid resource.</summary>
     Crafted,
+
+    /// <summary>
+    /// Equipment this plugin cannot place: a relic, last tier's raid gear, a dungeon drop.
+    ///
+    /// The fallback used to be <see cref="Crafted"/>, which was true of the only thing that mattered
+    /// — it costs the raid nothing — and false about everything else. A relic weapon reading "Craft"
+    /// on somebody's sheet is a small lie that makes the reader doubt the rest of the row, and it
+    /// hides the one case worth seeing: gear the plugin does not understand.
+    ///
+    /// Told apart by what the tooltip says. Crafted gear is tradeable and not unique; almost
+    /// everything else at this level is Unique and Untradeable, relics included.
+    /// </summary>
+    Other,
 }
 
 public static class Slots
@@ -149,6 +162,7 @@ public static class Slots
         GearSource.Tome => "Tome",
         GearSource.TomeAugmented => "Tome+",
         GearSource.Crafted => "Craft",
+        GearSource.Other => "Other",
         _ => source.ToString(),
     };
 
@@ -159,6 +173,8 @@ public static class Slots
         GearSource.Tome => "Plain tomestone gear. Needs nothing from the raid.",
         GearSource.TomeAugmented => "Tomestone gear plus an upgrade material, which does drop in the raid.",
         GearSource.Crafted => "Crafted. Needs nothing from the raid.",
+        GearSource.Other => "Something this tier does not know — a relic, an older tier's gear, a " +
+                            "dungeon drop. Needs nothing from the raid.",
         _ => string.Empty,
     };
 
@@ -173,6 +189,7 @@ public static class Slots
         yield return GearSource.TomeAugmented;
         yield return GearSource.Tome;
         yield return GearSource.Crafted;
+        yield return GearSource.Other;
     }
 
     /// <summary>

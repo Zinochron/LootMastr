@@ -1748,6 +1748,29 @@ var rules = new PriorityRules();
           bought.Count == 2 && bought[1].Slot == GearSlot.Body);
 }
 
+// --- gear the tier does not recognise --------------------------------------------------------------
+
+{
+    // "Other" exists so a relic stops reading as "Craft" on somebody's sheet. What it must not do is
+    // start costing the raid something, which would put a dungeon drop into the distribution.
+    Check("something unrecognised needs nothing from the raid", !GearSource.Other.NeedsRaidResource());
+
+    Check("and is offered as a choice by hand",
+          Slots.SelectableSources().Contains(GearSource.Other));
+
+    Check("it has a label of its own", Slots.Label(GearSource.Other) == "Other");
+
+    Check("and every source says something",
+          Slots.SelectableSources().All(s => Slots.Description(s).Length > 0 || s == GearSource.None));
+
+    var member = Member("Relic", (GearSlot.Weapon, GearSource.Other), (GearSlot.Body, GearSource.Raid));
+    var plan = Plan(member, RaidRole.Dps, tier);
+
+    Check("a slot filled by something else is not an open need",
+          plan.Open.All(n => Slots.CofferSlot(n.Slot) != GearSlot.Weapon),
+          string.Join(", ", plan.Open.Select(n => n.Describe())));
+}
+
 // --- the drops nothing can rank ------------------------------------------------------------------
 
 {

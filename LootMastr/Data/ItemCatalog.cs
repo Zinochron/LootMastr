@@ -13,7 +13,8 @@ public readonly record struct ItemInfo(
     ushort ItemLevel,
     uint ClassJobCategoryId,
     bool IsUnique,
-    bool IsUntradable);
+    bool IsUntradable,
+    bool IsSoulCrystal = false);
 
 /// <summary>One stat an item carries, as a <c>BaseParam</c> row id and its value.</summary>
 public readonly record struct ItemStat(uint BaseParam, int Value);
@@ -194,7 +195,8 @@ public sealed class ItemCatalog
                 (ushort)row.LevelItem.RowId,
                 row.ClassJobCategory.RowId,
                 row.IsUnique,
-                row.IsUntradable);
+                row.IsUntradable,
+                IsSoulCrystalCategory(slotSheet, row.EquipSlotCategory.RowId));
 
             if (slot != null)
                 stats[row.RowId] = StatsOf(row);
@@ -287,6 +289,17 @@ public sealed class ItemCatalog
     /// Maps an <c>EquipSlotCategory</c> row to a slot. The row ids are read out of the sheet rather
     /// than hardcoded, because a category is defined by which of its columns is set to 1.
     /// </summary>
+    /// <summary>
+    /// Whether a category is a job's soul crystal.
+    ///
+    /// Equipment, and not gear anybody plans — so it needs its own answer rather than sharing "no
+    /// gear slot" with genuinely unknown items. Every character is wearing one, so without this the
+    /// scan reports an unidentifiable item every single time, and a warning that always fires is a
+    /// warning nobody reads.
+    /// </summary>
+    private static bool IsSoulCrystalCategory(Lumina.Excel.ExcelSheet<EquipSlotCategory> sheet, uint categoryId) =>
+        categoryId != 0 && sheet.TryGetRow(categoryId, out var c) && c.SoulCrystal > 0;
+
     private static GearSlot? SlotOf(Lumina.Excel.ExcelSheet<EquipSlotCategory> sheet, uint categoryId)
     {
         if (categoryId == 0)

@@ -201,6 +201,11 @@ public sealed class EquipmentReader
         {
             if (!items.TryGetItem(itemId, out var info) || info.Slot == null)
             {
+                // A soul crystal is worn by everybody and planned by nobody. It is not unknown, so
+                // it does not go on the list of things that could not be identified.
+                if (info.IsSoulCrystal)
+                    continue;
+
                 // Kept rather than dropped. An item the game says somebody is wearing and this
                 // client cannot file is a hole in the sheet with nothing pointing at it, which is
                 // how the high quality offset went unnoticed: the slots just looked empty.

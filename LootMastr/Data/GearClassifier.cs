@@ -57,9 +57,14 @@ public sealed class GearClassifier
         if (tome!.Contains(itemId))
             return GearSource.Tome;
 
-        // Anything else costs the raid nothing — crafted, an older tier, a relic. The planner only
-        // ever asks "does this need a drop", so they all collapse into one answer.
-        return GearSource.Crafted;
+        // Anything else costs the raid nothing, which is all the planner ever asks. But the sheet is
+        // read by people, and "Craft" on a relic weapon is a small lie that makes them doubt the
+        // rest of the row -- and it hides the case worth seeing, which is gear this tier does not
+        // understand.
+        //
+        // Crafted gear is tradeable and not unique. Relics, older raid gear and most dungeon drops
+        // are Unique and Untradeable, which is the line the tooltip already draws.
+        return info.IsUnique || info.IsUntradable ? GearSource.Other : GearSource.Crafted;
     }
 
     /// <summary>The side whose material an augmented piece consumes, for filling in need lists.</summary>
