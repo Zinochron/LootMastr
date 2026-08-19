@@ -2100,6 +2100,126 @@ var rules = new PriorityRules();
     Check("pins past the horizon can be dropped", pins.DropBeyond(6) == 1 && pins.Awards.Count == 0);
 }
 
+// --- the calendar ----------------------------------------------------------------------------------
+
+{
+    // Every one of these is a moment somebody's code is wrong at exactly once a week, which is why
+    // they are written down rather than reasoned about. Tuesday 08:00 UTC is the reset.
+    const DayOfWeek reset = DayOfWeek.Tuesday;
+    const int eight = 8 * 60;
+
+    var tuesdayMorning = new DateTime(2026, 8, 18, 7, 0, 0, DateTimeKind.Utc);   // Tuesday, before it
+    var tuesdayNoon = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc);     // Tuesday, after it
+    var friday = new DateTime(2026, 8, 21, 21, 0, 0, DateTimeKind.Utc);
+
+    // The case that catches a naive "walk back to Tuesday": on reset day before the hour, the last
+    // reset is a week ago, not this morning.
+    Check("before the hour on reset day, the last reset was a week back",
+          RaidCalendar.LastReset(reset, eight, tuesdayMorning) ==
+          new DateTime(2026, 8, 11, 8, 0, 0, DateTimeKind.Utc),
+          RaidCalendar.LastReset(reset, eight, tuesdayMorning).ToString("ddd dd MMM HH:mm"));
+
+    Check("after the hour it is today",
+          RaidCalendar.LastReset(reset, eight, tuesdayNoon) ==
+          new DateTime(2026, 8, 18, 8, 0, 0, DateTimeKind.Utc));
+
+    Check("and mid-week it is the Tuesday behind you",
+          RaidCalendar.LastReset(reset, eight, friday) ==
+          new DateTime(2026, 8, 18, 8, 0, 0, DateTimeKind.Utc));
+
+    Check("the next reset is always a week after the last",
+          RaidCalendar.NextReset(reset, eight, friday) ==
+          RaidCalendar.LastReset(reset, eight, friday).AddDays(7));
+
+    // Week 1 is the lockout that is running, so a Friday sits inside it.
+    var (start, end) = RaidCalendar.WeekWindow(reset, eight, 1, friday);
+
+    Check("week one is the lockout you are in", start <= friday && friday < end,
+          $"{start:dd MMM} – {end:dd MMM}");
+
+    Check("and week three starts a fortnight later",
+          RaidCalendar.WeekWindow(reset, eight, 3, friday).StartUtc == start.AddDays(14));
+
+    Check("a moment inside this lockout is week one",
+          RaidCalendar.WeekOf(reset, eight, friday, friday) == 1);
+
+    Check("and one nine days out is week two",
+          RaidCalendar.WeekOf(reset, eight, friday.AddDays(9), friday) == 2);
+}
+
+{
+    // Sessions. Thursday 19:00 UTC for three hours.
+    var slot = new RaidSlot { Day = DayOfWeek.Thursday, StartMinutesUtc = 19 * 60, DurationMinutes = 180 };
+
+    var wednesday = new DateTime(2026, 8, 19, 12, 0, 0, DateTimeKind.Utc);
+    var duringIt = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+    var afterIt = new DateTime(2026, 8, 20, 23, 0, 0, DateTimeKind.Utc);
+
+    Check("the next session is tomorrow evening",
+          RaidCalendar.NextOccurrence(slot, wednesday) ==
+          new DateTime(2026, 8, 20, 19, 0, 0, DateTimeKind.Utc));
+
+    // A session under way is "now", not "in a week" -- which is what lets the bar say raiding
+    // rather than counting down to the next one while you are in it.
+    Check("one under way still counts as now",
+          RaidCalendar.NextOccurrence(slot, duringIt) ==
+          new DateTime(2026, 8, 20, 19, 0, 0, DateTimeKind.Utc));
+
+    Check("and once it has ended, next week",
+          RaidCalendar.NextOccurrence(slot, afterIt) ==
+          new DateTime(2026, 8, 27, 19, 0, 0, DateTimeKind.Utc));
+
+    List<RaidSlot> two =
+    [
+        slot,
+        new RaidSlot { Day = DayOfWeek.Tuesday, StartMinutesUtc = 19 * 60, DurationMinutes = 180 },
+    ];
+
+    Check("the soonest of several is the next one",
+          RaidCalendar.Next(two, wednesday)!.Value.StartUtc ==
+          new DateTime(2026, 8, 20, 19, 0, 0, DateTimeKind.Utc));
+
+    Check("nothing scheduled is no next session", RaidCalendar.Next([], wednesday) == null);
+
+    Check("running is true inside a session",
+          RaidCalendar.Running(two, duringIt, out var endsAt) &&
+          endsAt == new DateTime(2026, 8, 20, 22, 0, 0, DateTimeKind.Utc));
+
+    Check("and false outside one", !RaidCalendar.Running(two, wednesday, out _));
+}
+
+{
+    Check("minutes past midnight read as a clock", RaidCalendar.Clock(19 * 60 + 30) == "19:30");
+    Check("and midnight is not 24:00", RaidCalendar.Clock(0) == "00:00");
+
+    // Out of range folds rather than throwing: a spinner that runs past midnight should wrap, and
+    // an hour before midnight is 23:00 rather than an exception.
+    Check("a day's worth wraps to the same time", RaidCalendar.Clock(24 * 60) == "00:00");
+    Check("and going backwards wraps too", RaidCalendar.Clock(-60) == "23:00");
+
+    // The round trip is the property that matters: whatever the machine's timezone, writing a local
+    // moment down in UTC and reading it back has to give the same local moment.
+    var now = new DateTime(2026, 8, 20, 12, 0, 0, DateTimeKind.Utc);
+
+    foreach (var day in Enum.GetValues<DayOfWeek>())
+    {
+        foreach (var minutes in new[] { 0, 7 * 60, 19 * 60 + 30, 23 * 60 + 59 })
+        {
+            var (utcDay, utcMinutes) = RaidCalendar.ToUtc(day, minutes, now);
+            var (backDay, backMinutes) = RaidCalendar.ToLocal(utcDay, utcMinutes, now);
+
+            if (backDay == day && backMinutes == minutes)
+                continue;
+
+            Check($"local {day} {RaidCalendar.Clock(minutes)} survives a trip through UTC", false,
+                  $"came back as {backDay} {RaidCalendar.Clock(backMinutes)}");
+            break;
+        }
+    }
+
+    Check("every local time survives a trip through UTC", true);
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

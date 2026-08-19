@@ -64,6 +64,22 @@ public sealed class StaticSettings
     /// </summary>
     public ManualPlan Manual { get; set; } = new();
 
+    // ---- When the group raids ---------------------------------------------
+
+    /// <summary>
+    /// The evenings this static raids on, in UTC. Empty means nobody has said.
+    /// </summary>
+    public List<RaidSlot> Schedule { get; set; } = new();
+
+    /// <summary>
+    /// When the weekly lockout rolls over. Tuesday 08:00 UTC on every data centre I can check —
+    /// which is why it is a default rather than a constant. A group that finds otherwise can say so
+    /// instead of filing a bug.
+    /// </summary>
+    public DayOfWeek ResetDay { get; set; } = DayOfWeek.Tuesday;
+
+    public int ResetMinutesUtc { get; set; } = 8 * 60;
+
     // ---- Automation ------------------------------------------------------
 
     public AssignmentMode Mode { get; set; } = AssignmentMode.Confirm;

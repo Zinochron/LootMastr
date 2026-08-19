@@ -21,6 +21,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem = new("LootMastr");
     private readonly MainWindow mainWindow;
     private readonly StaticsWindow staticsWindow;
+    private readonly RaidReminder reminder;
     private readonly TiersWindow tiersWindow;
     private readonly BisImporter importer;
     private readonly SafetyGuard guard;
@@ -87,6 +88,7 @@ public sealed class Plugin : IDalamudPlugin
         clears = new ClearTracker(Configuration, Tiers, Roster, Party);
 
         Sync = new SyncClient(Configuration, Statics, Tiers);
+        reminder = new RaidReminder(Configuration, Statics);
 
         Equipment = new EquipmentReader(Items);
         Attributes = new AttributeReader();
@@ -186,6 +188,7 @@ public sealed class Plugin : IDalamudPlugin
         staticsWindow.Dispose();
         tiersWindow.Dispose();
         Sync.Dispose();
+        reminder.Dispose();
         importer.Dispose();
         tracker.Dispose();
         clears.Dispose();

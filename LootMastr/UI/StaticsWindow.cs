@@ -7,6 +7,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LootMastr.Data;
+using LootMastr.Planning;
 using LootMastr.Roster;
 using LootMastr.Sync;
 
@@ -85,6 +86,12 @@ public sealed class StaticsWindow : Window, IDisposable
         ImGuiHelpers.ScaledDummy(6f);
 
         DrawSharing();
+
+        ImGuiHelpers.ScaledDummy(10f);
+        ImGui.Separator();
+        ImGuiHelpers.ScaledDummy(6f);
+
+        DrawSchedule();
 
         ImGuiHelpers.ScaledDummy(10f);
         ImGui.Separator();
@@ -522,6 +529,192 @@ public sealed class StaticsWindow : Window, IDisposable
                 Widgets.Tooltip($"{profile.Sync.CharacterName} at {profile.Sync.Url}");
                 return;
         }
+    }
+
+    /// <summary>
+    /// When the group raids, and when the lockout turns over.
+    ///
+    /// Entered and shown in <b>local time</b>, stored in UTC. A static spread over two countries has
+    /// one schedule and two ways of reading it, and doing the conversion once here is cheaper than
+    /// forgetting it in three places later. The UTC value sits beside each row as a quiet check —
+    /// it is what everybody else's client actually receives.
+    /// </summary>
+    private void DrawSchedule()
+    {
+        var settings = statics.Current.Settings;
+        var now = DateTime.UtcNow;
+
+        if (!ImGui.CollapsingHeader($"Raid nights ({settings.Schedule.Count})###schedule"))
+            return;
+
+        Widgets.HelpMarker("Shared with the static. Whether and how you are reminded is yours alone, " +
+                           "and lives in Settings.");
+
+        if (!config.CanWrite)
+        {
+            Widgets.ReadOnlyNotice("the schedule belongs to the static");
+            ImGuiHelpers.ScaledDummy(4f);
+        }
+
+        using var gate = ImRaii.Disabled(!config.CanWrite);
+
+        RaidSlot? removing = null;
+
+        foreach (var slot in settings.Schedule.ToList())
+        {
+            using var id = ImRaii.PushId(slot.GetHashCode());
+
+            var (localDay, localMinutes) = RaidCalendar.ToLocal(slot.Day, slot.StartMinutesUtc, now);
+
+            ImGui.SetNextItemWidth(110f * ImGuiHelpers.GlobalScale);
+
+            if (ImGui.BeginCombo("##day", localDay.ToString()))
+            {
+                foreach (var day in Enum.GetValues<DayOfWeek>())
+                {
+                    if (!ImGui.Selectable(day.ToString(), day == localDay))
+                        continue;
+
+                    Retime(slot, day, localMinutes, now);
+                }
+
+                ImGui.EndCombo();
+            }
+
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(70f * ImGuiHelpers.GlobalScale);
+
+            var hour = localMinutes / 60;
+
+            if (ImGui.InputInt("##hour", ref hour, 0))
+                Retime(slot, localDay, (Math.Clamp(hour, 0, 23) * 60) + (localMinutes % 60), now);
+
+            ImGui.SameLine(0f, 2f);
+            ImGui.TextUnformatted(":");
+            ImGui.SameLine(0f, 2f);
+            ImGui.SetNextItemWidth(70f * ImGuiHelpers.GlobalScale);
+
+            var minute = localMinutes % 60;
+
+            if (ImGui.InputInt("##minute", ref minute, 0))
+                Retime(slot, localDay, ((localMinutes / 60) * 60) + Math.Clamp(minute, 0, 59), now);
+
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(90f * ImGuiHelpers.GlobalScale);
+
+            var length = slot.DurationMinutes;
+
+            if (ImGui.InputInt("##length", ref length, 0))
+            {
+                slot.DurationMinutes = Math.Clamp(length, 15, 12 * 60);
+                config.Save();
+            }
+
+            ImGui.SameLine();
+            ImGui.TextDisabled("min");
+
+            ImGui.SameLine(0f, 16f);
+            ImGui.TextDisabled($"{slot.Day} {RaidCalendar.Clock(slot.StartMinutesUtc)} UTC");
+            Widgets.Tooltip("What every other client in this static receives. Yours is shown in local " +
+                            "time to the left.");
+
+            ImGui.SameLine();
+
+            if (ImGui.SmallButton("x"))
+                removing = slot;
+        }
+
+        if (removing != null)
+        {
+            settings.Schedule.Remove(removing);
+            config.Save();
+        }
+
+        if (ImGui.Button("Add a night"))
+        {
+            // Seeded from now, in the user's own timezone, so the first edit is a nudge rather than
+            // a correction of something arbitrary.
+            var (day, minutes) = RaidCalendar.ToUtc(DateTime.Now.DayOfWeek, 20 * 60, now);
+
+            settings.Schedule.Add(new RaidSlot { Day = day, StartMinutesUtc = minutes });
+            config.Save();
+        }
+
+        ImGuiHelpers.ScaledDummy(6f);
+
+        if (RaidCalendar.Next(settings.Schedule, now) is { } next)
+        {
+            var local = next.StartUtc.ToLocalTime();
+
+            ImGui.TextDisabled($"Next: {local:dddd, d MMMM, HH:mm} " +
+                               $"({Describe(next.StartUtc - now)} from now)");
+        }
+
+        ImGuiHelpers.ScaledDummy(4f);
+
+        // The reset is not a raid night, but it is the same kind of fact and belongs beside them:
+        // it is what decides which week the plan is talking about.
+        var resetDay = settings.ResetDay;
+        var resetLocal = RaidCalendar.ToLocal(resetDay, settings.ResetMinutesUtc, now);
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextDisabled("Weekly reset:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(110f * ImGuiHelpers.GlobalScale);
+
+        if (ImGui.BeginCombo("##resetDay", settings.ResetDay.ToString()))
+        {
+            foreach (var day in Enum.GetValues<DayOfWeek>())
+            {
+                if (!ImGui.Selectable($"{day}##reset", day == settings.ResetDay))
+                    continue;
+
+                settings.ResetDay = day;
+                config.Save();
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(70f * ImGuiHelpers.GlobalScale);
+
+        var resetHour = settings.ResetMinutesUtc / 60;
+
+        if (ImGui.InputInt("##resetHour", ref resetHour, 0))
+        {
+            settings.ResetMinutesUtc = Math.Clamp(resetHour, 0, 23) * 60;
+            config.Save();
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled($"UTC — {resetLocal.Day} {RaidCalendar.Clock(resetLocal.Minutes)} your time");
+        Widgets.HelpMarker("Tuesday 08:00 UTC on every data centre I can check, which is why this is a " +
+                           "default and not a constant. It decides which week the plan means.");
+    }
+
+    /// <summary>Writes a local weekly moment down in UTC, which is the only form that travels.</summary>
+    private void Retime(RaidSlot slot, DayOfWeek localDay, int localMinutes, DateTime now)
+    {
+        var (day, minutes) = RaidCalendar.ToUtc(localDay, localMinutes, now);
+
+        slot.Day = day;
+        slot.StartMinutesUtc = minutes;
+
+        config.Save();
+    }
+
+    private static string Describe(TimeSpan span)
+    {
+        if (span.TotalMinutes < 1)
+            return "moments";
+
+        if (span.TotalHours < 1)
+            return $"{(int)span.TotalMinutes} min";
+
+        return span.TotalDays < 1
+                   ? $"{(int)span.TotalHours} h {span.Minutes} min"
+                   : $"{(int)span.TotalDays} d {span.Hours} h";
     }
 
     /// <summary>

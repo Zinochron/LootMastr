@@ -31,6 +31,10 @@ public sealed class SettingsTab : ITab
 
     public void Draw()
     {
+        DrawReminders();
+
+        ImGuiHelpers.ScaledDummy(10f);
+
         // Every setting on this tab belongs to the static, so the whole thing is either editable or
         // it is not. Nothing is hidden: what the group has decided is exactly what a member with
         // read access came here to find out.
@@ -400,6 +404,90 @@ public sealed class SettingsTab : ITab
 
             Widgets.HelpMarker(help);
         }
+    }
+
+    /// <summary>
+    /// When and how to be told the raid is starting.
+    ///
+    /// Outside the read-only gate, and that is the point: the schedule is the group's, but being
+    /// reminded of it is not. Somebody with read access is exactly the person a reminder is for.
+    /// </summary>
+    private void DrawReminders()
+    {
+        ImGui.TextUnformatted("Reminders");
+        Widgets.HelpMarker("Warns you before the static's raid nights. The nights themselves are set " +
+                           "in Manage statics; these settings are yours and travel nowhere.");
+        ImGui.Separator();
+
+        var schedule = config.Current.Settings.Schedule;
+
+        if (schedule.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             "This static has no raid nights yet — set them in Manage statics.");
+        }
+
+        var notify = config.RemindByNotification;
+        if (ImGui.Checkbox("A notification", ref notify))
+        {
+            config.RemindByNotification = notify;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("The toast at the corner of the screen. Appears whether or not any " +
+                           "LootMastr window is open.");
+
+        ImGui.SameLine(0f, 20f);
+
+        var chat = config.RemindByChat;
+        if (ImGui.Checkbox("A line in chat", ref chat))
+        {
+            config.RemindByChat = chat;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("Easy to miss in a busy log, and easy to scroll back to. Both are true.");
+
+        ImGui.SameLine(0f, 20f);
+
+        var dtr = config.RemindInDtrBar;
+        if (ImGui.Checkbox("A countdown by the clock", ref dtr))
+        {
+            config.RemindInDtrBar = dtr;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("A server info bar entry that counts down and then says how long is left " +
+                           "of the session. Nothing interrupts you; it is simply there.");
+
+        ImGuiHelpers.ScaledDummy(4f);
+        ImGui.TextDisabled("Warn me:");
+
+        // Fixed lead times rather than a free number: the useful warnings are few and different in
+        // kind, and a text field would invite somebody to type 90 and wonder why it never fired.
+        foreach (var minutes in new[] { 120, 60, 30, 15, 10, 5 })
+        {
+            ImGui.SameLine();
+
+            var on = config.ReminderMinutes.Contains(minutes);
+
+            using var colour = ImRaii.PushColor(ImGuiCol.Text, on ? Widgets.Done : Widgets.Muted);
+
+            if (!ImGui.SmallButton(minutes < 60 ? $"{minutes}m" : $"{minutes / 60}h"))
+                continue;
+
+            if (on)
+                config.ReminderMinutes.Remove(minutes);
+            else
+                config.ReminderMinutes.Add(minutes);
+
+            config.Save();
+        }
+
+        ImGui.SameLine(0f, 16f);
+        ImGui.TextDisabled("and at the start.");
+        Widgets.HelpMarker("The start itself is always announced. A warning \"0 minutes before\" " +
+                           "would read as a mistake, and it is the one nobody wants to miss.");
     }
 
     /// <summary>

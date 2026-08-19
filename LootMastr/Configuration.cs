@@ -198,6 +198,23 @@ public class Configuration : IPluginConfiguration
     /// <summary>What every screen behaves as. The real role unless the debug tab is pretending.</summary>
     [JsonIgnore] public StaticRole EffectiveRole => PretendRole ?? Current.Sync.Role;
 
+    // ---- Reminders, which belong to whoever is being reminded ------------
+
+    /// <summary>
+    /// How long before a session to say something, in minutes. Empty means never.
+    ///
+    /// A list rather than one number, because the two useful warnings are different in kind: an hour
+    /// out is "do not start something long", ten minutes out is "come back".
+    /// </summary>
+    public List<int> ReminderMinutes { get; set; } = [60, 10];
+
+    public bool RemindByNotification { get; set; } = true;
+
+    public bool RemindByChat { get; set; } = true;
+
+    /// <summary>A countdown next to the clock. Off by default — it is there the whole time.</summary>
+    public bool RemindInDtrBar { get; set; }
+
     /// <summary>What the open static has pinned by hand.</summary>
     [JsonIgnore] public ManualPlan Manual => Current.Settings.Manual;
 

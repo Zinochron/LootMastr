@@ -1579,6 +1579,48 @@ was bought printed the same words twice. Correct, and indistinguishable from a b
 plan somebody has to act on is the same thing. The harness pins it: no player is given the same
 label twice in one week, and every material award names a piece.
 
+### The first time the plugin knows what day it is
+
+Nothing in here was a calendar date before this. "Week 1" is an index; `WeekSimulator` never asks
+what day it is, and that is right for the arithmetic and the wall everything else runs into.
+
+`RaidCalendar` is the whole of it, and it is **pure**: every method takes "now" rather than reading
+the clock. A calendar that consults the system clock is a calendar nobody can test at midnight on a
+Tuesday — and time code is wrong at exactly one moment a week, which is the least likely moment for
+anyone to be looking.
+
+The harness pins the moments that catch a naive implementation:
+
+- **On reset day, before the hour**, the last reset was a week ago and not this morning. Walking back
+  to Tuesday and stopping is wrong for eight hours out of every 168.
+- **A session already under way counts as "next"** until it ends, which is what lets the status bar
+  say *raiding* instead of counting down to next week while you are in it.
+- **Every local weekday and time survives a round trip through UTC.** Both halves move: 19:00 UTC
+  Tuesday is 20:00 Tuesday in Berlin and 04:00 Wednesday in Sydney, so a conversion that keeps the
+  time and drops the day puts half a group on the wrong evening.
+
+**Stored in UTC, entered and shown in local time.** A static spread over two countries otherwise has
+one schedule and two readings of it. The UTC value sits beside each row in Manage statics as a quiet
+check: it is what everybody else's client actually receives.
+
+#### Reminders hang off the framework tick
+
+Not off a draw loop. `SyncClient.Poll` runs only while a LootMastr window is open, and a reminder
+built on that reminds exactly the people who are not looking.
+
+Each warning fires once per session, keyed by the moment it was about rather than counted down to —
+so a client asleep through the hour mark does not fire it late, and one left running for a month does
+not accumulate. The window is one check wide rather than "less than N minutes away", because the
+second form is true for the whole hour before an hour's warning.
+
+`Services.Notifications` and `Services.DtrBar` had been registered and unused since the first commit.
+This is what they were waiting for.
+
+**The schedule is the group's; being reminded of it is not.** So the nights live on `StaticSettings`
+and sync, the lead times and channels live on `Configuration` and do not — and the reminder settings
+sit outside the read-only gate, because somebody with read access is exactly the person a reminder is
+for.
+
 ### Decisions made by hand
 
 A group agrees something the rules did not pick — the twine goes to Yuma tonight, whatever the plan
