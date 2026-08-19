@@ -401,5 +401,5 @@ public sealed class LootPlanner
         plans.Select(p => p.Clone()).ToList();
 
     private WeekSimulator NewSimulator() =>
-        new(tiers.Tier, config.Rules, config.LookaheadWeeks);
+        new(tiers.Tier, config.Rules, config.LookaheadWeeks, config.Manual);
 }

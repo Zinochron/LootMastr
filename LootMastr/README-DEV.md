@@ -1579,6 +1579,55 @@ was bought printed the same words twice. Correct, and indistinguishable from a b
 plan somebody has to act on is the same thing. The harness pins it: no player is given the same
 label twice in one week, and every material award names a piece.
 
+### Decisions made by hand
+
+A group agrees something the rules did not pick — the twine goes to Yuma tonight, whatever the plan
+says. Before this there was one way to record that: tick the item as received, which is a lie until
+it drops.
+
+`ManualPlan` is a list of pins, and **a pin names a drop, not a week.** That is the whole difference
+between this and freezing a schedule: pinning the twine says nothing about the body coffer beside it,
+and the rest of that week goes on being worked out. A group that agreed one thing agreed one thing.
+
+**The requested behaviour falls out of the structure rather than being coded.** "Later weeks
+recompute, pinned ones do not" needs no special case: the simulator runs forward and asks for an
+override at each step, so a change in week two alters the state week three starts from, and week
+three works itself out around it — except where it has pins of its own.
+
+#### Reported, not corrected
+
+A pin the run cannot honour becomes a `PlanProblem` and the drop does not happen. Three refusals, and
+only one of them passes in silence:
+
+| | |
+|---|---|
+| Player has left the static | reported |
+| Player does not need it | reported, and not carried out |
+| Material pinned onto somebody with nothing to put it on | reported, and carried out anyway — overruling `CanUseUpgrade` is what a pin is *for*, it just has to say so |
+| Pin says nobody | silent, because that is an answer rather than a mistake |
+
+A plan that quietly does something other than what it says is worse than one with a red line in it:
+only the red line can be acted on.
+
+#### The bug the harness found before the UI existed
+
+A purchase pinned for week four was **bought in week one** by the greedy pass, which spends whatever
+it can afford. That does not break the pin so much as make it pointless, silently and three weeks
+early. `ReservedElsewhere` keeps both spending passes off anything pinned for another week — a pin is
+a decision about *when* as much as about who.
+
+Two harness checks were themselves wrong before that one was: 450 banked plus a week's 450 does buy
+an 825 body piece, so "pinned too early" needed two purchases in one week to be true at all. Worth
+recording, because a fixture written by the person who wrote the code tends to be healthier than
+reality.
+
+#### Drawn from the pins, not from the results
+
+Pinned purchases in the schedule are rendered from `ManualPlan`, not from `SimulationResult`. A pin
+that failed produces no award — so drawing them from results would make a wrong row **disappear**,
+which is exactly the row somebody needs in order to fix it. `PlannedAward.ByHand` keeps the two from
+being drawn twice.
+
 ### Two calculations, on purpose this time
 
 `LootPlanner.ComingWeek()` answers "this reset": books in hand spent first, then every coffer each

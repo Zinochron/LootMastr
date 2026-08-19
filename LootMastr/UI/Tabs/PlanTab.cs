@@ -73,6 +73,33 @@ public sealed class PlanTab : ITab
                                  "its own.");
 
         ImGui.SameLine();
+
+        var manual = config.Manual;
+
+        using (ImRaii.Disabled(!config.CanWrite))
+        {
+            var byHand = manual.Enabled;
+
+            if (ImGui.Checkbox("Set by hand", ref byHand))
+            {
+                manual.Enabled = byHand;
+                config.Save();
+                Invalidate();
+            }
+        }
+
+        Widgets.HelpMarker("Turns every line in the schedule below into a choice. What you set stays " +
+                           "set; everything else goes on being worked out around it — including the " +
+                           "weeks after the one you changed.\n\n" +
+                           "Off, nothing you have pinned applies and the plan is exactly what it was.");
+
+        if (manual.Enabled && manual.Awards.Count > 0)
+        {
+            ImGui.SameLine();
+            Widgets.Coloured(Widgets.Augment, $"{manual.Awards.Count} set by hand");
+        }
+
+        ImGui.SameLine();
         ImGui.TextDisabled($"looking {config.LookaheadWeeks} weeks ahead");
 
         // Ticking a box in another tab has to reach the numbers here, and a fingerprint is far
@@ -576,11 +603,131 @@ public sealed class PlanTab : ITab
                 continue;
             }
 
-            foreach (var award in awards)
-                ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
+            for (var i = 0; i < awards.Count; i++)
+                DrawAward(awards[i], week, encounter.Index, Ordinal(awards, i));
         }
 
         DrawWeeksExchanges(result, week);
+        DrawTrouble(result, week);
+    }
+
+    /// <summary>
+    /// How many awards before this one in the same fight are for the same coffer.
+    ///
+    /// Nearly always zero. A tier whose drop pool is smaller than its drop count puts the same
+    /// coffer up twice in one clear, and two pins that cannot tell each other apart is worse than
+    /// not being able to pin at all.
+    /// </summary>
+    private static int Ordinal(IReadOnlyList<PlannedAward> awards, int index)
+    {
+        var seen = 0;
+
+        for (var i = 0; i < index; i++)
+        {
+            if (awards[i].Slot == awards[index].Slot && awards[i].Upgrade == awards[index].Upgrade)
+                seen++;
+        }
+
+        return seen;
+    }
+
+    /// <summary>
+    /// One expected drop: a sentence when the plan is deciding, a choice when somebody else is.
+    /// </summary>
+    private void DrawAward(PlannedAward award, int week, int encounter, int ordinal)
+    {
+        var manual = config.Manual;
+
+        if (!manual.Enabled || !config.CanWrite)
+        {
+            ImGui.TextUnformatted($"{award.What}  →  {award.PlayerName}");
+            return;
+        }
+
+        using var id = ImRaii.PushId($"{week}-{encounter}-{award.What}-{ordinal}");
+
+        var pin = manual.For(week, encounter, award.Slot, award.Upgrade, ordinal);
+
+        ImGui.TextUnformatted($"{award.What}  →");
+        ImGui.SameLine();
+
+        using (ImRaii.PushColor(ImGuiCol.Text, pin != null ? Widgets.Augment : Widgets.Done))
+        {
+            if (ImGui.SmallButton($"{award.PlayerName}##who"))
+                ImGui.OpenPopup("##pick");
+        }
+
+        Widgets.Tooltip(pin != null
+                            ? "Set by hand. The rules are not deciding this one."
+                            : "Decided by the rules. Click to set it yourself.");
+
+        if (pin != null)
+        {
+            ImGui.SameLine(0f, 4f);
+
+            if (ImGui.SmallButton("x"))
+            {
+                manual.Unpin(week, encounter, award.Slot, award.Upgrade, ordinal);
+                config.Save();
+                Invalidate();
+            }
+
+            Widgets.Tooltip("Hand it back to the rules.");
+        }
+
+        using var popup = ImRaii.Popup("##pick");
+        if (!popup.Success)
+            return;
+
+        foreach (var member in roster.Active)
+        {
+            if (!ImGui.Selectable($"{member.Name}##{member.Key}", award.PlayerKey == member.Key))
+                continue;
+
+            manual.Pin(new ManualAward
+            {
+                Week = week, Encounter = encounter, Slot = award.Slot, Upgrade = award.Upgrade,
+                Ordinal = ordinal, PlayerKey = member.Key,
+            });
+
+            config.Save();
+            Invalidate();
+        }
+
+        ImGui.Separator();
+
+        // "Nobody" is a decision and not the absence of one, so it sits in the list rather than
+        // being reached by clearing something.
+        if (ImGui.Selectable("nobody — greed it"))
+        {
+            manual.Pin(new ManualAward
+            {
+                Week = week, Encounter = encounter, Slot = award.Slot, Upgrade = award.Upgrade,
+                Ordinal = ordinal, PlayerKey = string.Empty,
+            });
+
+            config.Save();
+            Invalidate();
+        }
+    }
+
+    /// <summary>
+    /// What the week could not do, under the week that could not do it.
+    ///
+    /// Reported rather than corrected. A plan that quietly does something other than what it says is
+    /// worse than one with a red line in it, because only the red line can be acted on.
+    /// </summary>
+    private void DrawTrouble(SimulationResult result, int week)
+    {
+        var trouble = result.TroubleIn(week).ToList();
+
+        if (trouble.Count == 0)
+            return;
+
+        ImGuiHelpers.ScaledDummy(4f);
+
+        foreach (var problem in trouble)
+            Widgets.Coloured(Widgets.Bad, $"{problem.What}: {problem.Message}");
     }
 
     /// <summary>
@@ -594,19 +741,28 @@ public sealed class PlanTab : ITab
     /// </summary>
     private void DrawWeeksExchanges(SimulationResult result, int week)
     {
-        var bought = result.Awards.Where(a => a.Week == week && a.Bought).ToList();
+        // Pin-made purchases are drawn from the pins themselves a few lines down, so they are kept
+        // out here — otherwise a purchase somebody wrote down appears twice, once as their row and
+        // once as the result of it.
+        var bought = result.Awards.Where(a => a.Week == week && a.Bought && !a.ByHand).ToList();
 
         Widgets.Coloured(Widgets.Augment, "Exchange");
 
         using var inner = ImRaii.PushIndent();
 
-        if (bought.Count == 0)
+        var manual = config.Manual;
+        var editable = manual.Enabled && config.CanWrite;
+
+        if (bought.Count == 0 && !editable)
         {
             Widgets.Coloured(Widgets.Muted, "nothing");
             return;
         }
 
         var tier = tiers.Tier;
+
+        if (editable)
+            DrawPinnedPurchases(week);
 
         foreach (var award in bought)
         {
@@ -628,6 +784,118 @@ public sealed class PlanTab : ITab
                                 $"{source}, which this player has spare.");
             }
         }
+    }
+
+    /// <summary>
+    /// Purchases somebody wrote down, drawn from the pins rather than from the results.
+    ///
+    /// That distinction is the point. A pin that could not be honoured produces no award, so drawing
+    /// these from the results would make a wrong row disappear — exactly the row somebody needs to
+    /// see in order to fix it. The problem for it is printed underneath by <c>DrawTrouble</c>.
+    /// </summary>
+    private void DrawPinnedPurchases(int week)
+    {
+        var manual = config.Manual;
+        var pins = manual.PurchasesIn(week).ToList();
+
+        foreach (var pin in pins)
+        {
+            using var id = ImRaii.PushId($"buy{week}-{pin.Slot}-{pin.Upgrade}-{pin.PlayerKey}");
+
+            var what = pin.Upgrade != null
+                           ? $"{pin.Upgrade} upgrade"
+                           : pin.Slot?.CofferLabel() ?? "pick one";
+
+            using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Augment))
+            {
+                if (ImGui.SmallButton($"{what}##what"))
+                    ImGui.OpenPopup("##whatPick");
+            }
+
+            ImGui.SameLine();
+            ImGui.TextDisabled(pin.WithTomestones ? "(tomes)  →" : "(books)  →");
+            ImGui.SameLine();
+
+            var who = roster.Active.FirstOrDefault(m => m.Key == pin.PlayerKey)?.Name ?? "pick somebody";
+
+            using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Augment))
+            {
+                if (ImGui.SmallButton($"{who}##who"))
+                    ImGui.OpenPopup("##whoPick");
+            }
+
+            ImGui.SameLine(0f, 4f);
+
+            if (ImGui.SmallButton("x"))
+            {
+                manual.Remove(pin);
+                config.Save();
+                Invalidate();
+            }
+
+            Widgets.Tooltip("Drop this purchase.");
+
+            using (var popup = ImRaii.Popup("##whatPick"))
+            {
+                if (popup.Success)
+                {
+                    // Both currencies in one list, because "body piece" is two different purchases
+                    // and which shop it comes from is the interesting half of the choice.
+                    foreach (var slot in Slots.All.Select(Slots.CofferSlot).Distinct())
+                    {
+                        if (ImGui.Selectable($"{slot.CofferLabel()} (books)##b{slot}"))
+                            Retarget(pin, slot, null, withTomes: false);
+
+                        if (tiers.Tier.TomeCostForSlot(slot) is > 0 &&
+                            ImGui.Selectable($"{slot.CofferLabel()} (tomes)##t{slot}"))
+                        {
+                            Retarget(pin, slot, null, withTomes: true);
+                        }
+                    }
+
+                    ImGui.Separator();
+
+                    foreach (var side in new[] { GearSide.Weapon, GearSide.Left, GearSide.Right })
+                    {
+                        if (ImGui.Selectable($"{side} upgrade (books)##u{side}"))
+                            Retarget(pin, null, side, withTomes: false);
+                    }
+                }
+            }
+
+            using var whoPopup = ImRaii.Popup("##whoPick");
+            if (!whoPopup.Success)
+                continue;
+
+            foreach (var member in roster.Active)
+            {
+                if (!ImGui.Selectable($"{member.Name}##{member.Key}", pin.PlayerKey == member.Key))
+                    continue;
+
+                pin.PlayerKey = member.Key;
+                config.Save();
+                Invalidate();
+            }
+        }
+
+        if (ImGui.SmallButton("+ purchase"))
+        {
+            manual.Awards.Add(new ManualAward { Week = week, Bought = true });
+            config.Save();
+            Invalidate();
+        }
+
+        Widgets.Tooltip("Adds a purchase to this week that the rules would not have made.");
+    }
+
+    private void Retarget(ManualAward pin, GearSlot? slot, GearSide? upgrade, bool withTomes)
+    {
+        pin.Slot = slot;
+        pin.Upgrade = upgrade;
+        pin.WithTomestones = withTomes;
+
+        config.Save();
+        Invalidate();
     }
 
     /// <summary>What a purchase costs, including the part that has to be traded for first.</summary>

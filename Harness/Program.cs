@@ -1935,6 +1935,171 @@ var rules = new PriorityRules();
     Check("two statics never share an id", new StaticProfile().Id != new StaticProfile().Id);
 }
 
+// --- decisions made by hand ------------------------------------------------------------------------
+
+{
+    RosterMember Wanting(string name) => Member(name,
+                                                (GearSlot.Body, GearSource.Raid),
+                                                (GearSlot.Legs, GearSource.Raid));
+
+    List<PlayerPlan> Two() =>
+    [
+        Plan(Wanting("First"), RaidRole.Dps, tier, 0),
+        Plan(Wanting("Second"), RaidRole.Dps, tier, 1),
+    ];
+
+    SimulationResult Run(ManualPlan? pins, List<PlayerPlan> plans) =>
+        new WeekSimulator(tier, rules, 6, pins).Run(plans);
+
+    // The assertion worth more than the rest of this block: a feature nobody switched on changes
+    // nothing at all. Off, and the awards are the same awards, week for week and name for name.
+    var plain = Run(null, Two());
+    var offButPinned = new ManualPlan { Enabled = false };
+
+    offButPinned.Pin(new ManualAward
+    {
+        Week = 1, Encounter = 3, Slot = GearSlot.Body, PlayerKey = "Second@Test",
+    });
+
+    var ignored = Run(offButPinned, Two());
+
+    Check("switched off, a pin changes nothing",
+          string.Join("|", plain.Awards.Select(a => $"{a.Week}:{a.What}:{a.PlayerName}")) ==
+          string.Join("|", ignored.Awards.Select(a => $"{a.Week}:{a.What}:{a.PlayerName}")));
+
+    Check("and reports no trouble", ignored.Trouble.Count == 0);
+
+    // On, the pin beats the ranking. "First" is ahead on player order, so without the pin the body
+    // coffer is theirs; the check is only meaningful because that is who wins by default.
+    var byRules = Run(null, Two());
+    var week1Body = byRules.Awards.First(a => a is { Week: 1, Bought: false } && a.What == "Body");
+
+    Check("by the rules the first player takes the body", week1Body.PlayerName == "First");
+
+    var pins = new ManualPlan { Enabled = true };
+    pins.Pin(new ManualAward { Week = 1, Encounter = 3, Slot = GearSlot.Body, PlayerKey = "Second@Test" });
+
+    var pinned = Run(pins, Two());
+    var pinnedBody = pinned.Awards.First(a => a is { Week: 1, Bought: false } && a.What == "Body");
+
+    Check("a pin overrules it", pinnedBody.PlayerName == "Second", pinnedBody.PlayerName);
+    Check("and nothing is reported as wrong", pinned.Trouble.Count == 0,
+          string.Join("; ", pinned.Trouble.Select(t => t.Message)));
+
+    // The rest of the week still works itself out around the pin rather than freezing with it.
+    var legs = pinned.Awards.FirstOrDefault(a => a is { Week: 1, Bought: false } && a.What == "Legs");
+    Check("the rest of the week is still worked out", legs.PlayerName == "First", legs.PlayerName);
+}
+
+{
+    // A pin nobody can honour is reported and not carried out. Both halves matter: a plan that
+    // silently does something else is worse than one with a red line in it.
+    var member = Member("Only", (GearSlot.Body, GearSource.Raid));
+
+    var pins = new ManualPlan { Enabled = true };
+    pins.Pin(new ManualAward { Week = 1, Encounter = 3, Slot = GearSlot.Legs, PlayerKey = "Only@Test" });
+
+    var run = new WeekSimulator(tier, rules, 4, pins).Run([Plan(member, RaidRole.Dps, tier)]);
+
+    Check("a pin on somebody who does not need it is reported",
+          run.Trouble.Any(t => t.Message.Contains("does not need it")),
+          string.Join("; ", run.Trouble.Select(t => t.Message)));
+
+    Check("and is not carried out",
+          run.Awards.All(a => a.What != "Legs"),
+          string.Join(", ", run.Awards.Select(a => a.What)));
+
+    // A player who has left takes the pin with them, and says so.
+    var gone = new ManualPlan { Enabled = true };
+    gone.Pin(new ManualAward { Week = 1, Encounter = 3, Slot = GearSlot.Body, PlayerKey = "Ghost@Test" });
+
+    var orphaned = new WeekSimulator(tier, rules, 4, gone).Run([Plan(member, RaidRole.Dps, tier)]);
+
+    Check("a pin on somebody who left is reported",
+          orphaned.Trouble.Any(t => t.Message.Contains("no longer in this static")));
+
+    // Nobody, deliberately: the coffer goes to no one and that is not a problem.
+    var greed = new ManualPlan { Enabled = true };
+    greed.Pin(new ManualAward { Week = 1, Encounter = 3, Slot = GearSlot.Body, PlayerKey = "" });
+
+    var passed = new WeekSimulator(tier, rules, 4, greed).Run([Plan(member, RaidRole.Dps, tier)]);
+
+    Check("a pin on nobody hands it to nobody",
+          passed.Awards.All(a => !(a.Week == 1 && a.What == "Body" && !a.Bought)));
+
+    Check("and is not a problem", passed.Trouble.Count == 0);
+}
+
+{
+    // A purchase pinned earlier than the tomestones allow. The message counts in weeks, because
+    // "three weeks early" is something somebody can act on and "410 short" is arithmetic homework.
+    var member = Member("Saver", (GearSlot.Body, GearSource.Tome), (GearSlot.Legs, GearSource.Tome));
+
+    var pins = new ManualPlan { Enabled = true };
+
+    // 450 banked plus week one's 450 buys one 825 piece and not two.
+    pins.Awards.Add(new ManualAward
+    {
+        Week = 1, Bought = true, WithTomestones = true, Slot = GearSlot.Body, PlayerKey = "Saver@Test",
+    });
+
+    pins.Awards.Add(new ManualAward
+    {
+        Week = 1, Bought = true, WithTomestones = true, Slot = GearSlot.Legs, PlayerKey = "Saver@Test",
+    });
+
+    var plan = Plan(member, RaidRole.Dps, tier);
+    var run = new WeekSimulator(tier, rules, 6, pins).Run([plan]);
+
+    Check("a purchase pinned too early is reported",
+          run.Trouble.Any(t => t.Message.Contains("cannot afford")),
+          string.Join("; ", run.Trouble.Select(t => t.Message)));
+
+    // A separate player, owing one piece: pinned for week two, and week one must leave it alone.
+    // That is the half the greedy pass used to break — it could afford the piece in week one and
+    // bought it there, which does not fail the pin so much as quietly make it pointless.
+    var waiter = Member("Waiter", (GearSlot.Body, GearSource.Tome));
+
+    var later = new ManualPlan { Enabled = true };
+
+    later.Awards.Add(new ManualAward
+    {
+        Week = 2, Bought = true, WithTomestones = true, Slot = GearSlot.Body, PlayerKey = "Waiter@Test",
+    });
+
+    var ok = new WeekSimulator(tier, rules, 6, later).Run([Plan(waiter, RaidRole.Dps, tier)]);
+
+    Check("a purchase pinned for a later week is not bought earlier",
+          ok.Awards.All(a => !(a.Bought && a.Week == 1)),
+          string.Join(", ", ok.Awards.Where(a => a.Bought).Select(a => $"W{a.Week}:{a.What}:{a.TomeCost}")));
+
+    Check("and happens in the week it was written down for",
+          ok.Awards.Any(a => a is { Week: 2, Bought: true } && a.TomeCost == 825),
+          string.Join(", ", ok.Awards.Where(a => a.Bought).Select(a => $"W{a.Week}:{a.What}:{a.TomeCost}")));
+
+    Check("with nothing reported", ok.Trouble.Count == 0,
+          string.Join("; ", ok.Trouble.Select(t => t.Message)));
+}
+
+{
+    // Pins are one per drop. Changing your mind twice must leave one decision, not a pile in which
+    // the oldest quietly wins.
+    var pins = new ManualPlan { Enabled = true };
+
+    pins.Pin(new ManualAward { Week = 1, Encounter = 3, Slot = GearSlot.Body, PlayerKey = "A@Test" });
+    pins.Pin(new ManualAward { Week = 1, Encounter = 3, Slot = GearSlot.Body, PlayerKey = "B@Test" });
+
+    Check("pinning the same drop twice keeps one row", pins.Awards.Count == 1);
+    Check("and it is the later decision", pins.Awards[0].PlayerKey == "B@Test");
+
+    pins.Unpin(1, 3, GearSlot.Body, null, 0);
+    Check("unpinning removes it", pins.Awards.Count == 0);
+
+    // A shorter horizon leaves pins behind that can never run.
+    pins.Pin(new ManualAward { Week = 9, Encounter = 1, Slot = GearSlot.Earrings, PlayerKey = "A@Test" });
+    Check("pins past the horizon can be dropped", pins.DropBeyond(6) == 1 && pins.Awards.Count == 0);
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

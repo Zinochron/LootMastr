@@ -198,6 +198,9 @@ public class Configuration : IPluginConfiguration
     /// <summary>What every screen behaves as. The real role unless the debug tab is pretending.</summary>
     [JsonIgnore] public StaticRole EffectiveRole => PretendRole ?? Current.Sync.Role;
 
+    /// <summary>What the open static has pinned by hand.</summary>
+    [JsonIgnore] public ManualPlan Manual => Current.Settings.Manual;
+
     /// <summary>Whether this client may change the open static. True whenever nothing is syncing.</summary>
     [JsonIgnore]
     public bool CanWrite => PretendRole is { } pretend ? pretend != StaticRole.Read : Current.Sync.CanWrite;

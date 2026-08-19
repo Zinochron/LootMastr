@@ -17,8 +17,12 @@ public readonly record struct PlannedAward(
     IReadOnlyList<AwardCandidate>? Considered = null,
     string? Why = null,
     BookTrade? Traded = null,
-    int TomeCost = 0)
+    int TomeCost = 0,
+    bool Manual = false)
 {
+    /// <summary>Whether this came from a pin rather than from the rules.</summary>
+    public bool ByHand => Manual;
+
     /// <summary>Bought from the tomestone vendor rather than won or traded for with books.</summary>
     public bool WithTomestones => TomeCost > 0;
 
@@ -48,8 +52,14 @@ public sealed record SimulationResult(
     IReadOnlyList<PlannedAward> Awards,
     int Horizon,
     int LastTomeFinishWeek = 0,
-    IReadOnlyDictionary<string, int>? TomeFinishWeeks = null)
+    IReadOnlyDictionary<string, int>? TomeFinishWeeks = null,
+    IReadOnlyList<PlanProblem>? Problems = null)
 {
+    /// <summary>Pins the run could not honour. Empty unless somebody has set something by hand.</summary>
+    public IReadOnlyList<PlanProblem> Trouble => Problems ?? [];
+
+    public IEnumerable<PlanProblem> TroubleIn(int week) => Trouble.Where(p => p.Week == week);
+
     /// <summary>True for a week the simulation never reached, i.e. "not within the horizon".</summary>
     public bool BeyondHorizon(int week) => week > Horizon;
 
@@ -77,16 +87,22 @@ public sealed class WeekSimulator
     private readonly TierDefinition tier;
     private readonly PriorityRules rules;
     private readonly int horizon;
+    private readonly ManualPlan manual;
 
     private readonly List<PlannedAward> awards = new();
+    private readonly List<PlanProblem> problems = new();
     private int currentWeek;
     private int currentEncounter;
 
-    public WeekSimulator(TierDefinition tier, PriorityRules rules, int horizon)
+    /// <summary>How many of each coffer this fight has put up so far this week, for the ordinal.</summary>
+    private readonly Dictionary<GearSlot, int> seenThisFight = new();
+
+    public WeekSimulator(TierDefinition tier, PriorityRules rules, int horizon, ManualPlan? manual = null)
     {
         this.tier = tier;
         this.rules = rules;
         this.horizon = Math.Max(1, horizon);
+        this.manual = manual ?? new ManualPlan();
     }
 
     /// <summary>
@@ -99,6 +115,7 @@ public sealed class WeekSimulator
     public SimulationResult Run(IReadOnlyList<PlayerPlan> players, int startWeek = 1)
     {
         awards.Clear();
+        problems.Clear();
 
         var encounters = tier.Encounters.OrderBy(e => e.Index).ToList();
 
@@ -115,6 +132,7 @@ public sealed class WeekSimulator
             foreach (var encounter in encounters)
             {
                 currentEncounter = encounter.Index;
+                seenThisFight.Clear();
 
                 foreach (var player in players)
                 {
@@ -130,6 +148,9 @@ public sealed class WeekSimulator
                     AwardUpgrade(players, side);
             }
 
+            // Pinned purchases before the greedy ones, or a player's books would already be spent on
+            // whatever the rules preferred by the time the group's own decision was read.
+            SpendPinned(players);
             SpendTokens(players);
             SpendTomes(players);
             MarkFinished(players, currentWeek);
@@ -154,7 +175,8 @@ public sealed class WeekSimulator
             lastTome = Math.Max(lastTome, tome);
         }
 
-        return new SimulationResult(last, finishWeeks, [..awards], horizon, lastTome, tomeWeeks);
+        return new SimulationResult(last, finishWeeks, [..awards], horizon, lastTome, tomeWeeks,
+                                    [..problems]);
     }
 
     /// <summary>
@@ -205,23 +227,105 @@ public sealed class WeekSimulator
 
     private void AwardCoffer(IReadOnlyList<PlayerPlan> players, GearSlot slot)
     {
-        var winner = Best(players.Where(p => p.Wants(slot)), p => p.GainFor(slot));
+        var coffer = Slots.CofferSlot(slot);
+        var ordinal = Next(coffer);
+
+        PlayerPlan? winner;
+
+        if (manual.For(currentWeek, currentEncounter, coffer, null, ordinal) is { } pin)
+        {
+            winner = Pinned(players, pin, p => p.Wants(slot), coffer.CofferLabel());
+
+            if (winner == null)
+                return;
+        }
+        else
+        {
+            winner = Best(players.Where(p => p.Wants(slot)), p => p.GainFor(slot));
+        }
+
         if (winner == null || !winner.TakeSlot(slot))
             return;
 
-        awards.Add(new PlannedAward(currentWeek, currentEncounter, Slots.CofferSlot(slot), null,
+        awards.Add(new PlannedAward(currentWeek, currentEncounter, coffer, null,
                                     winner.Key, winner.Name, Bought: false));
     }
 
     private void AwardUpgrade(IReadOnlyList<PlayerPlan> players, GearSide side)
     {
-        var winner = Best(Usable(Field(rules, players.Where(p => p.WantsUpgrade(side))), side),
+        // No ordinal for a material: a fight drops at most one of each side, so the side alone
+        // names it. Counting them would invent a distinction the game does not make.
+        PlayerPlan? winner;
+
+        if (manual.For(currentWeek, currentEncounter, null, side, 0) is { } pin)
+        {
+            winner = Pinned(players, pin, p => p.WantsUpgrade(side), $"{side} upgrade");
+
+            if (winner == null)
+                return;
+
+            // The rules skip somebody who cannot use a material yet. A pin overrules that, and has
+            // to say what it is overruling rather than quietly being the better judge.
+            if (!winner.CanUseUpgrade(side))
+            {
+                problems.Add(new PlanProblem(currentWeek, $"{side} upgrade",
+                                             $"{winner.Name} has nothing to use it on yet — the piece " +
+                                             "it goes into is not bought."));
+            }
+        }
+        else
+        {
+            winner = Best(Usable(Field(rules, players.Where(p => p.WantsUpgrade(side))), side),
                           p => p.GainForUpgrade(side));
+        }
+
         if (winner == null || !winner.TakeUpgrade(side, out var slot))
             return;
 
         awards.Add(new PlannedAward(currentWeek, currentEncounter, slot, side,
                                     winner.Key, winner.Name, Bought: false));
+    }
+
+    /// <summary>How many of this coffer the current fight has put up already. Zero almost always.</summary>
+    private int Next(GearSlot coffer)
+    {
+        var seen = seenThisFight.GetValueOrDefault(coffer);
+        seenThisFight[coffer] = seen + 1;
+
+        return seen;
+    }
+
+    /// <summary>
+    /// Who a pin names, or null when it names nobody usable — and why, when the answer is a mistake.
+    ///
+    /// Two of the three ways this returns null are somebody's error and are reported: a player who
+    /// has left the static, and one who does not want the thing. The third, a pin that deliberately
+    /// says nobody, passes in silence because it is an answer rather than a problem.
+    /// </summary>
+    private PlayerPlan? Pinned(IReadOnlyList<PlayerPlan> players, ManualAward pin,
+                               Func<PlayerPlan, bool> wants, string what)
+    {
+        if (pin.IsNobody)
+            return null;
+
+        var player = players.FirstOrDefault(p => p.Key == pin.PlayerKey);
+
+        if (player == null)
+        {
+            problems.Add(new PlanProblem(currentWeek, what,
+                                         "Set by hand for somebody who is no longer in this static."));
+            return null;
+        }
+
+        if (!wants(player))
+        {
+            problems.Add(new PlanProblem(currentWeek, what,
+                                         $"Set by hand for {player.Name}, who does not need it — " +
+                                         "already has it, or never planned it."));
+            return null;
+        }
+
+        return player;
     }
 
     /// <summary>
@@ -296,7 +400,10 @@ public sealed class WeekSimulator
         {
             while (true)
             {
-                var affordable = player.TomeOpen.Where(n => TomeLedger.CanAfford(player, n.Cost)).ToList();
+                var affordable = player.TomeOpen
+                                       .Where(n => !ReservedElsewhere(player.Key, n.Slot, null))
+                                       .Where(n => TomeLedger.CanAfford(player, n.Cost))
+                                       .ToList();
 
                 if (affordable.Count == 0)
                     break;
@@ -335,6 +442,159 @@ public sealed class WeekSimulator
     /// Books are spent as soon as they cover something, on whatever is most contested — that is
     /// what a player actually does, and it is also what keeps them out of everyone else's way.
     /// </summary>
+    /// <summary>
+    /// Purchases somebody wrote down, carried out before the rules get to spend anything.
+    ///
+    /// Order is the whole point. The greedy pass buys whatever is most contested, and it is thorough
+    /// — run first, it would have spent the books a pinned purchase needed and the pin would fail
+    /// for a reason nobody could see from the plan.
+    /// </summary>
+    private void SpendPinned(IReadOnlyList<PlayerPlan> players)
+    {
+        foreach (var pin in manual.PurchasesIn(currentWeek))
+        {
+            var what = pin.Upgrade != null
+                           ? $"{pin.Upgrade} upgrade"
+                           : pin.Slot?.CofferLabel() ?? "purchase";
+
+            if (pin.IsNobody)
+                continue;
+
+            var player = players.FirstOrDefault(p => p.Key == pin.PlayerKey);
+
+            if (player == null)
+            {
+                problems.Add(new PlanProblem(currentWeek, what,
+                                             "Bought by hand for somebody who is no longer in this static."));
+                continue;
+            }
+
+            if (pin.WithTomestones)
+            {
+                BuyPinnedWithTomes(player, pin, what);
+                continue;
+            }
+
+            BuyPinnedWithBooks(player, pin, what);
+        }
+    }
+
+    private void BuyPinnedWithTomes(PlayerPlan player, ManualAward pin, string what)
+    {
+        var slot = pin.Slot;
+
+        if (slot == null)
+        {
+            problems.Add(new PlanProblem(currentWeek, what, "A tomestone purchase needs a slot."));
+            return;
+        }
+
+        // Found by index rather than by FirstOrDefault. TomeNeed is a struct, so "not found" comes
+        // back as a zeroed one, and telling that apart from a real row means trusting that no real
+        // row is ever all zeroes — which is true today and is not a thing worth depending on.
+        var at = player.TomeOpen.FindIndex(n => Slots.CofferSlot(n.Slot) == Slots.CofferSlot(slot.Value));
+
+        if (at < 0)
+        {
+            problems.Add(new PlanProblem(currentWeek, what,
+                                         $"{player.Name} has nothing to buy there — it is not " +
+                                         "tomestone gear in their set, or it is already bought."));
+            return;
+        }
+
+        var owed = player.TomeOpen[at];
+
+        if (!TomeLedger.Pay(player, owed.Cost))
+        {
+            // The shortfall in weeks rather than in tomestones: "three weeks early" is a thing
+            // somebody can fix by moving the row, and "410 short" is a number they then have to
+            // divide by 450 themselves.
+            var short_ = owed.Cost - player.Tomes;
+            var weeks = (short_ + tier.TomestonesPerWeek - 1) / Math.Max(1, tier.TomestonesPerWeek);
+
+            problems.Add(new PlanProblem(currentWeek, what,
+                                         $"{player.Name} cannot afford it in week {currentWeek} — " +
+                                         $"{short_} tomestones short, about {weeks} week(s) too early."));
+            return;
+        }
+
+        player.TakeTome(owed.Slot);
+
+        awards.Add(new PlannedAward(currentWeek, 0, Slots.CofferSlot(owed.Slot), null,
+                                    player.Key, player.Name, Bought: true, TomeCost: owed.Cost,
+                                    Manual: true));
+    }
+
+    private void BuyPinnedWithBooks(PlayerPlan player, ManualAward pin, string what)
+    {
+        // Same reason as above: an index says "not found" without a struct having to look empty.
+        var at = player.Open.FindIndex(n => pin.Upgrade != null
+                                                ? n.IsUpgrade && n.Side == pin.Upgrade.Value
+                                                : !n.IsUpgrade && pin.Slot != null &&
+                                                  Slots.CofferSlot(n.Slot) == Slots.CofferSlot(pin.Slot.Value));
+
+        if (at < 0)
+        {
+            problems.Add(new PlanProblem(currentWeek, what,
+                                         $"{player.Name} does not owe that — already had, or never planned."));
+            return;
+        }
+
+        var need = player.Open[at];
+
+        var cost = BookLedger.CostOf(tier, need);
+
+        if (cost == null)
+        {
+            problems.Add(new PlanProblem(currentWeek, what, "This tier has no book price for that."));
+            return;
+        }
+
+        if (!BookLedger.CanAfford(tier, player, cost))
+        {
+            var fight = tier.Encounter(cost.Encounter)?.Name ?? $"#{cost.Encounter}";
+
+            problems.Add(new PlanProblem(currentWeek, what,
+                                         $"{player.Name} has not got {cost.Cost} × {fight} by week " +
+                                         $"{currentWeek}."));
+            return;
+        }
+
+        if (!BookLedger.Pay(tier, player, cost, out var traded))
+            return;
+
+        player.Open.Remove(need);
+
+        awards.Add(new PlannedAward(currentWeek, cost.Encounter, Slots.CofferSlot(need.Slot),
+                                    need.IsUpgrade ? need.Side : null,
+                                    player.Key, player.Name, Bought: true, Traded: traded,
+                                    Manual: true));
+    }
+
+    /// <summary>
+    /// Whether a purchase is spoken for in some other week.
+    ///
+    /// The greedy passes below buy whatever they can afford, and left alone they would buy a thing
+    /// somebody pinned for week four in week one — which does not break the pin so much as make it
+    /// pointless, silently and a week early. A pin is a decision about *when* as much as about who.
+    /// </summary>
+    private bool ReservedElsewhere(string playerKey, GearSlot? slot, GearSide? upgrade)
+    {
+        foreach (var pin in manual.Awards)
+        {
+            if (!pin.Bought || pin.Week == currentWeek || pin.PlayerKey != playerKey)
+                continue;
+
+            var sameSlot = slot != null && pin.Slot != null &&
+                           Slots.CofferSlot(pin.Slot.Value) == Slots.CofferSlot(slot.Value);
+
+            if (upgrade != null ? pin.Upgrade == upgrade : sameSlot && pin.Upgrade == null)
+                return true;
+        }
+
+        return false;
+    }
+
     private void SpendTokens(IReadOnlyList<PlayerPlan> players)
     {
         foreach (var player in players)
@@ -342,6 +602,8 @@ public sealed class WeekSimulator
             while (true)
             {
                 var affordable = player.Open
+                                       .Where(need => !ReservedElsewhere(player.Key, need.Slot,
+                                                                         need.IsUpgrade ? need.Side : null))
                                        .Select(need => (Need: need, Cost: BookLedger.CostOf(tier, need)))
                                        .Where(x => x.Cost != null && BookLedger.CanAfford(tier, player, x.Cost))
                                        .ToList();

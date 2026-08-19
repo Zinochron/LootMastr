@@ -55,6 +55,15 @@ public sealed class StaticSettings
     /// <summary>How many weeks the planner looks ahead when judging an assignment.</summary>
     public int LookaheadWeeks { get; set; } = 8;
 
+    /// <summary>
+    /// Drops the group has decided by hand, overruling the rules for exactly those.
+    ///
+    /// Shared, because it is a record of what the group agreed rather than of what one person
+    /// prefers to look at. Off until somebody switches it on, and off means the plan is what it
+    /// always was.
+    /// </summary>
+    public ManualPlan Manual { get; set; } = new();
+
     // ---- Automation ------------------------------------------------------
 
     public AssignmentMode Mode { get; set; } = AssignmentMode.Confirm;
