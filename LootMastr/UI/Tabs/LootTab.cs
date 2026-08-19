@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -113,24 +114,61 @@ public sealed class LootTab : ITab
             return;
         }
 
-        using var indent = ImRaii.PushIndent();
+        using var table = ImRaii.Table("##thisWeek", 2, ImGuiTableFlags.SizingFixedFit);
+        if (!table.Success)
+            return;
+
+        ImGui.TableSetupColumn("##fight", ImGuiTableColumnFlags.WidthFixed, 70f * ImGuiHelpers.GlobalScale);
+        ImGui.TableSetupColumn("##drops", ImGuiTableColumnFlags.WidthStretch);
+
+        // Fights are told apart by a band of colour rather than by a line, because a table border
+        // sits between every row — which would separate a fight's own coffers exactly as strongly as
+        // it separates the fights, and that is the opposite of what is wanted here.
+        var banded = false;
 
         foreach (var encounter in tiers.Tier.Encounters.OrderBy(e => e.Index))
         {
             var mine = week.Where(a => a.Encounter == encounter.Index).ToList();
+            var tint = banded ? ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.035f)) : 0u;
 
-            ImGui.TextDisabled(encounter.Name);
-            ImGui.SameLine(90f * ImGuiHelpers.GlobalScale);
+            banded = !banded;
 
             if (mine.Count == 0)
             {
+                Row(encounter.Name, tint);
                 Widgets.Coloured(Widgets.Muted, "nothing");
                 continue;
             }
 
-            // One line per fight rather than a table: four fights of two or three coffers is a
-            // paragraph, and a table of it would be mostly borders.
-            ImGui.TextUnformatted(string.Join(",  ", mine.Select(a => $"{a.What} → {a.PlayerName}")));
+            for (var i = 0; i < mine.Count; i++)
+            {
+                // The fight is named once, against its first coffer. Repeating it down the group
+                // would read as four separate fights that happen to share a name.
+                Row(i == 0 ? encounter.Name : string.Empty, tint);
+
+                ImGui.TextUnformatted(mine[i].What);
+                ImGui.SameLine();
+                ImGui.TextDisabled("→");
+                ImGui.SameLine();
+                Widgets.Coloured(Widgets.Done, mine[i].PlayerName);
+            }
+        }
+
+        return;
+
+        static void Row(string fight, uint tint)
+        {
+            ImGui.TableNextRow();
+
+            if (tint != 0)
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, tint);
+
+            ImGui.TableNextColumn();
+
+            if (fight.Length > 0)
+                ImGui.TextDisabled(fight);
+
+            ImGui.TableNextColumn();
         }
     }
 
