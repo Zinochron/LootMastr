@@ -34,6 +34,8 @@ public sealed class SyncDocument
 
     [JsonProperty("settings")] public StaticSettings Settings { get; set; } = new();
 
+    [JsonProperty("history")] public List<LootEvent> History { get; set; } = new();
+
     /// <summary>
     /// Everything a group decides, and nothing about this machine.
     ///
@@ -48,6 +50,7 @@ public sealed class SyncDocument
         Tier = profile.Tier,
         Kills = profile.Kills,
         Settings = profile.Settings,
+        History = profile.History,
     };
 
     /// <summary>
@@ -65,6 +68,12 @@ public sealed class SyncDocument
         profile.Roster = Roster ?? new List<RosterMember>();
         profile.Kills = Kills ?? new Dictionary<int, int>();
         profile.Settings = Settings ?? new StaticSettings();
+
+        // The exception, and the only one. Everything above is replaced because everyone is looking
+        // at roughly the same state and the loser of a race can look again. A log cannot survive
+        // that: two clients in one party each write down half an evening, and whoever pushes second
+        // would erase the other half for good.
+        profile.History = LootHistory.Merge(profile.History, History);
 
         if (!string.IsNullOrWhiteSpace(ActiveTierId))
             profile.ActiveTierId = ActiveTierId;

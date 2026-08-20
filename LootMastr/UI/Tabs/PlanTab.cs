@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
@@ -128,6 +129,87 @@ public sealed class PlanTab : ITab
 
         ImGuiHelpers.ScaledDummy(10f);
         DrawSchedule(schedule);
+
+        ImGuiHelpers.ScaledDummy(10f);
+        DrawHistory();
+    }
+
+    /// <summary>
+    /// What has actually been handed out, by day, newest first.
+    ///
+    /// The other half of the tab: everything above is a forecast, and this is the only part of it
+    /// that already happened. It answers the question a plan cannot — "who got the second twine, and
+    /// when" — which groups ask weeks later and have until now had to remember.
+    ///
+    /// Folded away, because it grows and the forecast is what somebody opened this for.
+    /// </summary>
+    private void DrawHistory()
+    {
+        var history = config.History;
+
+        if (!ImGui.CollapsingHeader($"History ({history.Count})###history"))
+            return;
+
+        Widgets.HelpMarker("Written down when chat says somebody received something, or when it is " +
+                           "recorded by hand in the Loot tab.\n\n" +
+                           "Reading somebody's gear does not appear here: that means the plugin found " +
+                           "out they have it, not that they were just given it.");
+
+        if (history.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted,
+                             "Nothing recorded yet. It fills itself in as loot is handed out.");
+            return;
+        }
+
+        var settings = config.Settings;
+        var now = DateTime.UtcNow;
+
+        using var indent = ImRaii.PushIndent();
+
+        // Grouped in local time, which is the only grouping anybody means by "that Thursday". A raid
+        // that runs past midnight UTC is still one evening to the people who were in it.
+        foreach (var day in history.Take(200).GroupBy(e => e.AtUtc.ToLocalTime().Date))
+        {
+            var week = RaidCalendar.WeekOf(settings.ResetDay, settings.ResetMinutesUtc,
+                                           day.First().AtUtc, now);
+
+            Widgets.Coloured(Widgets.Augment, day.Key.ToString("dddd, d MMMM"));
+
+            ImGui.SameLine();
+            ImGui.TextDisabled(week <= 1 ? "this lockout" : $"{week - 1} lockout(s) ago");
+
+            using var inner = ImRaii.PushIndent();
+
+            foreach (var entry in day)
+            {
+                var local = entry.AtUtc.ToLocalTime();
+
+                ImGui.TextDisabled(local.ToString("HH:mm"));
+                ImGui.SameLine(56f * ImGuiHelpers.GlobalScale);
+
+                Widgets.Coloured(Widgets.Done, entry.PlayerName);
+                ImGui.SameLine();
+                ImGui.TextUnformatted(entry.What);
+
+                var fight = tiers.Tier.Encounter(entry.Encounter)?.Name;
+
+                if (!string.IsNullOrEmpty(fight))
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"({fight})");
+                }
+
+                Widgets.Tooltip($"{local:dddd, d MMMM yyyy, HH:mm:ss}\n" +
+                                $"{entry.What}\n" +
+                                (entry.How == LootSource.ByHand
+                                     ? "Recorded by hand."
+                                     : "Noticed in chat."));
+            }
+        }
+
+        if (history.Count > 200)
+            ImGui.TextDisabled($"…and {history.Count - 200} older.");
     }
 
     /// <summary>
@@ -573,9 +655,20 @@ public sealed class PlanTab : ITab
         if (!tabs.Success)
             return;
 
+        var settings = config.Settings;
+        var now = DateTime.UtcNow;
+
         for (var week = 1; week <= last; week++)
         {
             using var tab = ImRaii.TabItem($"Week {week}");
+
+            // The date on the tooltip rather than in the label: eight tabs reading "Week 3 (2 Sep)"
+            // is a scroll bar, and the number is what the rest of the plugin talks in.
+            var window = RaidCalendar.WeekWindow(settings.ResetDay, settings.ResetMinutesUtc, week, now);
+
+            Widgets.Tooltip($"{window.StartUtc.ToLocalTime():ddd d MMM} – " +
+                            $"{window.EndUtc.AddSeconds(-1).ToLocalTime():ddd d MMM}");
+
             if (tab.Success)
                 DrawWeek(result, week);
         }

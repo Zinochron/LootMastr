@@ -621,7 +621,7 @@ public sealed class LootTab : ITab
         using (ImRaii.Disabled(!config.CanWrite))
         {
             if (ImGui.SmallButton("Record"))
-                assigner.RecordSpecial(decision.Item, selected.Member, kind);
+                assigner.RecordSpecial(decision.Item, selected.Member, kind, LootSource.ByHand);
         }
 
         Widgets.Tooltip("Tick this off as received. Nothing in chat can do it for these — they are " +

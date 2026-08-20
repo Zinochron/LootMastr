@@ -1579,6 +1579,46 @@ was bought printed the same words twice. Correct, and indistinguishable from a b
 plan somebody has to act on is the same thing. The harness pins it: no player is given the same
 label twice in one week, and every material award names a piece.
 
+### The history, and the one field that merges
+
+The plugin has always heard the obtain lines and has always thrown them away after forty entries.
+What is not written down tonight is gone next week, and "who got the second twine" is a question
+groups actually ask.
+
+`LootAssigner.Remember` sits at the one funnel both paths reach — chat and the Record button. The
+gear scan and the roster's checkboxes deliberately do **not** reach it: those mean "we have found out
+they have it", not "they have just been given it", and a log that cannot tell those apart is one
+nobody can settle an argument with. The consequence is that the history and the `Obtained` flags are
+allowed to disagree, and that is correct rather than a gap.
+
+The item's **name** is written down, not looked up later. A history read on another client, or after
+the group moves tier, still has to say what the thing was; resolving an id at display time works
+right up until it does not, and then the record is a number.
+
+#### Last write wins, except here
+
+`SyncDocument.ApplyTo` replaces everything it touches, and for a roster that is right: everyone is
+looking at roughly the same state, and the loser of a race can look again. **A log cannot survive
+that.** Two clients in one party each hear the same evening, each write down half of it, and whoever
+pushes second erases the other half for good.
+
+So `History` is merged instead — by id for the easy case, and by *(player, item, within thirty
+seconds)* for the hard one, where two clients wrote independent records of one moment. The tolerance
+is what separates "two clients heard one thing" from "one player got two of the same thing", and both
+directions are pinned in the harness because collapsing the second would quietly lose a real item.
+
+**This is a deliberate exception and should stay one.** Anything else that wants merging has to make
+the same argument rather than pointing at this.
+
+#### Weeks become days
+
+With the reset anchor from the calendar, a week index finally has dates behind it. The schedule's
+week tabs carry theirs in the tooltip rather than the label — eight tabs reading "Week 3 (2 Sep)" is
+a scroll bar, and the number is what the rest of the plugin talks in.
+
+The history groups by **local** date, which is the only grouping anybody means by "that Thursday": a
+raid running past midnight UTC is still one evening to the people who were in it.
+
 ### The first time the plugin knows what day it is
 
 Nothing in here was a calendar date before this. "Week 1" is an index; `WeekSimulator` never asks

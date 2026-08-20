@@ -215,6 +215,9 @@ public class Configuration : IPluginConfiguration
     /// <summary>A countdown next to the clock. Off by default — it is there the whole time.</summary>
     public bool RemindInDtrBar { get; set; }
 
+    /// <summary>What the open static has handed out, newest first.</summary>
+    [JsonIgnore] public List<LootEvent> History => Current.History;
+
     /// <summary>What the open static has pinned by hand.</summary>
     [JsonIgnore] public ManualPlan Manual => Current.Settings.Manual;
 

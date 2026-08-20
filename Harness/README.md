@@ -9,7 +9,8 @@ To run it:
 ```bash
 dotnet new console -o /tmp/lootmastr-harness --force
 cp Harness/Program.cs /tmp/lootmastr-harness/
-cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/RosterMember.cs LootMastr/Planning/*.cs LootMastr/Planning/Dps/*.cs /tmp/lootmastr-harness/
+cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/*.cs LootMastr/Planning/*.cs LootMastr/Planning/Dps/*.cs /tmp/lootmastr-harness/
+cd /tmp/lootmastr-harness && dotnet add package Newtonsoft.Json --version 13.0.3 && cd -
 rm /tmp/lootmastr-harness/LootPlanner.cs
 dotnet run --project /tmp/lootmastr-harness
 ```

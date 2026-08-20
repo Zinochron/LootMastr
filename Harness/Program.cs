@@ -2220,6 +2220,95 @@ var rules = new PriorityRules();
     Check("every local time survives a trip through UTC", true);
 }
 
+// --- the history, and the merge it forces ----------------------------------------------------------
+
+{
+    var evening = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+
+    LootEvent Got(string who, uint item, int minutes, string? id = null) => new()
+    {
+        Id = id ?? Guid.NewGuid().ToString("N"),
+        AtUtc = evening.AddMinutes(minutes),
+        PlayerKey = $"{who}@Test",
+        PlayerName = who,
+        ItemId = item,
+        ItemName = $"Item {item}",
+    };
+
+    // The case this whole design exists for. Two clients sit in one party, each hears the same two
+    // handovers and writes its own row for them, and each also catches one the other missed. Under
+    // last-write-wins whoever pushes second erases half an evening.
+    var mine = new List<LootEvent> { Got("Yuma", 100, 0), Got("Sima", 200, 5), Got("Yuma", 300, 9) };
+
+    var theirs = new List<LootEvent>
+    {
+        Got("Yuma", 100, 0),           // the same moment, a different id
+        Got("Sima", 200, 5),
+        Got("Sima", 400, 12),          // one only they heard
+    };
+
+    var merged = LootHistory.Merge(mine, theirs);
+
+    Check("both halves of the evening survive", merged.Count == 4,
+          string.Join(", ", merged.Select(e => $"{e.PlayerName}:{e.ItemId}")));
+
+    Check("and the shared ones are counted once",
+          merged.Count(e => e.ItemId == 100) == 1 && merged.Count(e => e.ItemId == 200) == 1);
+
+    Check("the row only one client heard is kept", merged.Any(e => e.ItemId == 400));
+    Check("newest first", merged.SequenceEqual(merged.OrderByDescending(e => e.AtUtc)));
+
+    // Merging with itself is the operation that runs on every pull, so it has to be a no-op.
+    Check("merging a list with itself changes nothing",
+          LootHistory.Merge(merged, merged).Count == merged.Count);
+
+    Check("and merging with nothing is still the list",
+          LootHistory.Merge(merged, null).Count == merged.Count &&
+          LootHistory.Merge(null, merged).Count == merged.Count);
+}
+
+{
+    var evening = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+
+    LootEvent At(int seconds) => new()
+    {
+        AtUtc = evening.AddSeconds(seconds), PlayerKey = "Yuma@Test", PlayerName = "Yuma", ItemId = 100,
+    };
+
+    // The tolerance is what tells "two clients heard one thing" from "one player got two of the same
+    // thing". Half a minute apart is the first; ten minutes apart is the second, and collapsing it
+    // would quietly lose a real item.
+    Check("two sightings seconds apart are one event",
+          LootHistory.Merge([At(0)], [At(20)]).Count == 1);
+
+    Check("but the same item ten minutes later is a second one",
+          LootHistory.Merge([At(0)], [At(600)]).Count == 2);
+
+    // Same moment, different people: never one event, however close together.
+    var yuma = At(0);
+    var sima = At(2);
+    sima.PlayerKey = "Sima@Test";
+    sima.PlayerName = "Sima";
+
+    Check("and two people at once are two events", LootHistory.Merge([yuma], [sima]).Count == 2);
+}
+
+{
+    // Add is the recording path, and it has to be as careful as the merge: the obtain line and a
+    // press of Record can both land for one handover.
+    var history = new List<LootEvent>();
+    var at = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+
+    LootHistory.Add(history, new LootEvent { AtUtc = at, PlayerKey = "Yuma@Test", ItemId = 100 });
+    LootHistory.Add(history, new LootEvent { AtUtc = at.AddSeconds(3), PlayerKey = "Yuma@Test", ItemId = 100 });
+
+    Check("chat and a button press for one handover are one row", history.Count == 1);
+
+    LootHistory.Add(history, new LootEvent { AtUtc = at.AddMinutes(1), PlayerKey = "Yuma@Test", ItemId = 200 });
+    Check("a different item is its own row", history.Count == 2);
+    Check("and the newest is first", history[0].ItemId == 200);
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

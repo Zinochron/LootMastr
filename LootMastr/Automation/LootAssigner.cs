@@ -30,6 +30,7 @@ public sealed class LootAssigner
     private readonly RosterStore roster;
     private readonly SafetyGuard guard;
     private readonly TierCatalog tiers;
+    private readonly ItemCatalog items;
     private readonly LootAssignmentRunner runner;
 
     private string lastSignature = string.Empty;
@@ -51,8 +52,9 @@ public sealed class LootAssigner
 
     public LootAssigner(Configuration config, LootWindowReader loot, LootPlanner planner,
                         RosterStore roster, SafetyGuard guard, TierCatalog tiers,
-                        LootAssignmentRunner runner)
+                        ItemCatalog items, LootAssignmentRunner runner)
     {
+        this.items = items;
         this.config = config;
         this.loot = loot;
         this.planner = planner;
@@ -225,7 +227,7 @@ public sealed class LootAssigner
         if (decision.Winner == null)
             return;
 
-        Record(decision.Winner, decision.Item);
+        Record(decision.Winner, decision.Item, LootSource.ByHand);
 
         // Also out of the running: recording it by hand means it has been handed over.
         var key = KeyOf(decision.Item);
@@ -239,9 +241,38 @@ public sealed class LootAssigner
         Status = $"{decision.Item.What} recorded for {decision.Winner.Name}.";
     }
 
-    /// <summary>Ticks off what a player received, whether it was assigned here or noticed in chat.</summary>
-    public void Record(RosterMember member, LiveLootItem item)
+    /// <summary>
+    /// Writes down that somebody received something, before the flags are set.
+    ///
+    /// Recorded here rather than at either caller because this is where both of them arrive — chat
+    /// and the Record button. The gear scan and the roster's own checkboxes deliberately do not
+    /// reach it: those mean "we have found out they have it", not "they have just been given it",
+    /// and a log that cannot tell those apart is a log nobody can settle an argument with.
+    /// </summary>
+    private void Remember(RosterMember member, LiveLootItem item, LootSource how, SpecialDrop? special = null)
     {
+        var encounter = tiers.EncounterInTerritory(Services.ClientState.TerritoryType)?.Index ?? 0;
+
+        LootHistory.Add(config.History, new LootEvent
+        {
+            AtUtc = DateTime.UtcNow,
+            PlayerKey = member.Key,
+            PlayerName = member.Name,
+            ItemId = item.ItemId,
+            ItemName = string.IsNullOrEmpty(item.Name) ? items.GetItemName(item.ItemId) : item.Name,
+            Slot = item.Slot,
+            Upgrade = item.Upgrade,
+            Special = special,
+            Encounter = encounter,
+            How = how,
+        });
+    }
+
+    /// <summary>Ticks off what a player received, whether it was assigned here or noticed in chat.</summary>
+    public void Record(RosterMember member, LiveLootItem item, LootSource how = LootSource.Chat)
+    {
+        Remember(member, item, how);
+
         if (item.Upgrade != null)
         {
             foreach (var slot in Slots.All)
@@ -324,8 +355,11 @@ public sealed class LootAssigner
     /// that player's bill, and the material that augments what it buys is only useful to somebody
     /// who took one.
     /// </summary>
-    public void RecordSpecial(LiveLootItem item, RosterMember member, SpecialDrop kind)
+    public void RecordSpecial(LiveLootItem item, RosterMember member, SpecialDrop kind,
+                              LootSource how = LootSource.Chat)
     {
+        Remember(member, item, how, kind);
+
         switch (kind)
         {
             case SpecialDrop.WeaponToken:

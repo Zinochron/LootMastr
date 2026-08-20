@@ -206,6 +206,14 @@ public sealed class StaticProfile
     /// </summary>
     public Dictionary<int, int> Kills { get; set; } = new();
 
+    /// <summary>
+    /// What was handed out and when, newest first.
+    ///
+    /// The one part of this document that is merged rather than replaced when a pull comes in —
+    /// see <see cref="LootHistory"/> for why a log cannot survive last-write-wins.
+    /// </summary>
+    public List<LootEvent> History { get; set; } = new();
+
     public StaticSettings Settings { get; set; } = new();
 
     public SyncSetup Sync { get; set; } = new();
