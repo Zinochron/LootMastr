@@ -28,6 +28,11 @@ public sealed class LootTab : ITab
     private SimulationResult? forecast;
     private int forecastSignature;
 
+    // A second cache and not a reuse of the one above: ComingWeek leaves FinishWeeks empty by
+    // construction, so the mount would have ranked everybody as finishing in week zero.
+    private IReadOnlyDictionary<string, int>? finishWeeks;
+    private int finishSignature;
+
     /// <summary>Who is selected for each special drop, by member key. Empty means nobody yet.</summary>
     private readonly Dictionary<SpecialDrop, string> chosen = new();
 
@@ -693,17 +698,33 @@ public sealed class LootTab : ITab
         var standings = planner.ByTomeProgress();
 
         if (kind == SpecialDrop.Mount)
+            return MountOrder();
+
+        return standings
+               .Select(s => new SpecialCandidate(s.Member, NoteFor(s, kind), Highlighted(s.Member, kind)))
+               .OrderByDescending(c => c.Highlight)
+               .ThenByDescending(c => config.AltsPreferredForWeaponTokens && c.Member.IsAlt)
+               .ToList();
+    }
+
+    /// <summary>
+    /// Who the mount is offered to, by whichever of the two rules the group picked.
+    ///
+    /// Alts go last either way. The point of a second character is to clear the fight again, and the
+    /// mount is exactly the thing a main is still turning up for.
+    /// </summary>
+    private IReadOnlyList<SpecialCandidate> MountOrder()
+    {
+        var active = roster.Active.ToList();
+        var pool = active.Where(m => !m.MountObtained);
+
+        if (config.MountOrder == MountPriority.ByRole)
         {
-            // Backwards, on purpose. The mount is the one thing in the chest that is worth nothing
-            // to the raid, so it goes to whoever the gear rules have been putting last.
-            var order = config.Rules.RoleOrder.ToList();
+            var order = Roles.Complete(config.MountRoleOrder);
 
-            var active = roster.Active.ToList();
-
-            return active
-                   .Where(m => !m.MountObtained)
+            return pool
                    .OrderBy(m => m.IsAlt)
-                   .ThenByDescending(m => order.IndexOf(roster.RoleOf(m)))
+                   .ThenBy(m => Roles.RankIn(order, roster.RoleOf(m)))
                    .ThenBy(m => m.ItemsReceived)
                    .ThenBy(active.IndexOf)
                    .Select(m => new SpecialCandidate(
@@ -711,11 +732,49 @@ public sealed class LootTab : ITab
                    .ToList();
         }
 
-        return standings
-               .Select(s => new SpecialCandidate(s.Member, NoteFor(s, kind), Highlighted(s.Member, kind)))
-               .OrderByDescending(c => c.Highlight)
-               .ThenByDescending(c => config.AltsPreferredForWeaponTokens && c.Member.IsAlt)
+        // Latest finisher first. Anybody the forecast cannot place — nothing left to want, or beyond
+        // the horizon — sorts by week all the same, so this never has to special-case them.
+        var finish = FinishWeeks();
+
+        return pool
+               .OrderBy(m => m.IsAlt)
+               .ThenByDescending(m => finish.GetValueOrDefault(m.Key))
+               .ThenBy(m => m.ItemsReceived)
+               .ThenBy(active.IndexOf)
+               .Select(m => new SpecialCandidate(m, FinishNote(finish, m), false))
                .ToList();
+    }
+
+    private static string FinishNote(IReadOnlyDictionary<string, int> finish, RosterMember member)
+    {
+        var week = finish.GetValueOrDefault(member.Key);
+
+        return week switch
+        {
+            <= 0 => $"the raid owes them nothing more, {member.ItemsReceived} item(s) so far",
+            1 => $"finishes this week, {member.ItemsReceived} item(s) so far",
+            _ => $"finishes in week {week}, {member.ItemsReceived} item(s) so far",
+        };
+    }
+
+    /// <summary>
+    /// When the raid stops owing each player anything, cached against the roster's fingerprint.
+    ///
+    /// A full projection, and this is read while a chest is on screen — sixty times a second would
+    /// be absurd for a number that only moves when somebody receives something. The fingerprint is
+    /// the same one the Plan tab uses, so ticking a box anywhere reaches this too.
+    /// </summary>
+    private IReadOnlyDictionary<string, int> FinishWeeks()
+    {
+        var signature = roster.Signature();
+
+        if (finishWeeks == null || signature != finishSignature)
+        {
+            finishSignature = signature;
+            finishWeeks = planner.Schedule().FinishWeeks;
+        }
+
+        return finishWeeks;
     }
 
     /// <summary>

@@ -404,6 +404,21 @@ many items they have already won. **One item won counts as one place.** Role is 
 a gate rather than as a term, so sliding all the way to "share it out" shares within a role rather
 than handing a piece past one.
 
+### Ranking by damage does not switch the other two off
+
+`Basis` changes **only what the spread half measures** — `Served` returns items-won, damage, or both.
+It is easy to read that as "under a damage ranking, role order and player order stop mattering", and
+to then hide them on screen. They do not, in either direction, and the harness pins both:
+
+- **Role order is a gate above the score.** At `Spread = 1.0` under `DpsGain`, a healer scoring −9.00
+  still loses to a damage dealer scoring −0.10. Turning `UseRoleOrder` off is the only thing that
+  lets the damage win.
+- **Player order feeds `queue`, and `queue` is `(1 − spread)` of the score** — plus a tiebreak below
+  it. Flipping `UsePlayerOrder` changes the winner at spread 0.0, 0.5 **and** 1.0.
+
+So the Settings tab draws all three whenever expert mode is on. Hiding two of them under a damage
+ranking would hide the two settings that are deciding the outcome.
+
 That calibration is the whole of the slider's feel, and getting it wrong made the slider useless.
 The first version mixed two *ranks* — position in the declared order against position on a sorted
 neediness list. With two candidates both axes are {0, 1}, so the scores are always `s` against
@@ -1010,7 +1025,17 @@ twice from two different orders.
 |---|---|
 | Weapon stone | Soonest finished with the tomestone vendor. It costs 500 on top of what that player already owes, so it lands most cheaply on whoever owes least. |
 | Weapon material | Anyone holding a stone and not yet an augment, highlighted; everyone else behind them, same tome order. |
-| Mount | Backwards through the role order, then fewest items won, minus anyone who already has one. |
+| Mount | Either the forecast's latest finisher (default) or `MountRoleOrder`, then fewest items won, minus anyone who already has one. Alts last either way. |
+
+The mount used to read the **gear** role order backwards, and that was a rule that could only ever
+be explained, never checked. The screen had to say "healers first, where the gear rules put them
+last", and a group reordering its gear priority silently reordered the mount too. It has its own
+list now (`MountRoleOrder`, healers first) and a second mode that asks the forecast directly for
+whoever the raid owes gear to longest — which is the thing the inversion was a proxy for.
+
+That mode runs a full projection, so `LootTab` caches `FinishWeeks` against `RosterStore.Signature()`.
+It cannot reuse the tab's existing `forecast` field: that holds `ComingWeek()`, whose `FinishWeeks`
+is empty by construction, and everybody would have ranked as finishing in week zero.
 
 `LootAssigner.PerformAssignment` needed a second overload. The original refuses when `Winner` is
 null, which is right for a coffer — a recipient nobody chose is a bug — and wrong for these, where

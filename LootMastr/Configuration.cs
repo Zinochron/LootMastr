@@ -149,6 +149,16 @@ public class Configuration : IPluginConfiguration
     }
 
     [JsonIgnore]
+    public MountPriority MountOrder
+    {
+        get => Current.Settings.MountOrder;
+        set => Current.Settings.MountOrder = value;
+    }
+
+    [JsonIgnore]
+    public List<RaidRole> MountRoleOrder => Current.Settings.MountRoleOrder;
+
+    [JsonIgnore]
     public bool AltCharacters
     {
         get => Current.Settings.AltCharacters;

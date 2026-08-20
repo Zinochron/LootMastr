@@ -33,6 +33,24 @@ public enum MountHandling
 }
 
 /// <summary>
+/// Who the mount goes to, once the group has decided to hand it out rather than roll for it.
+/// </summary>
+public enum MountPriority
+{
+    /// <summary>
+    /// Whoever the raid still owes gear to longest, straight out of the forecast.
+    ///
+    /// The mount is the one thing in the chest worth nothing to the raid, so it goes to whoever will
+    /// be turning up for their own sake the longest. That is a fact the plan already computes,
+    /// rather than a proxy for it.
+    /// </summary>
+    FinishesLast,
+
+    /// <summary>An order the group set itself, unrelated to the gear order.</summary>
+    ByRole,
+}
+
+/// <summary>
 /// Everything a group decides together.
 ///
 /// The split between this and <see cref="Configuration"/> is the one question the whole sync design
@@ -104,6 +122,20 @@ public sealed class StaticSettings
 
     /// <summary>What to do with the mount the last fight always drops.</summary>
     public MountHandling Mount { get; set; } = MountHandling.Assign;
+
+    /// <summary>How the recipient is picked when the mount is assigned rather than rolled for.</summary>
+    public MountPriority MountOrder { get; set; } = MountPriority.FinishesLast;
+
+    /// <summary>
+    /// The mount's own role order, used only under <see cref="MountPriority.ByRole"/>.
+    ///
+    /// Healers first by default, which is the usual answer and the reverse of the gear order — but
+    /// it is a list of its own rather than the gear order read backwards. Derived-by-inversion was
+    /// what made the old setting impossible to describe: the screen had to say "healers first where
+    /// the gear rules put them last", and a group that changed the gear order silently changed this
+    /// one too.
+    /// </summary>
+    public List<RaidRole> MountRoleOrder { get; set; } = [RaidRole.Healer, RaidRole.Tank, RaidRole.Dps];
 
     public bool AltCharacters { get; set; }
 

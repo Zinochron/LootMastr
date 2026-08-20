@@ -2309,6 +2309,108 @@ var rules = new PriorityRules();
     Check("and the newest is first", history[0].ItemId == 200);
 }
 
+// --- what the damage ranking does and does not switch off -------------------------------------
+//
+// The question was whether the role order and the player order still matter once the ranking is by
+// damage alone, the thought being that they could then be hidden. They do matter, in both
+// directions, and hiding them would hide the two things deciding the outcome. Pinned here because
+// it is the kind of fact a screen gets built on.
+
+{
+    // A healer who would gain nine times what the damage dealer would, at a spread of 1.0 — the
+    // furthest the slider goes towards "whoever needs it most".
+    List<Contender> field =
+    [
+        new("healer", RaidRole.Healer, Order: 0, ItemsReceived: 0, OpenNeeds: 5, DpsGain: 900),
+        new("dps", RaidRole.Dps, Order: 1, ItemsReceived: 0, OpenNeeds: 5, DpsGain: 10),
+    ];
+
+    var gated = new PriorityRules { Basis = NeedBasis.DpsGain, Spread = 1.0, UseRoleOrder = true };
+    var open = new PriorityRules { Basis = NeedBasis.DpsGain, Spread = 1.0, UseRoleOrder = false };
+
+    Check("role order still gates a pure damage ranking",
+          DropOrder.Rank(gated, field)[0].Who.Key == "dps",
+          DropOrder.Rank(gated, field)[0].Who.Key);
+
+    Check("and turning it off is what lets the damage win",
+          DropOrder.Rank(open, field)[0].Who.Key == "healer",
+          DropOrder.Rank(open, field)[0].Who.Key);
+}
+
+{
+    // Equal earners, one higher in the list but already served three times. Whether position or
+    // neediness carries is exactly what the player order switch decides — under damage too.
+    List<Contender> field =
+    [
+        new("top", RaidRole.Dps, Order: 0, ItemsReceived: 3, OpenNeeds: 4, DpsGain: 100),
+        new("bottom", RaidRole.Dps, Order: 1, ItemsReceived: 0, OpenNeeds: 4, DpsGain: 100),
+    ];
+
+    foreach (var spread in new[] { 0.0, 0.5, 1.0 })
+    {
+        var on = new PriorityRules
+        {
+            Basis = NeedBasis.DpsGain, Spread = spread, UsePlayerOrder = true, UseRoleOrder = false,
+        };
+
+        var off = new PriorityRules
+        {
+            Basis = NeedBasis.DpsGain, Spread = spread, UsePlayerOrder = false, UseRoleOrder = false,
+        };
+
+        Check($"player order still decides under damage at spread {spread:F1}",
+              DropOrder.Rank(on, field)[0].Who.Key == "top" &&
+              DropOrder.Rank(off, field)[0].Who.Key == "bottom",
+              $"on -> {DropOrder.Rank(on, field)[0].Who.Key}, off -> {DropOrder.Rank(off, field)[0].Who.Key}");
+    }
+}
+
+// --- the mount's own order --------------------------------------------------------------------
+
+{
+    var settings = new StaticSettings();
+
+    Check("the mount defaults to whoever finishes last",
+          settings.MountOrder == MountPriority.FinishesLast);
+
+    Check("and its own order is healers first, not the gear order read backwards",
+          settings.MountRoleOrder.SequenceEqual([RaidRole.Healer, RaidRole.Tank, RaidRole.Dps]));
+
+    // The two lists are independent: this is the whole reason it stopped being derived.
+    var gearRules = new PriorityRules();
+    gearRules.Move(RaidRole.Healer, -2);
+
+    Check("moving a role in the gear order leaves the mount order alone",
+          settings.MountRoleOrder.SequenceEqual([RaidRole.Healer, RaidRole.Tank, RaidRole.Dps]) &&
+          gearRules.RoleOrder[0] == RaidRole.Healer);
+}
+
+{
+    // Complete is what stands between a hand-edited or older config and a role that silently ranks
+    // last — which on screen is indistinguishable from somebody having put it there.
+    Check("a missing role is filled in at the end",
+          Roles.Complete([RaidRole.Healer]).SequenceEqual([RaidRole.Healer, RaidRole.Dps, RaidRole.Tank]),
+          string.Join(", ", Roles.Complete([RaidRole.Healer])));
+
+    Check("Unknown is not a role loot is handed out by",
+          !Roles.Complete([RaidRole.Unknown, RaidRole.Tank]).Contains(RaidRole.Unknown));
+
+    Check("and a duplicate is not two places",
+          Roles.Complete([RaidRole.Tank, RaidRole.Tank]).Count == 3);
+
+    var order = new List<RaidRole> { RaidRole.Dps, RaidRole.Tank, RaidRole.Healer };
+
+    Roles.Move(order, RaidRole.Dps, -1);
+    Check("moving off the top end does nothing", order[0] == RaidRole.Dps);
+
+    Roles.Move(order, RaidRole.Healer, 1);
+    Check("and off the bottom end does nothing", order[2] == RaidRole.Healer);
+
+    Roles.Move(order, RaidRole.Healer, -1);
+    Check("a move inside the list swaps two", order.SequenceEqual([RaidRole.Dps, RaidRole.Healer, RaidRole.Tank]),
+          string.Join(", ", order));
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

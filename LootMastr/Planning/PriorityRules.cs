@@ -88,33 +88,10 @@ public sealed class PriorityRules
     public bool AltsMayTakeSpareGear { get; set; }
 
     /// <summary>Where a role sits in the order. Lower goes first; anything unknown goes last.</summary>
-    public int RankOf(RaidRole role)
-    {
-        var index = RoleOrder.IndexOf(role);
-        return index < 0 ? RoleOrder.Count : index;
-    }
+    public int RankOf(RaidRole role) => Roles.RankIn(RoleOrder, role);
 
-    public void Move(RaidRole role, int delta)
-    {
-        var index = RoleOrder.IndexOf(role);
-        var target = index + delta;
-
-        if (index < 0 || target < 0 || target >= RoleOrder.Count)
-            return;
-
-        RoleOrder.RemoveAt(index);
-        RoleOrder.Insert(target, role);
-    }
+    public void Move(RaidRole role, int delta) => Roles.Move(RoleOrder, role, delta);
 
     /// <summary>Fills in any role the stored order is missing, so an old config still works.</summary>
-    public void EnsureComplete()
-    {
-        foreach (var role in new[] { RaidRole.Dps, RaidRole.Tank, RaidRole.Healer })
-        {
-            if (!RoleOrder.Contains(role))
-                RoleOrder.Add(role);
-        }
-
-        RoleOrder = RoleOrder.Where(r => r != RaidRole.Unknown).Distinct().ToList();
-    }
+    public void EnsureComplete() => RoleOrder = Roles.Complete(RoleOrder);
 }

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -10,14 +12,14 @@ namespace LootMastr.UI.Tabs;
 
 public sealed class SettingsTab : ITab
 {
-    private const string DragPayload = "LootMastrPriority";
-
     private readonly Configuration config;
     private readonly RosterStore roster;
     private readonly LootPlanner planner;
 
-    /// <summary>Row currently being dragged; ImGui's payload only has to say that one is.</summary>
-    private int dragIndex = -1;
+    // Three projections behind the comparison line, cleared by the same roster fingerprint the Plan
+    // tab uses. Cheap once and absurd sixty times a second.
+    private Dictionary<NeedBasis, int>? basisWeeks;
+    private int basisSignature;
 
     public SettingsTab(Configuration config, RosterStore roster, LootPlanner planner)
     {
@@ -47,6 +49,14 @@ public sealed class SettingsTab : ITab
         using var gate = ImRaii.Disabled(!config.CanWrite);
 
         DrawExpertMode();
+
+        // Under the working mode, because it is the setting that mode exists for: simple mode
+        // measures no damage, so there is nothing here to choose between and it is not drawn.
+        if (config.ExpertMode)
+        {
+            ImGuiHelpers.ScaledDummy(6f);
+            DrawRanking();
+        }
 
         ImGuiHelpers.ScaledDummy(10f);
         ImGui.TextUnformatted("Distribution");
@@ -164,6 +174,156 @@ public sealed class SettingsTab : ITab
     }
 
     /// <summary>
+    /// What "needs it more" should mean. Only in expert mode, because the damage answer needs
+    /// everyone's gear read and there is nothing to choose between otherwise.
+    ///
+    /// The comparison line is the point of this. Both plans are cheap to run, so rather than telling
+    /// somebody that maximising damage might cost the group a week, it runs both and says whether it
+    /// does — for their roster, this week.
+    /// </summary>
+    private void DrawRanking()
+    {
+        ImGui.TextUnformatted("Ranking");
+        Widgets.HelpMarker("What the sharing-out end of the slider measures, and nothing else.\n\n" +
+                           "The role order and the player order below still decide: role is a gate " +
+                           "above this, and position is the other half of the slider. Ranking by " +
+                           "damage does not switch them off.");
+        ImGui.Separator();
+
+        if (!planner.CanRankByDamage)
+        {
+            // "Nobody's gear has been read" was wrong in the case that actually happens: a scan
+            // writes the gear whether or not the stats came with it, and the stats are the half this
+            // needs. Telling somebody to do a thing they have already done is worse than saying
+            // nothing.
+            Widgets.Coloured(Widgets.Muted,
+                             roster.Members.Any(m => m.HasBeenScanned)
+                                 ? "Gear has been read, but nobody's stats came with it — those only " +
+                                   "exist while the examine window is open. Read gear again on the " +
+                                   "Roster tab."
+                                 : "Nobody's gear has been read, so there is no damage to rank by. " +
+                                   "Read gear on the Roster tab.");
+
+            return;
+        }
+
+        // Anyone unrated scores a zero gain, which under a damage ranking is indistinguishable from
+        // a player nothing is worth anything to. Silent, and it decides who gets a coffer.
+        var unrated = roster.Active.Where(m => !m.HasMeasuredStats).Select(m => m.Name).ToList();
+
+        if (unrated.Count > 0)
+        {
+            Widgets.Coloured(Widgets.Wanted,
+                             $"No stats for {string.Join(", ", unrated)} — they rank as gaining " +
+                             "nothing. Read their gear again on the Roster tab.");
+        }
+
+        var rules = config.Rules;
+
+        foreach (var (basis, label, help) in Bases)
+        {
+            if (ImGui.RadioButton(label, rules.Basis == basis) && rules.Basis != basis)
+            {
+                rules.Basis = basis;
+                config.Save();
+                basisWeeks = null;
+            }
+
+            Widgets.HelpMarker(help);
+            ImGui.SameLine(0f, 16f);
+        }
+
+        ImGui.NewLine();
+        DrawBasisComparison();
+    }
+
+    private static readonly (NeedBasis Basis, string Label, string Help)[] Bases =
+    [
+        (NeedBasis.MissingGear, "By missing gear",
+            "Whoever has won least. A rule about people, and the one that needs no gear read at all."),
+        (NeedBasis.DpsGain, "By damage gain",
+            "Whoever the piece is worth most to, and nothing else. Somebody who has already had four " +
+            "pieces keeps getting them if that is where the damage is.\n\n" +
+            "Measured in flat damage per second, not as a share of what they already do — a healer " +
+            "gaining a lot of their own output is fewer points of raid damage than a melee gaining a " +
+            "little of theirs, and the group only feels the points.\n\n" +
+            "The catch: comparing two different jobs leans on their rotation profiles, which are " +
+            "modelled rather than measured. Two players of the same job are compared exactly."),
+        (NeedBasis.Both, "By both",
+            "On one scale: a hundred points of damage and an item already won weigh the same. Somebody " +
+            "who has had four pieces needs to gain four hundred more than the next player to stay ahead."),
+    ];
+
+    /// <summary>
+    /// What choosing damage over gear costs, or saves, run rather than asserted.
+    ///
+    /// The honest worry about maximising damage is that it strands somebody: the group's last player
+    /// finishes later because every coffer went where it helped most rather than where it was needed.
+    /// That is a question with an answer, and both runs are cheap.
+    /// </summary>
+    private void DrawBasisComparison()
+    {
+        var signature = roster.Signature();
+
+        if (basisWeeks == null || signature != basisSignature)
+        {
+            basisSignature = signature;
+            basisWeeks = CompareBases();
+        }
+
+        var weeks = basisWeeks;
+        var mine = weeks[config.Rules.Basis];
+        var best = weeks.Values.Min();
+
+        if (mine <= best)
+        {
+            Widgets.Coloured(Widgets.Done, $"Everyone is geared in week {mine} — no other ranking is faster.");
+        }
+        else
+        {
+            var faster = weeks.First(w => w.Value == best);
+            var name = Bases.First(b => b.Basis == faster.Key).Label.ToLowerInvariant();
+
+            Widgets.Coloured(Widgets.Wanted,
+                             $"This costs the group {mine - best} week(s): {mine} against {best} {name}.");
+        }
+
+        Widgets.Tooltip(string.Join("\n", Bases.Select(b => $"{b.Label}: everyone geared in week {weeks[b.Basis]}")));
+    }
+
+    /// <summary>
+    /// Every ranking's finish week, run once and cached with the rest of the plan.
+    ///
+    /// Three full projections, each of which measures a damage gain per open need. Cheap once and
+    /// absurd sixty times a second — this used to run on every frame the tab was open.
+    ///
+    /// The chosen basis is swapped out and back under a <c>finally</c>: the planner reads it from the
+    /// live rules, and leaving somebody's setting on whatever the last comparison used would be a
+    /// silent config change.
+    /// </summary>
+    private Dictionary<NeedBasis, int> CompareBases()
+    {
+        var rules = config.Rules;
+        var chosen = rules.Basis;
+        var weeks = new Dictionary<NeedBasis, int>();
+
+        try
+        {
+            foreach (var basis in new[] { NeedBasis.MissingGear, NeedBasis.DpsGain, NeedBasis.Both })
+            {
+                rules.Basis = basis;
+                weeks[basis] = planner.Schedule().LastFinishWeek;
+            }
+        }
+        finally
+        {
+            rules.Basis = chosen;
+        }
+
+        return weeks;
+    }
+
+    /// <summary>
     /// The whole loot policy: which roles come first, which players come first, and how much of the
     /// loot to share out rather than funnel. Everything the plan shows follows from these three, so
     /// they are worth a paragraph of explanation each.
@@ -250,43 +410,8 @@ public sealed class SettingsTab : ITab
         Widgets.HelpMarker("Damage, then tanks, then healers is the usual answer. Move a role with " +
                            "the arrows.");
 
-        RaidRole? moved = null;
-        var direction = 0;
-
-        for (var i = 0; i < rules.RoleOrder.Count; i++)
-        {
-            var role = rules.RoleOrder[i];
-            using var id = ImRaii.PushId((int)role);
-
-            using (ImRaii.Disabled(i == 0))
-            {
-                if (ImGui.SmallButton("^"))
-                {
-                    moved = role;
-                    direction = -1;
-                }
-            }
-
-            ImGui.SameLine(0f, 2f);
-
-            using (ImRaii.Disabled(i == rules.RoleOrder.Count - 1))
-            {
-                if (ImGui.SmallButton("v"))
-                {
-                    moved = role;
-                    direction = 1;
-                }
-            }
-
-            ImGui.SameLine();
-            ImGui.TextUnformatted($"{i + 1}.  {role}");
-        }
-
-        if (moved != null)
-        {
-            rules.Move(moved.Value, direction);
+        if (DrawRoleList(rules.RoleOrder, "gearRoles"))
             config.Save();
-        }
 
         var useRoles = rules.UseRoleOrder;
         if (ImGui.Checkbox("Gear by role order", ref useRoles))
@@ -329,7 +454,15 @@ public sealed class SettingsTab : ITab
 
     /// <summary>
     /// The player order. With the slider left of centre this is what decides most drops, so it is a
-    /// real setting rather than just how the table happens to be sorted. Drag to reorder.
+    /// real setting rather than just how the table happens to be sorted.
+    ///
+    /// The list appears only once the switch is on. Faded out it read as decoration — a thing to
+    /// look at rather than a thing that was about to do nothing — and it is the longest block on the
+    /// tab, so a group not using it was scrolling past its own roster to reach the rest.
+    ///
+    /// Arrows rather than dragging. ImGui's drag and drop needs the pointer to be over the target
+    /// row on the frame the button comes up, and on a list this tall a fast drag lands between two
+    /// rows and drops nothing, with no way to tell that from a refused move.
     /// </summary>
     private void DrawPriorityOrder()
     {
@@ -337,8 +470,7 @@ public sealed class SettingsTab : ITab
 
         ImGui.TextUnformatted("Player order");
         Widgets.HelpMarker("Who comes first inside a role. How much it counts is the slider above: " +
-                           "at the left it decides outright, at the right it only breaks ties. Drag a " +
-                           "name to move it.");
+                           "at the left it decides outright, at the right it only breaks ties.");
 
         var usePlayers = rules.UsePlayerOrder;
         if (ImGui.Checkbox("Gear in this order", ref usePlayers))
@@ -350,46 +482,60 @@ public sealed class SettingsTab : ITab
         Widgets.HelpMarker("Off: everyone inside a role is equal, and drops go by who has won least " +
                            "and has most left. The slider then has nothing to weigh position against.");
 
-        if (roster.Members.Count == 0)
+        if (!usePlayers)
             return;
 
-        using var faded = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * 0.5f, !usePlayers);
-
         var members = roster.Members;
+
+        if (members.Count == 0)
+        {
+            Widgets.Coloured(Widgets.Muted, "No players yet.");
+            return;
+        }
+
+        using var indent = ImRaii.PushIndent();
+
+        var from = -1;
+        var direction = 0;
 
         for (var i = 0; i < members.Count; i++)
         {
             var member = members[i];
             using var id = ImRaii.PushId(member.Key);
 
-            var role = roster.RoleOf(member);
-            ImGui.Selectable($"{i + 1}.  {member.Name}   ({role})");
-
-            if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.SourceNoPreviewTooltip))
+            using (ImRaii.Disabled(i == 0))
             {
-                dragIndex = i;
-                ImGui.SetDragDropPayload(DragPayload, ReadOnlySpan<byte>.Empty);
-                ImGui.TextUnformatted(member.Name);
-                ImGui.EndDragDropSource();
-            }
-
-            if (!ImGui.BeginDragDropTarget())
-                continue;
-
-            unsafe
-            {
-                if (!ImGui.AcceptDragDropPayload(DragPayload).IsNull && dragIndex >= 0 && dragIndex != i)
+                if (ImGui.SmallButton("^"))
                 {
-                    var moved = members[dragIndex];
-                    members.RemoveAt(dragIndex);
-                    members.Insert(i, moved);
-                    config.Save();
-                    dragIndex = -1;
+                    from = i;
+                    direction = -1;
                 }
             }
 
-            ImGui.EndDragDropTarget();
+            ImGui.SameLine(0f, 2f);
+
+            using (ImRaii.Disabled(i == members.Count - 1))
+            {
+                if (ImGui.SmallButton("v"))
+                {
+                    from = i;
+                    direction = 1;
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{i + 1}.  {member.Name}   ({roster.RoleOf(member)})");
         }
+
+        // After the loop, never inside it: moving a member while the list is being walked draws one
+        // row twice and skips another, which looks exactly like the move having gone wrong.
+        if (from < 0)
+            return;
+
+        var moved = members[from];
+        members.RemoveAt(from);
+        members.Insert(from + direction, moved);
+        config.Save();
     }
 
     private void DrawModeChoice()
@@ -601,20 +747,126 @@ public sealed class SettingsTab : ITab
             }
 
             Widgets.HelpMarker(help);
+
+            // The order only means anything while the mount is being handed out. Under greed only
+            // the dice decide and there is nothing for a priority to say.
+            if (mode == MountHandling.Assign && config.Mount == MountHandling.Assign)
+                DrawMountOrder();
         }
+    }
+
+    /// <summary>
+    /// Which of the two rules picks the mount's recipient, and the list when it is the second.
+    ///
+    /// This used to be one sentence of help text describing the gear order read backwards, which is
+    /// the kind of rule that can only be explained and never checked. Two named choices, and where
+    /// the group wants its own answer, a list that says it outright.
+    /// </summary>
+    private void DrawMountOrder()
+    {
+        using var indent = ImRaii.PushIndent();
+
+        foreach (var (order, label, help) in MountOrders)
+        {
+            if (ImGui.RadioButton(label, config.MountOrder == order))
+            {
+                config.MountOrder = order;
+                config.Save();
+            }
+
+            Widgets.HelpMarker(help);
+        }
+
+        if (config.MountOrder != MountPriority.ByRole)
+            return;
+
+        ImGuiHelpers.ScaledDummy(2f);
+
+        using var deeper = ImRaii.PushIndent();
+
+        if (DrawRoleList(config.MountRoleOrder, "mountRoles"))
+            config.Save();
+    }
+
+    /// <summary>
+    /// A list of roles with a pair of arrows each. Returns true when one moved.
+    ///
+    /// Shared by the gear order and the mount's own, which is the whole reason it is a method: two
+    /// lists drawn by two copies of this loop is how they drift apart.
+    /// </summary>
+    private static bool DrawRoleList(List<RaidRole> order, string id)
+    {
+        var complete = Roles.Complete(order);
+
+        if (!complete.SequenceEqual(order))
+        {
+            order.Clear();
+            order.AddRange(complete);
+        }
+
+        using var scope = ImRaii.PushId(id);
+
+        RaidRole? moved = null;
+        var direction = 0;
+
+        for (var i = 0; i < order.Count; i++)
+        {
+            var role = order[i];
+            using var rowId = ImRaii.PushId((int)role);
+
+            using (ImRaii.Disabled(i == 0))
+            {
+                if (ImGui.SmallButton("^"))
+                {
+                    moved = role;
+                    direction = -1;
+                }
+            }
+
+            ImGui.SameLine(0f, 2f);
+
+            using (ImRaii.Disabled(i == order.Count - 1))
+            {
+                if (ImGui.SmallButton("v"))
+                {
+                    moved = role;
+                    direction = 1;
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{i + 1}.  {role}");
+        }
+
+        if (moved == null)
+            return false;
+
+        Roles.Move(order, moved.Value, direction);
+        return true;
     }
 
     private static readonly (MountHandling Mode, string Label, string Help)[] MountModes =
     [
-        (MountHandling.Assign, "Give the mount to somebody",
-            "The Loot tab offers the roster in reverse of the gear order — healers first where the " +
-            "gear rules put them last — then whoever has won fewest items, and never anyone who " +
-            "already has one.\n\n" +
+        (MountHandling.Assign, "Assign the mount via Lootmaster",
+            "The Loot tab offers the roster in the order below, skipping anybody who already has " +
+            "one.\n\n" +
             "You still pick and press."),
         (MountHandling.GreedOnly, "Put the mount up for greed",
             "One button that sets the mount to greed only and lets the dice decide.\n\n" +
             "It asks first, because the game does not: greed only settles an item for good with no " +
             "confirmation of its own."),
+    ];
+
+    private static readonly (MountPriority Order, string Label, string Help)[] MountOrders =
+    [
+        (MountPriority.FinishesLast, "To whoever finishes last",
+            "Straight out of the forecast: the player the raid still owes gear to for the longest.\n\n" +
+            "The mount is the one thing in the chest worth nothing to the raid, so it goes to " +
+            "whoever will be turning up for their own sake longest. Ties go to whoever has won " +
+            "fewest items."),
+        (MountPriority.ByRole, "By a priority of its own",
+            "A role order set below, unrelated to the gear order. Healers first by default, which " +
+            "is the usual answer where damage is geared first."),
     ];
 
     private static readonly (AssignmentMode Mode, string Label, string Help)[] Modes =
