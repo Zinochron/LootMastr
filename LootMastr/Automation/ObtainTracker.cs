@@ -54,8 +54,13 @@ public sealed class ObtainTracker : IDisposable
 
     public IReadOnlyList<ObtainSighting> Recent => recent;
 
-    /// <summary>Turn off to stop the plugin editing the lists behind your back.</summary>
-    public bool Enabled { get; set; } = true;
+    /// <summary>
+    /// Turn off to stop the plugin editing the lists behind your back.
+    ///
+    /// Reads the setting rather than holding its own copy: it used to be a field the debug tab set,
+    /// which quietly meant the switch vanished for anyone who could not see that tab.
+    /// </summary>
+    public bool Enabled => config.TickOffFromChat;
 
     public void Clear() => recent.Clear();
 

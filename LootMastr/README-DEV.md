@@ -201,29 +201,30 @@ takes the client down rather than just failing.
 
 Verification still wraps every step, because a recording is one client on one patch.
 
-### Debug → the recorder
+### Debug → the recorder, and why it is gone
 
-`AddonWatcher` hooks `PreReceiveEvent` on the two loot windows, `PostSetup` for every addon (keeping
-the windows that appear while `NeedGreed` is up), and `PostRefresh` on `NeedGreed` itself. It
-produced both tables above and stays for whenever the flow changes.
+`AddonWatcher` hooked `PreReceiveEvent` on the two loot windows, `PostSetup` for every addon, and
+`PostRefresh` on `NeedGreed`. It produced both tables above, which is the whole reason the
+assignment flow is recorded fact rather than a guess — and having produced them, it was removed in
+0.18. Its own summary said so: *once that window is identified, this can go*.
 
-The `PostRefresh` snapshots exist because opening the window was never enough: what an award does to
-a coffer's row is the one thing no capture had ever shown, since the window is only snapshotted as
-it opens and by then nothing has happened. Comparison ignores the first seven values — the countdown
-lives in the header and refreshes every second, and would otherwise push every real change out.
+What it taught, kept because the knowledge outlives the code:
 
-The press hook catches the plugin's own `ReceiveEvent` calls too, since they go through the same
-vtable. That is how the failed run was diagnosed: a `ButtonClick param=5` in the log with **no**
-`ListItemClick` before it is a selection that never happened.
+- `PostSetup` fires **once** per addon lifetime, so a window opened earlier and reused never appears
+  in the window list again.
+- Comparing `PostRefresh` snapshots has to ignore the first seven values — the countdown lives in
+  the header and refreshes every second, and would otherwise push every real change out of the list.
+- The press hook caught the plugin's own `ReceiveEvent` calls too, since they go through the same
+  vtable. That is how the failed run was diagnosed: a `ButtonClick param=5` with **no**
+  `ListItemClick` before it is a selection that never happened.
 
-On by default: the press hook is scoped to two windows and the window hook returns immediately
-unless a chest is open, so it costs nothing — and a checkbox that has to be remembered already cost
-one recording session. Worth knowing that `PostSetup` fires **once** per addon lifetime, so a window
-that was opened earlier and is being reused will not appear in the window list again.
+If the flow ever changes, take it back out of git rather than writing it again. What stayed is the
+capture button, which dumps the same addons on demand — enough to see that an index moved, and the
+thing to ask a bug reporter for.
 
-When wiring it up, follow the two rules Sortr learned the hard way: match players **by name**
-against what the window is offering rather than by index, and never judge success by a return
-value — click, then wait for the window to actually show the change.
+Two rules from Sortr still hold wherever this is touched: match players **by name** against what the
+window is offering rather than by index, and never judge success by a return value — click, then
+wait for the window to actually show the change.
 
 ## Things that were verified against the installed Dalamud, not guessed
 

@@ -11,13 +11,14 @@ dotnet new console -o /tmp/lootmastr-harness --force
 cp Harness/Program.cs /tmp/lootmastr-harness/
 cp LootMastr/Data/GearSlot.cs LootMastr/Data/RaidRole.cs LootMastr/Data/TierDefinition.cs LootMastr/Roster/*.cs LootMastr/Planning/*.cs LootMastr/Planning/Dps/*.cs /tmp/lootmastr-harness/
 cd /tmp/lootmastr-harness && dotnet add package Newtonsoft.Json --version 13.0.3 && cd -
-rm /tmp/lootmastr-harness/LootPlanner.cs
+rm /tmp/lootmastr-harness/LootPlanner.cs /tmp/lootmastr-harness/RosterStore.cs /tmp/lootmastr-harness/StaticStore.cs
 dotnet run --project /tmp/lootmastr-harness
 ```
 
 It exits non-zero if anything fails. What gets copied is the whole of `Planning/` bar `LootPlanner`,
 which is the one file there that reaches for the roster and the tier catalogue, plus the four data
-types those files read. **If that ever needs a Lumina or Dalamud reference to compile, something
+types those files read and the data half of `Roster/`. The three files deleted afterwards are the
+three that hold a `Configuration` or a `JobCatalog` — they are wiring, not calculation. **If that ever needs a Lumina or Dalamud reference to compile, something
 game-facing has leaked into `Planning/`** — that is the check this list is really performing.
 
 `Planning/Dps/` in particular carries no game references at all. The damage formula is arithmetic

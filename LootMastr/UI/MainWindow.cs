@@ -68,6 +68,9 @@ public sealed class MainWindow : Window, IDisposable
 
         foreach (var tab in tabs)
         {
+            if (!tab.Available)
+                continue;
+
             if (!tab.UsefulToReaders && !config.CanWrite)
                 continue;
 

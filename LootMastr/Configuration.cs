@@ -215,6 +215,27 @@ public class Configuration : IPluginConfiguration
     /// <summary>A countdown next to the clock. Off by default — it is there the whole time.</summary>
     public bool RemindInDtrBar { get; set; }
 
+    // ---- Two more that belong to this client rather than the group ------------------------------
+
+    /// <summary>
+    /// Whether an obtain line in chat is allowed to tick the lists off.
+    ///
+    /// Lived on <c>ObtainTracker</c> as a field the debug tab set, which was fine while everybody
+    /// could see that tab. Once it is hidden the switch has to exist somewhere a player can reach,
+    /// and it has to survive a restart — turning off the thing that edits your sheet behind your
+    /// back is not a decision worth making twice a session.
+    /// </summary>
+    public bool TickOffFromChat { get; set; } = true;
+
+    /// <summary>
+    /// Show the debug tab on a character that is not the author's.
+    ///
+    /// Off, and reachable only through <c>/lootmastr debug</c>. The tab is not a feature — it is a
+    /// window onto raw addon values with a "write a capture file" button — but it is also the only
+    /// evidence a bug report can carry, so it is hidden rather than removed.
+    /// </summary>
+    public bool ShowDebugTab { get; set; }
+
     /// <summary>What the open static has handed out, newest first.</summary>
     [JsonIgnore] public List<LootEvent> History => Current.History;
 

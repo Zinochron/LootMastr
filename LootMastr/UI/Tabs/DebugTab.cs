@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -13,17 +14,29 @@ using LootMastr.Roster;
 namespace LootMastr.UI.Tabs;
 
 /// <summary>
-/// Reads the loot window out loud. This exists because the one thing LootMastr cannot do yet —
-/// pick the loot recipient — has to be watched in a real duty before it can be written, and a
-/// failure with no visible reason is the worst kind.
+/// Reads the loot window out loud, for the two questions no other screen can answer: why the plugin
+/// did not see a drop, and why it did not tick one off.
+///
+/// It began as scaffolding — the recipient step had to be watched in a live duty before it could be
+/// written — and that job is finished, so the recorder that did it is gone. What is left is
+/// diagnosis, which does not finish: a patch that moves an AtkValue index breaks assignment
+/// silently, and the capture file is the only thing that says so.
 /// </summary>
 public sealed class DebugTab : ITab
 {
+    /// <summary>
+    /// Who sees this tab without asking for it.
+    ///
+    /// Hardcoded rather than a setting, because a setting is something a stranger can find. Nobody
+    /// else's install should offer a button that writes raw addon values to disk, and nobody else
+    /// should have to wonder what "Perspective" means.
+    /// </summary>
+    private static readonly string[] Authors = ["Yuma Misumi@Shiva"];
+
     private readonly LootWindowReader loot;
     private readonly PartyReader party;
     private readonly TierCatalog tiers;
     private readonly ObtainTracker tracker;
-    private readonly AddonWatcher watcher;
     private readonly ItemCatalog catalog;
     private readonly JobCatalog jobs;
     private readonly Configuration config;
@@ -32,20 +45,40 @@ public sealed class DebugTab : ITab
     private string lastProbe = string.Empty;
 
     public DebugTab(LootWindowReader loot, PartyReader party, TierCatalog tiers, ObtainTracker tracker,
-                    AddonWatcher watcher, ItemCatalog items, JobCatalog jobs, Configuration config)
+                    ItemCatalog items, JobCatalog jobs, Configuration config)
     {
         this.config = config;
         this.loot = loot;
         this.party = party;
         this.tiers = tiers;
         this.tracker = tracker;
-        this.watcher = watcher;
         this.catalog = items;
         this.jobs = jobs;
     }
 
     public string Title => "Debug";
     public string Id => "debug";
+
+    /// <summary>
+    /// Shown to the author's character, and to anybody who typed <c>/lootmastr debug</c>.
+    ///
+    /// The command is not a loophole in the hiding, it is the point of it. This tab is also the only
+    /// evidence a bug report can carry — "it did not tick off" with a chat probe attached is a fix,
+    /// and without one it is a shrug. Welding it to one character would mean every report from
+    /// anybody else arrives empty.
+    /// </summary>
+    public bool Available => config.ShowDebugTab || IsAuthor();
+
+    private static bool IsAuthor()
+    {
+        if (!Services.PlayerState.IsLoaded)
+            return false;
+
+        var world = Services.PlayerState.HomeWorld.ValueNullable?.Name.ExtractText() ?? string.Empty;
+        var here = $"{Services.PlayerState.CharacterName}@{world}";
+
+        return Authors.Contains(here, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static readonly (StaticRole? Role, string Label, string Help)[] Perspectives =
     [
@@ -113,9 +146,6 @@ public sealed class DebugTab : ITab
 
         ImGuiHelpers.ScaledDummy(8f);
         DrawLootItems();
-
-        ImGuiHelpers.ScaledDummy(8f);
-        DrawAssignmentRecorder();
 
         ImGuiHelpers.ScaledDummy(8f);
         DrawCapture();
@@ -204,63 +234,14 @@ public sealed class DebugTab : ITab
         }
     }
 
-    /// <summary>
-    /// The one thing still needed to finish automatic assignment: what the game puts on screen when
-    /// the leader picks who gets an item. Captures taken so far all showed the chest and not that
-    /// step, because pressing the capture button means the moment has already passed.
-    /// </summary>
-    private void DrawAssignmentRecorder()
-    {
-        ImGui.TextUnformatted("Record the assignment window");
-        ImGui.Separator();
-
-        var enabled = watcher.Enabled;
-        if (ImGui.Checkbox("Record windows that open over the loot window", ref enabled))
-            watcher.Enabled = enabled;
-
-        ImGui.SameLine();
-        if (ImGui.SmallButton("Clear"))
-            watcher.Clear();
-
-        Widgets.Coloured(Widgets.Muted,
-                         "Turn this on, open a chest as Lootmaster, then press the assign button on " +
-                         "two different items by hand and write a capture file. Both the button " +
-                         "presses and any window they open are recorded — the two together are what " +
-                         "the assignment code still needs.");
-
-        if (watcher.Events.Count > 0)
-        {
-            ImGuiHelpers.ScaledDummy(4f);
-            ImGui.TextDisabled("Button presses, newest first:");
-
-            foreach (var press in watcher.Events)
-                ImGui.TextUnformatted($"{press.At:HH:mm:ss}  {press.What}");
-        }
-
-        if (watcher.Sightings.Count == 0)
-        {
-            if (watcher.Events.Count == 0)
-                Widgets.Coloured(Widgets.Muted, enabled ? "Nothing recorded yet." : "Not recording.");
-
-            return;
-        }
-
-        ImGuiHelpers.ScaledDummy(4f);
-        ImGui.TextDisabled("Windows opened:");
-
-        foreach (var sighting in watcher.Sightings)
-        {
-            ImGui.TextUnformatted($"{sighting.At:HH:mm:ss}  {sighting.Name}");
-            Widgets.Tooltip(sighting.Values);
-        }
-    }
-
     private void DrawCapture()
     {
         ImGui.TextUnformatted("Capture the loot addon");
         Widgets.HelpMarker("Writes everything the loot window is holding to a text file next to the " +
-                           "config, including the raw values behind it. That file is what finishes " +
-                           "the assignment code — take it with a Lootmaster chest on screen.");
+                           "config, including the raw values behind it.\n\n" +
+                           "This is what to attach when assignment misbehaves: the indices it reads " +
+                           "are a patch away from moving, and the file says which one moved. Take it " +
+                           "with the chest on screen, while the problem is up.");
         ImGui.Separator();
 
         if (ImGui.Button("Write capture file"))
@@ -378,8 +359,6 @@ public sealed class DebugTab : ITab
                 AppendAddonValues(builder, name);
             }
 
-            watcher.Append(builder);
-
             var path = Path.Combine(Services.PluginInterface.GetPluginConfigDirectory(),
                                     $"loot-capture-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
 
@@ -437,13 +416,13 @@ public sealed class DebugTab : ITab
                            "reason is here.");
         ImGui.Separator();
 
-        var enabled = tracker.Enabled;
-        if (ImGui.Checkbox("Tick lists off from chat", ref enabled))
-            tracker.Enabled = enabled;
-
-        ImGui.SameLine();
         if (ImGui.SmallButton("Clear"))
             tracker.Clear();
+
+        ImGui.SameLine();
+        ImGui.TextDisabled(config.TickOffFromChat
+                               ? "Ticking off is on — see Settings."
+                               : "Ticking off is switched off in Settings; lines are still read.");
 
         if (tracker.Recent.Count == 0)
         {

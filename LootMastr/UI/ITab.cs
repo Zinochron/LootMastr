@@ -20,5 +20,14 @@ public interface ITab : IDisposable
     /// </summary>
     bool UsefulToReaders => true;
 
+    /// <summary>
+    /// Whether this tab exists for whoever is looking at all.
+    ///
+    /// Separate from <see cref="UsefulToReaders"/>, which is about a role inside the static. This is
+    /// about the person: the debug tab is a window onto raw addon values and is noise on anybody
+    /// else's screen. Default true, because every tab that is a feature is one for everybody.
+    /// </summary>
+    bool Available => true;
+
     void Draw();
 }

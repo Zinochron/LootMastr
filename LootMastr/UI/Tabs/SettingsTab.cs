@@ -34,6 +34,9 @@ public sealed class SettingsTab : ITab
         DrawReminders();
 
         ImGuiHelpers.ScaledDummy(10f);
+        DrawThisClient();
+
+        ImGuiHelpers.ScaledDummy(10f);
 
         // Every setting on this tab belongs to the static, so the whole thing is either editable or
         // it is not. Nothing is hidden: what the group has decided is exactly what a member with
@@ -403,6 +406,36 @@ public sealed class SettingsTab : ITab
             }
 
             Widgets.HelpMarker(help);
+        }
+    }
+
+    /// <summary>
+    /// The settings that are about this install and not about the static.
+    ///
+    /// Outside the read-only gate for the same reason the reminders are: nothing here changes what
+    /// the group has decided, only what this client does about it.
+    /// </summary>
+    private void DrawThisClient()
+    {
+        ImGui.TextUnformatted("This client");
+        ImGui.Separator();
+
+        var chat = config.TickOffFromChat;
+        if (ImGui.Checkbox("Tick lists off from chat", ref chat))
+        {
+            config.TickOffFromChat = chat;
+            config.Save();
+        }
+
+        Widgets.HelpMarker("When somebody in the party receives a piece the tier knows, the plugin " +
+                           "ticks it off and writes it into the history.\n\n" +
+                           "Turn it off to stop it editing the sheet on its own. The lines are still " +
+                           "read — what stops is the plugin acting on them.");
+
+        if (!config.TickOffFromChat)
+        {
+            Widgets.Coloured(Widgets.Wanted,
+                             "Nothing is ticked off on its own. Every piece has to be recorded by hand.");
         }
     }
 

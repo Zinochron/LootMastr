@@ -28,7 +28,6 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ChatAnnouncer announcer;
     private readonly ObtainTracker tracker;
     private readonly ClearTracker clears;
-    private readonly AddonWatcher watcher;
     private readonly LootAssignmentRunner runner;
 
     public Configuration Configuration { get; }
@@ -93,14 +92,13 @@ public sealed class Plugin : IDalamudPlugin
         Equipment = new EquipmentReader(Items);
         Attributes = new AttributeReader();
         Scanner = new GearScanner(Configuration, Roster, Jobs, Party, Equipment, Attributes, Classifier);
-        watcher = new AddonWatcher();
 
         var tabs = new List<ITab>
         {
             new LootTab(Configuration, Assigner, announcer, Roster, Tiers, Planner, clears),
             new RosterTab(Configuration, Roster, Jobs, importer, Tiers, Scanner, Items, Gear, Planner),
             new PlanTab(Configuration, Roster, Planner, Tiers),
-            new DebugTab(Loot, Party, Tiers, tracker, watcher, Items, Jobs, Configuration),
+            new DebugTab(Loot, Party, Tiers, tracker, Items, Jobs, Configuration),
             new SettingsTab(Configuration, Roster, Planner),
         };
 
@@ -160,6 +158,15 @@ public sealed class Plugin : IDalamudPlugin
                 Services.Chat.Print($"LootMastr: {Scanner.Start()}");
                 break;
 
+            // Not advertised in the help line. The debug tab is a window onto raw addon values and
+            // belongs on nobody's screen by default — but it is also the only thing a bug report can
+            // carry, so there has to be a way to ask somebody to turn it on.
+            case "debug":
+                Configuration.ShowDebugTab = !Configuration.ShowDebugTab;
+                Configuration.Save();
+                Services.Chat.Print($"LootMastr: debug tab {(Configuration.ShowDebugTab ? "shown" : "hidden")}.");
+                break;
+
             case "stop":
                 Scanner.Stop("Stopped by command.");
                 Services.Chat.Print("LootMastr: stopped.");
@@ -193,7 +200,6 @@ public sealed class Plugin : IDalamudPlugin
         tracker.Dispose();
         clears.Dispose();
         Scanner.Dispose();
-        watcher.Dispose();
         runner.Dispose();
 
         ECommonsMain.Dispose();
