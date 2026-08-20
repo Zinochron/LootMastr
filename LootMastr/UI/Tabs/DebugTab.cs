@@ -420,9 +420,9 @@ public sealed class DebugTab : ITab
             tracker.Clear();
 
         ImGui.SameLine();
-        ImGui.TextDisabled(config.TickOffFromChat
-                               ? "Ticking off is on — see Settings."
-                               : "Ticking off is switched off in Settings; lines are still read.");
+        ImGui.TextDisabled(tracker.Enabled
+                               ? "Ticking off is on."
+                               : "Ticking off is off — Settings, under Suggest only. Lines are still read.");
 
         if (tracker.Recent.Count == 0)
         {

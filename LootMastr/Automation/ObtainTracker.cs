@@ -55,12 +55,22 @@ public sealed class ObtainTracker : IDisposable
     public IReadOnlyList<ObtainSighting> Recent => recent;
 
     /// <summary>
-    /// Turn off to stop the plugin editing the lists behind your back.
+    /// Whether an obtain line is allowed to tick the lists off.
     ///
-    /// Reads the setting rather than holding its own copy: it used to be a field the debug tab set,
-    /// which quietly meant the switch vanished for anyone who could not see that tab.
+    /// The setting only applies in <see cref="AssignmentMode.SuggestOnly"/>, and that is not a
+    /// convenience — it is the only mode where off means anything. In the other two the plugin
+    /// drives the loot window itself and <b>nothing on that path records a thing</b>:
+    /// <c>PerformAssignment</c> clicks and returns, and whether the game accepted the item is
+    /// something only this class ever finds out. Honouring off there would hand out loot all
+    /// evening and write down none of it.
+    ///
+    /// So the switch is not merely hidden outside suggest-only, it is not consulted. A setting that
+    /// is invisible and still biting is the worst of both.
+    ///
+    /// <see cref="LootAssigner.MarkHandedOver"/> runs ahead of this either way: an item somebody has
+    /// obtained is out of the chest's running whatever the lists are allowed to do.
     /// </summary>
-    public bool Enabled => config.TickOffFromChat;
+    public bool Enabled => config.Mode != AssignmentMode.SuggestOnly || config.TickOffFromChat;
 
     public void Clear() => recent.Clear();
 

@@ -34,9 +34,6 @@ public sealed class SettingsTab : ITab
         DrawReminders();
 
         ImGuiHelpers.ScaledDummy(10f);
-        DrawThisClient();
-
-        ImGuiHelpers.ScaledDummy(10f);
 
         // Every setting on this tab belongs to the static, so the whole thing is either editable or
         // it is not. Nothing is hidden: what the group has decided is exactly what a member with
@@ -406,31 +403,42 @@ public sealed class SettingsTab : ITab
             }
 
             Widgets.HelpMarker(help);
+
+            // Under the radio it belongs to, and drawn nowhere else, because it applies nowhere
+            // else. The two assigning modes have no use for the off position: they click the loot
+            // window and record nothing themselves, so chat is the only thing that knows an award
+            // landed. Leaving the box on screen there would offer a switch whose only setting is on.
+            if (mode == AssignmentMode.SuggestOnly && config.Mode == AssignmentMode.SuggestOnly)
+                DrawChatTicking();
         }
     }
 
     /// <summary>
-    /// The settings that are about this install and not about the static.
+    /// Whether the plugin may tick a piece off when chat says somebody received it.
     ///
-    /// Outside the read-only gate for the same reason the reminders are: nothing here changes what
-    /// the group has decided, only what this client does about it.
+    /// A real question only while the plugin is not assigning anything: a group that keeps its lists
+    /// by hand may well not want them edited from under it. Once the plugin is doing the handing
+    /// out, chat is the only witness it has and this stops being a choice.
     /// </summary>
-    private void DrawThisClient()
+    private void DrawChatTicking()
     {
-        ImGui.TextUnformatted("This client");
-        ImGui.Separator();
+        using var indent = ImRaii.PushIndent();
 
         var chat = config.TickOffFromChat;
-        if (ImGui.Checkbox("Tick lists off from chat", ref chat))
+        if (ImGui.Checkbox("Still tick lists off from chat", ref chat))
         {
             config.TickOffFromChat = chat;
             config.Save();
         }
 
-        Widgets.HelpMarker("When somebody in the party receives a piece the tier knows, the plugin " +
-                           "ticks it off and writes it into the history.\n\n" +
-                           "Turn it off to stop it editing the sheet on its own. The lines are still " +
-                           "read — what stops is the plugin acting on them.");
+        Widgets.HelpMarker("When somebody in the party receives a piece the tier knows, tick it off " +
+                           "and write it into the history — even though the plugin assigned " +
+                           "nothing.\n\n" +
+                           "Turn it off to keep the sheet entirely by hand. The lines are still read " +
+                           "and still shown in the loot window; what stops is the plugin acting on " +
+                           "them.\n\n" +
+                           "Only offered here. Under either assigning mode the obtain line is the " +
+                           "only proof an award landed, so it is always acted on.");
 
         if (!config.TickOffFromChat)
         {

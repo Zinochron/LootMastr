@@ -84,6 +84,21 @@ public sealed class StaticSettings
 
     public AssignmentMode Mode { get; set; } = AssignmentMode.Confirm;
 
+    /// <summary>
+    /// Whether an obtain line in chat is allowed to tick the lists off.
+    ///
+    /// <b>Only ever consulted under <see cref="AssignmentMode.SuggestOnly"/>.</b> In the other two
+    /// modes the plugin drives the loot window itself and nothing it does records anything: pressing
+    /// the buttons is not evidence the game accepted the item, so the obtain line is the sole
+    /// witness that an award landed. Off there would mean handing out loot and writing down none of
+    /// it, which is not a setting, it is a broken install — see <c>ObtainTracker.Enabled</c>.
+    ///
+    /// On the static rather than the client because it decides whether the shared sheet gets edited.
+    /// That is the test the whole split turns on, and it is the one that separates this from a
+    /// reminder: a reminder happens to you, this happens to everybody.
+    /// </summary>
+    public bool TickOffFromChat { get; set; } = true;
+
     /// <summary>Announce each assignment in party chat. Off by default — it talks for you.</summary>
     public bool AnnounceInPartyChat { get; set; }
 
