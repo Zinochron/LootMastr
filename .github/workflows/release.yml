@@ -84,19 +84,36 @@ jobs:
 
       # The tag is the record of what has been released, so it is also the check for whether this one
       # has. A push to master that only changed a readme rebuilds and stops here.
+      #
+      # Asked with `release list` rather than `release view`, because this step is a question and
+      # `view` answers "no such release" with exit code 1 -- an error status for the ordinary case.
+      # Three things then conspire to turn that into a failed step: Actions prepends
+      # $ErrorActionPreference = 'stop', pwsh 7.4 turns a non-zero native exit into a terminating
+      # error under it, and Actions appends `exit $LASTEXITCODE` so a leftover 1 fails the step even
+      # if nothing threw. `list` exits 0 whatever the answer is, and the explicit `exit 0` covers
+      # the rest.
       - name: Is this version already tagged?
         id: gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "${{ steps.build.outputs.tag }}" 2>$null | Out-Null
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
 
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "${{ steps.build.outputs.tag }} exists. Bump <Version> to cut a new one."
+          $tag = "${{ steps.build.outputs.tag }}"
+          $existing = @(gh release list --limit 200 --json tagName --jq '.[].tagName')
+
+          if ($LASTEXITCODE -ne 0) { throw "Could not list releases." }
+
+          if ($existing -contains $tag) {
+            Write-Host "$tag exists. Bump <Version> to cut a new one."
             "tagged=true" >> $env:GITHUB_OUTPUT
           } else {
+            Write-Host "$tag is new."
             "tagged=false" >> $env:GITHUB_OUTPUT
           }
+
+          exit 0
 
       - name: Create the release
         if: steps.gate.outputs.tagged == 'false'
