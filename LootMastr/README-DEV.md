@@ -1037,6 +1037,45 @@ That mode runs a full projection, so `LootTab` caches `FinishWeeks` against `Ros
 It cannot reuse the tab's existing `forecast` field: that holds `ComingWeek()`, whose `FinishWeeks`
 is empty by construction, and everybody would have ranked as finishing in week zero.
 
+### What counts as tier loot, and the fence around the loose half
+
+`TierCatalog.TryMatch` answers in three ways, and they are not equally trustworthy:
+
+| Evidence | Trusted |
+|---|---|
+| `tier.Rewards` / `tier.Upgrades` by **item id** | anywhere |
+| an equip category plus a **tier item level** | anywhere |
+| a slot word **inside the item's name** | only while `BoundByDuty` |
+
+The third is what makes coffers work: they carry no equip category at all, so "Genji Earring Coffer
+(IL 340)" can only be read from its name. It is also a substring match, and the harness pins what
+that costs — **"Wandering" contains `ring`, "Legendary" contains `leg`, "Foothold" contains `foot`.**
+
+Two bugs came out of that and both are fixed:
+
+1. **An item with an equip category used to fall through to the name after failing the item-level
+   test.** A precise test had already said no and a fuzzy one overturned it, so every dungeon ring
+   and crafted glove came through as tier loot. Equippable items are now judged by item level and
+   then not judged again.
+2. **The name path ran everywhere** — retainers, crafting, the market board. It is now fenced to
+   inside a duty, which is the only place a named coffer can have come from.
+
+This mattered most for the history, because `Remember` runs at the top of `Record`, *before* the
+need list is walked. That ordering is deliberate — somebody taking a coffer they did not need is a
+real event and belongs in the log — but it means the history is a superset of the ticks, so anything
+loose in the match shows up there first and in bulk.
+
+### Deleting out of a log that merges
+
+The history is unioned rather than replaced, so removing a row locally does nothing: the next pull
+brings back whatever anybody else still holds. Deletion therefore has to be a fact that travels.
+`StaticProfile.ForgottenLoot` holds the ids, is unioned itself, and `Merge` drops anything named in
+it. Tombstones are applied **before** the log is merged, or a row would arrive, be kept, and only
+disappear on the pull after.
+
+Capped at `LootHistory.Limit` like the log, oldest dropped first — those are the ones no client is
+still carrying.
+
 `LootAssigner.PerformAssignment` needed a second overload. The original refuses when `Winner` is
 null, which is right for a coffer — a recipient nobody chose is a bug — and wrong for these, where
 there is no winner by construction.

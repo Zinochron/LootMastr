@@ -2411,6 +2411,84 @@ var rules = new PriorityRules();
           string.Join(", ", order));
 }
 
+// --- why the name match has to be fenced in ---------------------------------------------------
+//
+// SlotFromName looks for a word anywhere inside a name. That is what makes it work on "Genji
+// Earring Coffer (IL 340)", where there is no equip category to read, and it is why it cannot be
+// trusted outside a duty: half the item names in the game contain one of these words by accident.
+// It recorded two versions' worth of dungeon rings before anybody noticed.
+
+{
+    Check("a coffer is what this is for",
+          Slots.SlotFromName("Genji Earring Coffer (IL 340)", Slots.All) == GearSlot.Earrings);
+
+    // The collisions, named so nobody widens the fence without seeing them.
+    Check("but Wandering contains ring",
+          Slots.SlotFromName("Wandering Dramaturge's Ring", Slots.All) != null);
+
+    Check("and Legendary contains leg",
+          Slots.SlotFromName("Legendary Weathered Axe", Slots.All) != null,
+          Slots.SlotFromName("Legendary Weathered Axe", Slots.All)?.ToString() ?? "null");
+
+    Check("and Foothold contains foot",
+          Slots.SlotFromName("Foothold Survey Report", Slots.All) != null);
+
+    Check("a name with nothing in it is still nothing",
+          Slots.SlotFromName("Grade 8 Tincture of Strength", Slots.All) == null);
+}
+
+// --- deleting out of a log that merges ----------------------------------------------------------
+
+{
+    var at = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+
+    LootEvent Row(string id, int minutes) => new()
+    {
+        Id = id, AtUtc = at.AddMinutes(minutes), PlayerKey = "Yuma@Test", ItemId = (uint)(100 + minutes),
+    };
+
+    var history = new List<LootEvent> { Row("a", 0), Row("b", 5), Row("c", 9) };
+    var forgotten = new List<string>();
+
+    LootHistory.Forget(history, forgotten, history[1]);
+
+    Check("a deleted row goes", history.Count == 2 && history.All(e => e.Id != "b"));
+    Check("and leaves a tombstone", forgotten.SequenceEqual(["b"]));
+
+    // The case the tombstone exists for: somebody else still holds the row and pushes it back.
+    var theirs = new List<LootEvent> { Row("a", 0), Row("b", 5), Row("c", 9) };
+
+    Check("a plain merge would bring it straight back",
+          LootHistory.Merge(history, theirs).Count == 3);
+
+    Check("and the tombstone is what stops it",
+          LootHistory.Merge(history, theirs, forgotten).Count == 2,
+          string.Join(", ", LootHistory.Merge(history, theirs, forgotten).Select(e => e.Id)));
+}
+
+{
+    var at = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+
+    var history = new List<LootEvent>
+    {
+        new() { Id = "a", AtUtc = at, PlayerKey = "Yuma@Test", ItemId = 100 },
+        new() { Id = "b", AtUtc = at.AddMinutes(5), PlayerKey = "Sima@Test", ItemId = 200 },
+    };
+
+    var forgotten = new List<string>();
+    LootHistory.ForgetAll(history, forgotten);
+
+    Check("clearing empties the log", history.Count == 0);
+    Check("and tombstones every row it dropped", forgotten.Count == 2);
+
+    // Tombstones union too, or a client that never saw the deletion undoes it on its next turn.
+    Check("tombstones from both sides survive a merge",
+          LootHistory.MergeForgotten(["a"], ["b"]).Count == 2);
+
+    Check("and the same one is not two",
+          LootHistory.MergeForgotten(["a", "b"], ["b"]).Count == 2);
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

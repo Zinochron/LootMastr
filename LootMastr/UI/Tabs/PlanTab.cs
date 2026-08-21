@@ -142,8 +142,8 @@ public sealed class PlanTab : ITab
         if (!ImGui.CollapsingHeader($"History ({history.Count})###history"))
             return;
 
-        Widgets.HelpMarker("Written down when chat says somebody received something, or when it is " +
-                           "recorded by hand in the Loot tab.\n\n" +
+        Widgets.HelpMarker("Written down when chat says somebody in the roster received a piece the " +
+                           "tier knows, or when it is recorded by hand in the Loot tab.\n\n" +
                            "Reading somebody's gear does not appear here: that means the plugin found " +
                            "out they have it, not that they were just given it.");
 
@@ -154,10 +154,14 @@ public sealed class PlanTab : ITab
             return;
         }
 
+        using var indent = ImRaii.PushIndent();
+
+        DrawForgetAll(history);
+
         var settings = config.Settings;
         var now = DateTime.UtcNow;
 
-        using var indent = ImRaii.PushIndent();
+        LootEvent? forget = null;
 
         // Grouped in local time, which is the only grouping anybody means by "that Thursday". A raid
         // that runs past midnight UTC is still one evening to the people who were in it.
@@ -166,42 +170,114 @@ public sealed class PlanTab : ITab
             var week = RaidCalendar.WeekOf(settings.ResetDay, settings.ResetMinutesUtc,
                                            day.First().AtUtc, now);
 
+            ImGuiHelpers.ScaledDummy(2f);
             Widgets.Coloured(Widgets.Augment, day.Key.ToString("dddd, d MMMM"));
 
             ImGui.SameLine();
             ImGui.TextDisabled(week <= 1 ? "this lockout" : $"{week - 1} lockout(s) ago");
 
-            using var inner = ImRaii.PushIndent();
+            // A table rather than SameLine at a fixed offset. The old layout put the name at a
+            // window-absolute x of 56, which sits *behind* the clock once the rows are indented
+            // twice — SameLine with an offset smaller than the cursor walks it backwards and the
+            // two overlap. Columns cannot do that to themselves.
+            using var table = ImRaii.Table($"##history{day.Key:yyyyMMdd}", 5,
+                                           ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp);
+            if (!table.Success)
+                continue;
+
+            ImGui.TableSetupColumn("##time", ImGuiTableColumnFlags.WidthFixed, 44f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn("##who", ImGuiTableColumnFlags.WidthFixed, 130f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn("##what");
+            ImGui.TableSetupColumn("##fight", ImGuiTableColumnFlags.WidthFixed, 60f * ImGuiHelpers.GlobalScale);
+            ImGui.TableSetupColumn("##drop", ImGuiTableColumnFlags.WidthFixed, 22f * ImGuiHelpers.GlobalScale);
 
             foreach (var entry in day)
             {
+                using var id = ImRaii.PushId(entry.Id);
                 var local = entry.AtUtc.ToLocalTime();
 
+                ImGui.TableNextRow();
+
+                ImGui.TableNextColumn();
                 ImGui.TextDisabled(local.ToString("HH:mm"));
-                ImGui.SameLine(56f * ImGuiHelpers.GlobalScale);
 
+                ImGui.TableNextColumn();
                 Widgets.Coloured(Widgets.Done, entry.PlayerName);
-                ImGui.SameLine();
+
+                ImGui.TableNextColumn();
                 ImGui.TextUnformatted(entry.What);
-
-                var fight = tiers.Tier.Encounter(entry.Encounter)?.Name;
-
-                if (!string.IsNullOrEmpty(fight))
-                {
-                    ImGui.SameLine();
-                    ImGui.TextDisabled($"({fight})");
-                }
 
                 Widgets.Tooltip($"{local:dddd, d MMMM yyyy, HH:mm:ss}\n" +
                                 $"{entry.What}\n" +
                                 (entry.How == LootSource.ByHand
                                      ? "Recorded by hand."
                                      : "Noticed in chat."));
+
+                ImGui.TableNextColumn();
+                ImGui.TextDisabled(tiers.Tier.Encounter(entry.Encounter)?.Name ?? string.Empty);
+
+                ImGui.TableNextColumn();
+
+                if (!config.CanWrite)
+                    continue;
+
+                if (ImGui.SmallButton("x"))
+                    forget = entry;
+
+                Widgets.Tooltip("Take this row out for good.");
             }
         }
 
         if (history.Count > 200)
             ImGui.TextDisabled($"…and {history.Count - 200} older.");
+
+        // After the loop: removing while the table is being walked draws one row twice.
+        if (forget == null)
+            return;
+
+        LootHistory.Forget(history, config.ForgottenLoot, forget);
+        config.Save();
+    }
+
+    /// <summary>
+    /// Wipe the lot, behind a confirmation.
+    ///
+    /// It exists because the history spent two versions recording things that were never raid loot:
+    /// <c>TryMatch</c> fell through to reading a slot out of an item's name for gear that had an
+    /// equip category, so every dungeon ring and crafted glove came through. That is fixed, and the
+    /// rows it already wrote are still sitting there.
+    /// </summary>
+    private void DrawForgetAll(List<LootEvent> history)
+    {
+        if (!config.CanWrite)
+            return;
+
+        if (ImGui.SmallButton("Clear history"))
+            ImGui.OpenPopup("##forgetAll");
+
+        Widgets.HelpMarker("Deletes every row below. Deletions travel with the sync, so this does " +
+                           "not come back the next time somebody pushes.");
+
+        using var popup = ImRaii.Popup("##forgetAll");
+        if (!popup.Success)
+            return;
+
+        ImGui.TextUnformatted($"Delete all {history.Count} rows?");
+        Widgets.Coloured(Widgets.Muted, "The obtained ticks on the roster are not touched.");
+
+        ImGuiHelpers.ScaledDummy(4f);
+
+        if (ImGui.Button("Delete"))
+        {
+            LootHistory.ForgetAll(history, config.ForgottenLoot);
+            config.Save();
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.SameLine();
+
+        if (ImGui.Button("Keep"))
+            ImGui.CloseCurrentPopup();
     }
 
     private void DrawForecast(SimulationResult result)

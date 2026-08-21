@@ -104,10 +104,12 @@ public static class LootHistory
     /// Ids settle the easy case — the same row travelling back from the server. The time window
     /// settles the hard one, where two clients wrote independent records of one moment.
     /// </summary>
-    public static List<LootEvent> Merge(IEnumerable<LootEvent>? mine, IEnumerable<LootEvent>? theirs)
+    public static List<LootEvent> Merge(IEnumerable<LootEvent>? mine, IEnumerable<LootEvent>? theirs,
+                                        IEnumerable<string>? forgotten = null)
     {
         var result = new List<LootEvent>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        var gone = forgotten == null ? null : new HashSet<string>(forgotten, StringComparer.Ordinal);
 
         foreach (var entry in (mine ?? []).Concat(theirs ?? []).OrderByDescending(e => e.AtUtc))
         {
@@ -115,6 +117,12 @@ public static class LootHistory
                 continue;
 
             if (!string.IsNullOrEmpty(entry.Id) && !ids.Add(entry.Id))
+                continue;
+
+            // Deleting a row out of a merged log does not work without this. Union means the next
+            // pull brings back whatever anybody else still holds, so a deletion has to be a fact
+            // that travels — the absence of a row says nothing.
+            if (gone != null && !string.IsNullOrEmpty(entry.Id) && gone.Contains(entry.Id))
                 continue;
 
             // Linear over the window rather than over everything: the list is in time order, so the
@@ -138,6 +146,58 @@ public static class LootHistory
         }
 
         return result.Count > Limit ? result.Take(Limit).ToList() : result;
+    }
+
+    /// <summary>
+    /// The ids both sides have deleted.
+    ///
+    /// Unioned like the history itself and for the same reason: a client that never saw the
+    /// deletion would otherwise push the row straight back on its next turn.
+    /// </summary>
+    public static List<string> MergeForgotten(IEnumerable<string>? mine, IEnumerable<string>? theirs)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<string>();
+
+        // Newest last, so trimming the front drops the oldest tombstones first — those are the ones
+        // whose rows no client is still carrying.
+        foreach (var id in (mine ?? []).Concat(theirs ?? []))
+        {
+            if (!string.IsNullOrEmpty(id) && seen.Add(id))
+                result.Add(id);
+        }
+
+        return result.Count > Limit ? result.Skip(result.Count - Limit).ToList() : result;
+    }
+
+    /// <summary>Deletes one row, and records that it was deleted so a sync cannot undo it.</summary>
+    public static void Forget(List<LootEvent> history, List<string> forgotten, LootEvent entry)
+    {
+        history.RemoveAll(e => e.Id == entry.Id);
+
+        if (!string.IsNullOrEmpty(entry.Id) && !forgotten.Contains(entry.Id))
+            forgotten.Add(entry.Id);
+
+        Trim(forgotten);
+    }
+
+    /// <summary>Deletes everything currently held, tombstoning each row on the way out.</summary>
+    public static void ForgetAll(List<LootEvent> history, List<string> forgotten)
+    {
+        foreach (var entry in history)
+        {
+            if (!string.IsNullOrEmpty(entry.Id) && !forgotten.Contains(entry.Id))
+                forgotten.Add(entry.Id);
+        }
+
+        history.Clear();
+        Trim(forgotten);
+    }
+
+    private static void Trim(List<string> forgotten)
+    {
+        if (forgotten.Count > Limit)
+            forgotten.RemoveRange(0, forgotten.Count - Limit);
     }
 
     /// <summary>Adds one event to a list that is kept newest first.</summary>

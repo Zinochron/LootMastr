@@ -1,4 +1,5 @@
 using System;
+using Dalamud.Game.ClientState.Conditions;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -924,25 +925,35 @@ public sealed class TierCatalog
         if (!items.TryGetItem(itemId, out var info))
             return false;
 
-        // Gear that drops as itself.
-        if (info.Slot != null && tier.IsTierItemLevel(info.ItemLevel))
-        {
-            slot = info.Slot;
-            return true;
-        }
+        // Gear that drops as itself, judged by item level and then not judged again.
+        //
+        // The fall-through to the name below used to happen here as well, and that was the whole of
+        // the false-positive problem: an item with an equip category has a precise test available,
+        // so asking a fuzzy one afterwards can only ever overturn a correct "no". Every dungeon
+        // ring, every crafted pair of gloves, every roulette drop came through as tier loot, was
+        // attributed to whoever obtained it, and landed in the history.
+        if (info.Slot != null)
+            return tier.IsTierItemLevel(info.ItemLevel) && Assign(info.Slot, out slot);
 
         // A coffer, which is the normal case and the one the item level test can never answer:
         // coffers have no equip category at all, so they were coming out as "not tier loot" even
         // with the tier set up correctly. Their name says what is inside — "Genji Earring Coffer
         // (IL 340)" — so that is what decides.
-        var named = Slots.SlotFromName(info.Name, Slots.All);
-        if (named != null)
-        {
-            slot = named;
-            return true;
-        }
+        //
+        // Only inside a duty, though. SlotFromName matches a word anywhere in a name, which is what
+        // makes it work on a coffer and what makes it dangerous everywhere else: "ring" is inside
+        // "Wandering", "leg" is inside "Legendary". That looseness is safe exactly where a named
+        // coffer can only have come out of a chest, and nowhere else.
+        if (!Services.Condition[ConditionFlag.BoundByDuty])
+            return false;
 
-        return false;
+        return Assign(Slots.SlotFromName(info.Name, Slots.All), out slot);
+
+        static bool Assign(GearSlot? found, out GearSlot? target)
+        {
+            target = found;
+            return found != null;
+        }
     }
 
     /// <summary>

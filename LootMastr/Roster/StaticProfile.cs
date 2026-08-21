@@ -261,6 +261,15 @@ public sealed class StaticProfile
     /// </summary>
     public List<LootEvent> History { get; set; } = new();
 
+    /// <summary>
+    /// Ids of history rows somebody deleted.
+    ///
+    /// Kept rather than simply removing the row, because the history is the one field the sync
+    /// unions instead of replacing: without a record that a deletion happened, the next pull from
+    /// anybody still holding the row puts it straight back.
+    /// </summary>
+    public List<string> ForgottenLoot { get; set; } = new();
+
     public StaticSettings Settings { get; set; } = new();
 
     public SyncSetup Sync { get; set; } = new();

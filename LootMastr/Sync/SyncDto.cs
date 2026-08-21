@@ -36,6 +36,8 @@ public sealed class SyncDocument
 
     [JsonProperty("history")] public List<LootEvent> History { get; set; } = new();
 
+    [JsonProperty("forgotten")] public List<string> Forgotten { get; set; } = new();
+
     /// <summary>
     /// Everything a group decides, and nothing about this machine.
     ///
@@ -51,6 +53,7 @@ public sealed class SyncDocument
         Kills = profile.Kills,
         Settings = profile.Settings,
         History = profile.History,
+        Forgotten = profile.ForgottenLoot,
     };
 
     /// <summary>
@@ -73,7 +76,10 @@ public sealed class SyncDocument
         // at roughly the same state and the loser of a race can look again. A log cannot survive
         // that: two clients in one party each write down half an evening, and whoever pushes second
         // would erase the other half for good.
-        profile.History = LootHistory.Merge(profile.History, History);
+        // Tombstones first, then the log filtered through them. The other order would let a row
+        // arrive, be kept, and only be deleted on the pull after.
+        profile.ForgottenLoot = LootHistory.MergeForgotten(profile.ForgottenLoot, Forgotten);
+        profile.History = LootHistory.Merge(profile.History, History, profile.ForgottenLoot);
 
         if (!string.IsNullOrWhiteSpace(ActiveTierId))
             profile.ActiveTierId = ActiveTierId;

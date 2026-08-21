@@ -244,6 +244,9 @@ public class Configuration : IPluginConfiguration
     /// <summary>What the open static has handed out, newest first.</summary>
     [JsonIgnore] public List<LootEvent> History => Current.History;
 
+    /// <summary>History rows the group has deleted, so a sync cannot bring them back.</summary>
+    [JsonIgnore] public List<string> ForgottenLoot => Current.ForgottenLoot;
+
     /// <summary>What the open static has pinned by hand.</summary>
     [JsonIgnore] public ManualPlan Manual => Current.Settings.Manual;
 
