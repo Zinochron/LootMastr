@@ -106,6 +106,33 @@ public static class RaidCalendar
         IReadOnlyList<RaidSlot> slots, DateTime nowUtc) =>
         slots.Select(s => (Slot: s, StartUtc: NextOccurrence(s, nowUtc))).OrderBy(x => x.StartUtc);
 
+    /// <summary>
+    /// How close a session has to be before a countdown beside the clock earns its place.
+    ///
+    /// A day, because that is the span in which the answer changes what somebody does. "Raid in 5h"
+    /// is worth glancing at; "Raid in 122h" is a permanent fixture that says the same thing every
+    /// time you look, and a status bar entry which never tells you anything new is one you stop
+    /// reading — including on the day it matters.
+    /// </summary>
+    public static readonly TimeSpan CountdownWithin = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Whether a countdown is worth showing right now.
+    ///
+    /// A session under way always is, however long it has been running. That case is not covered by
+    /// the window above: <see cref="NextOccurrence"/> counts a running session as starting in the
+    /// past, so the arithmetic alone happens to give the right answer — and it is written out
+    /// anyway, because relying on a negative difference to fall under a positive bound is a fact
+    /// about one line somewhere else.
+    /// </summary>
+    public static bool CountdownDue(IReadOnlyList<RaidSlot> slots, DateTime nowUtc)
+    {
+        if (Running(slots, nowUtc, out _))
+            return true;
+
+        return Next(slots, nowUtc) is { } next && next.StartUtc - nowUtc <= CountdownWithin;
+    }
+
     /// <summary>The very next session, or null when the group has no schedule.</summary>
     public static (RaidSlot Slot, DateTime StartUtc)? Next(IReadOnlyList<RaidSlot> slots, DateTime nowUtc)
     {

@@ -119,12 +119,13 @@ public sealed class RaidReminder : IDisposable
     /// A countdown beside the clock, for people who would rather glance than be interrupted.
     ///
     /// Created the first time it is wanted and torn down the moment it is not, so a group with no
-    /// schedule and somebody with the setting off never sees an empty entry sitting there.
+    /// schedule, somebody with the setting off, and a raid five days away all leave the status bar
+    /// alone rather than parking something permanent in it.
     /// </summary>
     private void UpdateBar(IReadOnlyList<RaidSlot> slots, (RaidSlot Slot, DateTime StartUtc)? next,
                            DateTime now)
     {
-        if (!config.RemindInDtrBar || next == null)
+        if (!config.RemindInDtrBar || next == null || !RaidCalendar.CountdownDue(slots, now))
         {
             bar?.Remove();
             bar = null;

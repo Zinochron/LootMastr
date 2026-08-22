@@ -2489,6 +2489,52 @@ var rules = new PriorityRules();
           LootHistory.MergeForgotten(["a", "b"], ["b"]).Count == 2);
 }
 
+// --- when a countdown beside the clock is worth having ------------------------------------------
+
+{
+    // Thursday 20:00 UTC, three hours long.
+    List<RaidSlot> schedule = [new() { Day = DayOfWeek.Thursday, StartMinutesUtc = 20 * 60, DurationMinutes = 180 }];
+
+    var thursday = new DateTime(2026, 8, 20, 20, 0, 0, DateTimeKind.Utc);
+
+    Check("five days out, nothing is shown",
+          !RaidCalendar.CountdownDue(schedule, thursday.AddDays(-5)));
+
+    Check("a day and a bit out, still nothing",
+          !RaidCalendar.CountdownDue(schedule, thursday.AddHours(-25)));
+
+    Check("inside the last day it appears", RaidCalendar.CountdownDue(schedule, thursday.AddHours(-23)));
+    Check("and exactly a day out counts as inside", RaidCalendar.CountdownDue(schedule, thursday.AddHours(-24)));
+
+    Check("an hour before, obviously", RaidCalendar.CountdownDue(schedule, thursday.AddHours(-1)));
+
+    // The case a naive "within 24 hours of the next start" gets wrong. Once a session begins, the
+    // next start is a week away by the obvious reading, and the entry would vanish at the exact
+    // moment the group is in there looking at it.
+    Check("during the session it stays", RaidCalendar.CountdownDue(schedule, thursday.AddHours(1)));
+    Check("right up to the end", RaidCalendar.CountdownDue(schedule, thursday.AddMinutes(179)));
+
+    Check("and once it is over it goes again",
+          !RaidCalendar.CountdownDue(schedule, thursday.AddMinutes(181)));
+
+    Check("no schedule, no countdown", !RaidCalendar.CountdownDue([], thursday));
+
+    // Two nights a week: the second must not keep the first one's entry alive across the gap.
+    List<RaidSlot> twice =
+    [
+        new() { Day = DayOfWeek.Tuesday, StartMinutesUtc = 20 * 60, DurationMinutes = 180 },
+        new() { Day = DayOfWeek.Friday, StartMinutesUtc = 20 * 60, DurationMinutes = 180 },
+    ];
+
+    var tuesday = new DateTime(2026, 8, 18, 20, 0, 0, DateTimeKind.Utc);
+
+    Check("with two nights, the quiet stretch between them is quiet",
+          !RaidCalendar.CountdownDue(twice, tuesday.AddDays(1)));
+
+    Check("and the second night brings it back",
+          RaidCalendar.CountdownDue(twice, tuesday.AddDays(2).AddHours(12)));
+}
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} check(s) failed");
 return failures == 0 ? 0 : 1;

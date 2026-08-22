@@ -645,7 +645,10 @@ public sealed class SettingsTab : ITab
         }
 
         Widgets.HelpMarker("A server info bar entry that counts down and then says how long is left " +
-                           "of the session. Nothing interrupts you; it is simply there.");
+                           "of the session. Nothing interrupts you; it is simply there.\n\n" +
+                           "Only inside the last day before a session, and while one is running. A " +
+                           "countdown reading 122h says the same thing every time you look, which " +
+                           "is how you stop looking.");
 
         ImGuiHelpers.ScaledDummy(4f);
         ImGui.TextDisabled("Warn me:");
